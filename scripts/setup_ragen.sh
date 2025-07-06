@@ -42,16 +42,16 @@ main() {
     
     # Create and activate conda environment
     # if not exists, create it
-    if ! conda env list | grep -q "ragen"; then
-        print_step "Creating conda environment 'ragen' with Python 3.12..."
-        conda create -n ragen python=3.12 -y
+    if ! conda env list | grep -q "pettingllms"; then
+        print_step "Creating conda environment 'pettingllms' with Python 3.12..."
+        conda create -n pettingllms python=3.12 -y
     else
-        print_step "Conda environment 'ragen' already exists"
+        print_step "Conda environment 'pettingllms' already exists"
     fi
     
     # Need to source conda for script environment
     eval "$(conda shell.bash hook)"
-    conda activate ragen
+    conda activate pettingllms
 
     # Install package in editable mode
     print_step "setting up verl..."
@@ -62,7 +62,7 @@ main() {
     cd ..
     
     # Install package in editable mode
-    print_step "Installing ragen package..."
+    print_step "Installing pettingllms package..."
     pip install -e .
     
     # Install PyTorch with CUDA if available
@@ -108,7 +108,7 @@ main() {
     python scripts/download_data.py
 
     echo -e "${GREEN}Installation completed successfully!${NC}"
-    echo "To activate the environment, run: conda activate ragen"
+    echo "To activate the environment, run: conda activate pettingllms"
     
     # export CMAKE_POLICY_VERSION_MINIMUM=3.5 && pip install alfworld[full]
     # alfworld-download
