@@ -443,7 +443,7 @@ if __name__ == '__main__':
         game_logger.info("Using local sglang service (port 30000)...")
         
         # Create summary file for game results
-        summary_file = "logs/game_summary.txt"
+        summary_file = "logs/game_summary_Qwen2.5-1.5B-Instruct.txt"
         
         for i in range(10):
             game_logger.info(f"Starting Round {i+1}")

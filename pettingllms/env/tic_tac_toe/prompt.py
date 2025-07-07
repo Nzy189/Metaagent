@@ -90,9 +90,8 @@ def _convert_action_str_to_int(action_str):
         if 0 <= action_int <= 8:
             return action_int
     except ValueError:
-        pass
-    
-    raise ValueError(f"Invalid action format: {action_str}")
+        print(ValueError(f"Invalid action format: {action_str}"))
+        return random.choice(range(9))
 
 def get_env_background_prompt():
     return f"""
