@@ -24,7 +24,7 @@ pyarrow>=15.0.0
 pylatexenc
 torchdata
 debugpy
-
+sglang
 together
 anthropic
 
