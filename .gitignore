@@ -116,4 +116,4 @@ tests/e2e/toy_examples/deepspeed/synchronous/output.txt
 *.swp
 
 
-log/
+log/rllm/agentgpraphs/design_human_interact/sweet_rl/
