@@ -6,7 +6,7 @@ This example demonstrates training and running [DeepCoder](https://pretty-radio-
 
 The DeepCoder examples demonstrate:
 
-- How to use rLLM's CompetitionCodingAgent for programming tasks
+- How to use pettingllms's CompetitionCodingAgent for programming tasks
 - How to train agents with iterative context lengthening (16K -> 32K)
 - How to evaluate coding performance on LiveCodeBench
 
@@ -81,4 +81,4 @@ DeepCoder training configuration:
 --8<-- "examples/deepcoder/train_deepcoder.py"
 ```
 
-For detailed setup instructions, see the [README](https://github.com/agentica-project/rllm/blob/main/examples/deepcoder/README.md) in the deepcoder example directory.
+For detailed setup instructions, see the [README](https://github.com/agentica-project/pettingllms/blob/main/examples/deepcoder/README.md) in the deepcoder example directory.

@@ -1,6 +1,6 @@
 # FrozenLake Agent Examples
 
-This directory contains examples for training and running FrozenLake RL agents using the rLLM framework. The FrozenLake agent learns to navigate a slippery grid world environment to reach a goal while avoiding holes.
+This directory contains examples for training and running FrozenLake RL agents using the pettingllms framework. The FrozenLake agent learns to navigate a slippery grid world environment to reach a goal while avoiding holes.
 
 Our examples use the following:
 * Qwen3-4B as the base model
@@ -57,7 +57,7 @@ python prepare_frozenlake_data.py
 This will:
 - Generate 10,000 random FrozenLake environments for training
 - Generate 100 random FrozenLake environments for testing
-- Register both datasets with the RLLM DatasetRegistry
+- Register both datasets with the pettingllms DatasetRegistry
 - Each environment has random size (2-10), slip probability (0.6-0.85), and seed
 
 ## Running Inference

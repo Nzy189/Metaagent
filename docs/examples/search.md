@@ -5,8 +5,8 @@ This example follows the set up from [Search-R1](https://github.com/PeterGriffin
 ## Overview
 
 The search examples demonstrate:
-- How to use rLLM's ToolAgent and ToolEnvironment
-- How to write custom tools in rLLM
+- How to use pettingllms's ToolAgent and ToolEnvironment
+- How to write custom tools in pettingllms
 
 ## Quick Start
 
@@ -53,4 +53,4 @@ Search agent training configuration:
 --8<-- "examples/search/train_search_agent.py"
 ```
 
-For detailed setup instructions, see the [README](https://github.com/agentica-project/rllm/blob/main/examples/search/README.md) in the search example directory. 
+For detailed setup instructions, see the [README](https://github.com/agentica-project/pettingllms/blob/main/examples/search/README.md) in the search example directory. 

@@ -1,13 +1,13 @@
 import hydra
 
-from rllm.agents.code_agent import CompetitionCodingAgent
-from rllm.data.dataset import DatasetRegistry
-from rllm.environments.base.single_turn_env import SingleTurnEnvironment
-from rllm.rewards.reward_fn import code_reward_fn
-from rllm.trainer.agent_trainer import AgentTrainer
+from pettingllms.agents.code_agent import CompetitionCodingAgent
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.environments.base.single_turn_env import SingleTurnEnvironment
+from pettingllms.rewards.reward_fn import code_reward_fn
+from pettingllms.trainer.agent_trainer import AgentTrainer
 
 
-@hydra.main(config_path="pkg://rllm.trainer.config", config_name="ppo_trainer", version_base=None)
+@hydra.main(config_path="pkg://pettingllms.trainer.config", config_name="ppo_trainer", version_base=None)
 def main(config):
     train_dataset = DatasetRegistry.load_dataset("deepcoder", "train")
     test_dataset = DatasetRegistry.load_dataset("deepcoder", "test")

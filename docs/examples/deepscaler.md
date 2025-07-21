@@ -6,7 +6,7 @@ This example demonstrates training and running [DeepScaleR](https://pretty-radio
 
 The DeepScaler examples demonstrate:
 
-- How to use rLLM's MathAgent for mathematical reasoning
+- How to use pettingllms's MathAgent for mathematical reasoning
 - How to train agents with iterative context lengthening (8K -> 16K -> 24K)
 - How to evaluate mathematical reasoning with Pass@K metrics
 
@@ -83,4 +83,4 @@ DeepScaler training configuration:
 --8<-- "examples/deepscaler/train_deepscaler.py"
 ```
 
-For detailed setup instructions, see the [README](https://github.com/agentica-project/rllm/blob/main/examples/deepscaler/README.md) in the deepscaler example directory.
+For detailed setup instructions, see the [README](https://github.com/agentica-project/pettingllms/blob/main/examples/deepscaler/README.md) in the deepscaler example directory.

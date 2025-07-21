@@ -2,11 +2,11 @@ import asyncio
 
 from transformers import AutoTokenizer
 
-from rllm.agents.frozenlake_agent import FrozenLakeAgent
-from rllm.data.dataset import DatasetRegistry
-from rllm.engine.agent_execution_engine import AgentExecutionEngine
-from rllm.environments.frozenlake.frozenlake import FrozenLakeEnv
-from rllm.utils import compute_pass_at_k
+from pettingllms.agents.frozenlake_agent import FrozenLakeAgent
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.engine.agent_execution_engine import AgentExecutionEngine
+from pettingllms.environments.frozenlake.frozenlake import FrozenLakeEnv
+from pettingllms.utils import compute_pass_at_k
 
 
 def load_frozenlake_data():

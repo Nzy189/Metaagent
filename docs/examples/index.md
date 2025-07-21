@@ -1,6 +1,6 @@
 # Examples
 
-This section contains examples demonstrating how to use rLLM to train agents for various tasks.
+This section contains examples demonstrating how to use pettingllms to train agents for various tasks.
 
 ## Available Examples
 

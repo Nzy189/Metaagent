@@ -1,6 +1,6 @@
 from datasets import load_dataset
 
-from rllm.data.dataset import DatasetRegistry
+from pettingllms.data.dataset import DatasetRegistry
 
 
 def prepare_hotpotqa_data(train_size=None, test_size=None):

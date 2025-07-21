@@ -1,6 +1,6 @@
 # DeepScaleR Examples
 
-This directory contains examples for training and running math reasoning agents with tool usage capabilities using the RLLM framework. The math tool agent has access to a Python interepreter to solve mathematical problems through step-by-step reasoning and tool-use.
+This directory contains examples for training and running math reasoning agents with tool usage capabilities using the pettingllms framework. The math tool agent has access to a Python interepreter to solve mathematical problems through step-by-step reasoning and tool-use.
 
 Our examples uses the following:
 * Deepseek-R1-Distill-1.5B as the base model
@@ -46,7 +46,7 @@ python prepare_math_data.py
 This will:
 - Download AIME 2024 dataset from HuggingFace
 - Download DeepScaleR math dataset for training
-- Register both datasets with the RLLM DatasetRegistry
+- Register both datasets with the pettingllms DatasetRegistry
 
 ## Running Inference
 

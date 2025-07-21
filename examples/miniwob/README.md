@@ -1,6 +1,6 @@
 # MiniWoB Agent Examples
 
-This directory contains examples for training and running a simple web agent for the BrowserGym-MiniWoB++ environment using the RLLM framework. 
+This directory contains examples for training and running a simple web agent for the BrowserGym-MiniWoB++ environment using the pettingllms framework. 
 
 Our examples uses the following:
 * Qwen3-1.7B as the base model
@@ -68,7 +68,7 @@ python prepare_miniwob_data.py
 
 This will:
 - Partition the available 125 MiniWoB++ tasks into training and evaluation
-- Register both datasets with the RLLM DatasetRegistry
+- Register both datasets with the pettingllms DatasetRegistry
 
 ## Running Inference
 

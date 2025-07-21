@@ -1,4 +1,4 @@
-In rLLM, we categorize agents into two types based on how they accumulate context over time:
+In pettingllms, we categorize agents into two types based on how they accumulate context over time:
 
 1. **Cumulative Agents**
     
@@ -9,7 +9,7 @@ In rLLM, we categorize agents into two types based on how they accumulate contex
     In many realistic scenarios, the full trajectory exceeds the model's context limit. For example, long observations or internal agent reasoning can bloat the prompt. In such cases, agents must **manage context** and rely on **summarized state representations**. These agents are better modeled as a **Markov Decision Process (MDP)**, where each prompt represents a compact state summarizing history, and the action is the model's response.
     
 
-rLLM supports the following RL algorithms:
+pettingllms supports the following RL algorithms:
 
 **For Cumulative Agents:**
 
@@ -24,7 +24,7 @@ rLLM supports the following RL algorithms:
 
 **For Non-Cumulative Agents:**
 
-Each step is an **independent prompt-response interaction**, and a full trajectory is a **sequence of steps**. Since trajectories may vary in length (e.g., one with 10 steps, another with 8), a key challenge is **how to group steps and assign advantages** during training. rLLM supports two approaches:
+Each step is an **independent prompt-response interaction**, and a full trajectory is a **sequence of steps**. Since trajectories may vary in length (e.g., one with 10 steps, another with 8), a key challenge is **how to group steps and assign advantages** during training. pettingllms supports two approaches:
 
 - **Stepwise GRPO with Advantage Broadcasting**
     

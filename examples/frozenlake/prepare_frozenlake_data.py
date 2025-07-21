@@ -1,6 +1,6 @@
 import numpy as np
 
-from rllm.data.dataset import DatasetRegistry
+from pettingllms.data.dataset import DatasetRegistry
 
 
 def prepare_frozenlake_data(train_size=10000, test_size=100):

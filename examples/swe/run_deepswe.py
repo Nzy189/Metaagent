@@ -2,11 +2,11 @@ import asyncio
 
 from transformers import AutoTokenizer
 
-from rllm.agents.swe_agent import SWEAgent
-from rllm.data.dataset import DatasetRegistry
-from rllm.engine.agent_execution_engine import AgentExecutionEngine
-from rllm.environments.swe.swe import SWEEnv
-from rllm.utils import compute_pass_at_k
+from pettingllms.agents.swe_agent import SWEAgent
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.engine.agent_execution_engine import AgentExecutionEngine
+from pettingllms.environments.swe.swe import SWEEnv
+from pettingllms.utils import compute_pass_at_k
 
 
 def load_swe_data():

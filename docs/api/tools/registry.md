@@ -9,4 +9,4 @@ The tool registry provides a centralized way to register, store, and retrieve to
 - List all registered tools
 - Singleton pattern for global access
 
-::: rllm.tools.registry 
+::: pettingllms.tools.registry 

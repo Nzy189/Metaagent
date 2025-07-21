@@ -1,10 +1,10 @@
 # API Reference
 
-Welcome to the rLLM API reference documentation. This section provides comprehensive documentation for all modules, classes, and functions in the rLLM library.
+Welcome to the pettingllms API reference documentation. This section provides comprehensive documentation for all modules, classes, and functions in the pettingllms library.
 
 ## Overview
 
-rLLM is a library for training LLM agents with reinforcement learning. The API is organized into several key modules:
+pettingllms is a library for training LLM agents with reinforcement learning. The API is organized into several key modules:
 
 ## Core Modules
 

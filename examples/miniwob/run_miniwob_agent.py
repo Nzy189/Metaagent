@@ -3,11 +3,11 @@ import asyncio
 
 from transformers import AutoTokenizer
 
-from rllm.agents.miniwob_agent import MiniWobAgent
-from rllm.data.dataset import DatasetRegistry
-from rllm.engine.agent_execution_engine import AgentExecutionEngine
-from rllm.environments.browsergym.browsergym import BrowserGymEnv
-from rllm.utils import compute_pass_at_k
+from pettingllms.agents.miniwob_agent import MiniWobAgent
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.engine.agent_execution_engine import AgentExecutionEngine
+from pettingllms.environments.browsergym.browsergym import BrowserGymEnv
+from pettingllms.utils import compute_pass_at_k
 
 
 def load_miniwob_data():

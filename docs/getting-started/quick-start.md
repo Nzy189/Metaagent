@@ -1,6 +1,6 @@
-# Quick Start with rLLM
+# Quick Start with pettingllms
 
-This guide walks you through using rLLM to build AI agents with tool usage capabilities. We'll use the **math tool agent** example to demonstrate the complete workflow from dataset preparation through model training.
+This guide walks you through using pettingllms to build AI agents with tool usage capabilities. We'll use the **math tool agent** example to demonstrate the complete workflow from dataset preparation through model training.
 
 ## Overview
 
@@ -21,19 +21,19 @@ The example uses:
 
 Before starting, ensure you have:
 
-1. **rLLM Installation**: Follow the [installation guide](./installation.md)
+1. **pettingllms Installation**: Follow the [installation guide](./installation.md)
 2. **GPU Requirements**: At least 1 GPU with 16GB+ memory for inference, 8+ GPUs for training
 3. **Model Server**: We'll use vLLM or SGLang to serve the base model
 
 ## Step 1: Dataset Preparation
 
-rLLM's `DatasetRegistry` provides a centralized way to manage datasets. Let's prepare the math datasets:
+pettingllms's `DatasetRegistry` provides a centralized way to manage datasets. Let's prepare the math datasets:
 
 ```python title="examples/math_tool/prepare_math_data.py"
 --8<-- "examples/math_tool/prepare_math_data.py"
 ```
 
-This registers the training dataset `deepscaler_math` and the testing dataset `aime2024`. Under the hood, rLLM stores the processed data as parquet files in a format suitable for both inference and training. Later, you can easily load the registered datasets using `DatasetRegistry.load_dataset`.
+This registers the training dataset `deepscaler_math` and the testing dataset `aime2024`. Under the hood, pettingllms stores the processed data as parquet files in a format suitable for both inference and training. Later, you can easily load the registered datasets using `DatasetRegistry.load_dataset`.
 
 **Run the preparation script:**
 ```bash
@@ -43,7 +43,7 @@ python prepare_math_data.py
 
 ## Step 2: Model Server Setup
 
-rLLM requires a model server for inference. Choose one of these options:
+pettingllms requires a model server for inference. Choose one of these options:
 
 ### Option A: vLLM Server
 ```bash
@@ -78,13 +78,13 @@ cd examples/math_tool
 python run_math_with_tool.py
 ```
 
-The script above configures a `ToolAgent` from rLLM with access to the `python` tool for solving math problems in AIME2024, and a `ToolEnvironment` for handling Python tool calls and returning results. 
+The script above configures a `ToolAgent` from pettingllms with access to the `python` tool for solving math problems in AIME2024, and a `ToolEnvironment` for handling Python tool calls and returning results. 
 
 The `AgentExecutionEngine` orchestrates the interaction between the `ToolAgent` and `ToolEnvironment`. The `execute_tasks` function launches 64 agent-environment pairs in parallel (`n_parallel_agents=64`) for rollout generation and returns results after all problems from the AIME2024 dataset are processed. Finally, the Pass@1 and Pass@K metrics for AIME are computed and printed. 
 
 ## Step 4: Agent Training with GRPO
 
-Training improves the agent's ability to use tools effectively. rLLM uses verl as its training backend, which supports training language models with GRPO and various other RL algorithms.
+Training improves the agent's ability to use tools effectively. pettingllms uses verl as its training backend, which supports training language models with GRPO and various other RL algorithms.
 
 ```python title="examples/math_tool/train_math_with_tool.py"
 --8<-- "examples/math_tool/train_math_with_tool.py"
@@ -96,14 +96,14 @@ cd examples/math_tool
 bash train_math_with_tool.sh
 ```
 
-The script above launches an RL training job for our ToolAgent, using `deepscaler_math` as the training set and `aime2024` as the test set. Under the hood, rLLM handles agent trajectory generation using our `AgentExecutionEngine` and transforms the trajectories into `verl`'s format for model training using FSDP or Megatron. The training process works as follows:
+The script above launches an RL training job for our ToolAgent, using `deepscaler_math` as the training set and `aime2024` as the test set. Under the hood, pettingllms handles agent trajectory generation using our `AgentExecutionEngine` and transforms the trajectories into `verl`'s format for model training using FSDP or Megatron. The training process works as follows:
 
 1. **Rollout Generation**: A batch of data is passed to `AgentExecutionEngine`, which launches multiple agent-environment pairs in parallel to process the batch. The engine returns all trajectories along with rewards computed by the environment.
 2. **Transform Trajectories**: Agent trajectories are transformed into the corresponding format for our training backend `verl`. 
 3. **Advantage Calculation with GRPO**: `verl` uses GRPO for advantage calculation.
 4. **Model Update**: `verl` updates the model parameters to increase the probability of successful actions. The updated model is then used to generate trajectories for the next batch of data.
 
-### Key rLLM Components in This Example
+### Key pettingllms Components in This Example
 
 | Component | Purpose | Example Usage |
 |-----------|---------|---------------|
@@ -115,4 +115,4 @@ The script above launches an RL training job for our ToolAgent, using `deepscale
 
 ## Next Steps
 
-Congratulations! You've successfully used rLLM to run and train a ToolAgent for math problem solving. For a deeper dive into rLLM's main components, check out [Core Concepts in rLLM](../core-concepts/overview.md).
+Congratulations! You've successfully used pettingllms to run and train a ToolAgent for math problem solving. For a deeper dive into pettingllms's main components, check out [Core Concepts in pettingllms](../core-concepts/overview.md).

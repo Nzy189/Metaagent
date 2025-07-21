@@ -46,7 +46,7 @@ python prepare_deepcoder_data.py
 
 This will:
 - Download the agentica-org/DeepCoder-Preview-Dataset (lcbv5 subset)
-- Register both train/test splits with the RLLM DatasetRegistry
+- Register both train/test splits with the pettingllms DatasetRegistry
 
 ## Running Inference
 

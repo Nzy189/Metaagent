@@ -1,6 +1,6 @@
 from datasets import load_dataset
 
-from rllm.data.dataset import DatasetRegistry
+from pettingllms.data.dataset import DatasetRegistry
 
 SWE_DATASETS = [
     "R2E-Gym/R2E-Gym-Subset",

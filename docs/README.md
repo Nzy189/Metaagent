@@ -1,6 +1,6 @@
-# rLLM Documentation
+# pettingllms Documentation
 
-This directory contains the documentation for the rLLM library, built using [MkDocs](https://www.mkdocs.org/) with [Material theme](https://squidfunk.github.io/mkdocs-material/) and [mkdocstrings](https://mkdocstrings.github.io/) for API documentation.
+This directory contains the documentation for the pettingllms library, built using [MkDocs](https://www.mkdocs.org/) with [Material theme](https://squidfunk.github.io/mkdocs-material/) and [mkdocstrings](https://mkdocstrings.github.io/) for API documentation.
 
 ## 🚀 Quick Start
 
@@ -72,14 +72,14 @@ Example:
 
 Brief description of the module.
 
-::: rllm.my_module
+::: pettingllms.my_module
 ```
 
 ### Code Examples
 Use fenced code blocks with language specification:
 
 ```python
-from rllm.agents import Agent
+from pettingllms.agents import Agent
 
 agent = Agent()
 ```
@@ -113,7 +113,7 @@ Documentation dependencies are automatically installed with the main package:
 ### Common Issues
 
 **Import errors when building**:
-- Ensure the rLLM package is properly installed: `uv pip install -e ..`
+- Ensure the pettingllms package is properly installed: `uv pip install -e ..`
 - Check that all dependencies are available
 
 **Missing API documentation**:
@@ -127,4 +127,4 @@ Documentation dependencies are automatically installed with the main package:
 ### Getting Help
 - Check the [MkDocs documentation](https://www.mkdocs.org/)
 - Review [mkdocstrings documentation](https://mkdocstrings.github.io/)
-- Open an issue in the rLLM repository 
+- Open an issue in the pettingllms repository 

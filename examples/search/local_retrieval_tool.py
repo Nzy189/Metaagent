@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from rllm.tools.tool_base import Tool, ToolOutput
+from pettingllms.tools.tool_base import Tool, ToolOutput
 
 logger = logging.getLogger(__name__)
 

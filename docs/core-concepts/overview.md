@@ -1,4 +1,4 @@
-![rLLM's main components](../assets/rllm_components.png)
+![pettingllms's main components](../assets/pettingllms_components.png)
 
 A typical RL system consists of two components:
 
@@ -11,7 +11,7 @@ In *online RL*, this forms a closed training loop:
 2. The **trainer** updates the agent’s weights using those trajectories.
 3. A new batch is generated using the **updated agent**, and the cycle repeats.
 
-In rLLM, we design multiple components to implement the training loop in a modular way:
+In pettingllms, we design multiple components to implement the training loop in a modular way:
 
 1. **`BaseAgent`** and **`BaseEnv`** class that user can easily extend to build their custom agents and environments
 2. **`AgentExecutionEngine`** that orchestrates the interaction between agent and environment for parallelized and fully async trajectory generation.
@@ -21,7 +21,7 @@ Below, we explain in more details how each components works, and show examples o
 
 ### I. Agent and Environment Abstractions
 
-rLLM provides simple, modular interfaces for defining custom agents and environments. Users can quickly prototype new agents and environments with minimal boilerplate. Check out the examples below to get started building your own agentic workflows.
+pettingllms provides simple, modular interfaces for defining custom agents and environments. Users can quickly prototype new agents and environments with minimal boilerplate. Check out the examples below to get started building your own agentic workflows.
 
 - **Example:** A math agent that can self-correct its answer each turn.
     
@@ -131,7 +131,7 @@ During RL training, `AgentExecutionEngine` integrates seamlessly with the traine
 
 ### III. `AgentTrainer` for Efficient RL Training
 
-rLLM’s `AgentTrainer` exposes a simple high-level interface for users to specify their training workload and configurations, where users can easily specify the agent, environment, and training/validation dataset, and calls `trainer.train()` to train their agents with RL. 
+pettingllms’s `AgentTrainer` exposes a simple high-level interface for users to specify their training workload and configurations, where users can easily specify the agent, environment, and training/validation dataset, and calls `trainer.train()` to train their agents with RL. 
 
 ```go
 trainer = AgentTrainer(
@@ -146,12 +146,12 @@ trainer = AgentTrainer(
 trainer.train()
 ```
 
-Under the hood, the `AgentTrainer` uses rLLM’s `AgentExeuctionEngine` as trajectory sampler, [**verl](https://github.com/volcengine/verl)** as the model trainer, and uses [Ray](https://docs.ray.io/en/latest/ray-overview/getting-started.html?_gl=1*1tl1nie*_up*MQ..*_ga*MTAwODEyODkzNC4xNzUxMzk3NzA3*_ga_0LCWHW1N3S*czE3NTEzOTc3MDYkbzEkZzAkdDE3NTEzOTc3MDYkajYwJGwwJGgw) to orchestrate the control-flow between the sampler and the trainer. 
+Under the hood, the `AgentTrainer` uses pettingllms’s `AgentExeuctionEngine` as trajectory sampler, [**verl](https://github.com/volcengine/verl)** as the model trainer, and uses [Ray](https://docs.ray.io/en/latest/ray-overview/getting-started.html?_gl=1*1tl1nie*_up*MQ..*_ga*MTAwODEyODkzNC4xNzUxMzk3NzA3*_ga_0LCWHW1N3S*czE3NTEzOTc3MDYkbzEkZzAkdDE3NTEzOTc3MDYkajYwJGwwJGgw) to orchestrate the control-flow between the sampler and the trainer. 
 
 - **Example:** Using `AgentTrainer` for RL training
     
     ```python
-    @hydra.main(config_path="pkg://rllm.trainer.config", config_name="ppo_trainer", version_base=None)
+    @hydra.main(config_path="pkg://pettingllms.trainer.config", config_name="ppo_trainer", version_base=None)
     def main(config):
         train_dataset = DatasetRegistry.load_dataset("hotpotqa_combined", "train")
         val_dataset = DatasetRegistry.load_dataset("hotpotqa_combined", "test")

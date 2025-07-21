@@ -5,7 +5,7 @@ Tool parsers extract tool calls from model responses and generate tool prompts f
 ## Usage
 
 ```python
-from rllm.parser import get_tool_parser
+from pettingllms.parser import get_tool_parser
 
 # Get a specific parser
 parser = get_tool_parser("r1")
@@ -17,4 +17,4 @@ tool_calls = parser.parse(model_response)
 prompt = parser.get_tool_prompt(tools_schema)
 ```
 
-::: rllm.parser.tool_parser 
+::: pettingllms.parser.tool_parser 

@@ -1,6 +1,6 @@
 # Math SFT Training Examples
 
-This directory contains examples for supervised fine-tuning (SFT) of math reasoning models using the RLLM framework. The SFT training pipeline generates high-quality trajectories from a teacher model and fine-tunes a student model on the successful trajectories.
+This directory contains examples for supervised fine-tuning (SFT) of math reasoning models using the pettingllms framework. The SFT training pipeline generates high-quality trajectories from a teacher model and fine-tunes a student model on the successful trajectories.
 
 Our examples use the following:
 * Qwen/Qwen2.5-Math-1.5B as the base model

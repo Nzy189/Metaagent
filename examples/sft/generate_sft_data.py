@@ -4,9 +4,9 @@ import os
 
 import pandas as pd
 
-from rllm.agents.agent import Trajectory
-from rllm.data.dataset import DatasetRegistry
-from rllm.trainer.agent_sft_trainer import AgentSFTTrainer
+from pettingllms.agents.agent import Trajectory
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.trainer.agent_sft_trainer import AgentSFTTrainer
 
 
 def load_problems(num_samples):
@@ -27,10 +27,10 @@ async def generate_trajectories(tasks) -> list[Trajectory]:
     """Generate trajectories using DeepScaleR-1.5B."""
     from transformers import AutoTokenizer
 
-    from rllm.agents.math_agent import MathAgent
-    from rllm.engine import AsyncAgentExecutionEngine
-    from rllm.environments.base.single_turn_env import SingleTurnEnvironment
-    from rllm.rewards.reward_fn import math_reward_fn
+    from pettingllms.agents.math_agent import MathAgent
+    from pettingllms.engine import AsyncAgentExecutionEngine
+    from pettingllms.environments.base.single_turn_env import SingleTurnEnvironment
+    from pettingllms.rewards.reward_fn import math_reward_fn
 
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     model_name = "agentica-org/DeepScaleR-1.5B-Preview"

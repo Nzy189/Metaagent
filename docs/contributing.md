@@ -1,6 +1,6 @@
-# Contributing to rLLM
+# Contributing to pettingllms
 
-We welcome contributions to rLLM! This guide will help you get started with the development process.
+We welcome contributions to pettingllms! This guide will help you get started with the development process.
 
 ## Getting Started
 
@@ -53,24 +53,24 @@ pre-commit run
 
 ### Adding a New Agent
 
-1. Create a new file in `rllm/agents/` (e.g., `my_agent.py`)
+1. Create a new file in `pettingllms/agents/` (e.g., `my_agent.py`)
 2. Implement your agent by inheriting from the base `Agent` class
-3. Add any necessary system prompts to `rllm/agents/system_prompts.py`
-4. Register your agent in `rllm/agents/__init__.py`
+3. Add any necessary system prompts to `pettingllms/agents/system_prompts.py`
+4. Register your agent in `pettingllms/agents/__init__.py`
 5. Add tests in `tests/agents/`
 
 ### Adding a New Environment
 
-1. Create a new file in `rllm/environments/` (e.g., `my_env.py`)
+1. Create a new file in `pettingllms/environments/` (e.g., `my_env.py`)
 2. Implement your environment by inheriting from the base `BaseEnv` class
-3. Register your environment in `rllm/environments/__init__.py`
+3. Register your environment in `pettingllms/environments/__init__.py`
 4. Add tests in `tests/environments/`
 
 ### Adding a New Reward Function
 
-1. Create a new file in `rllm/rewards/` (e.g., `my_reward.py`)
+1. Create a new file in `pettingllms/rewards/` (e.g., `my_reward.py`)
 2. Implement your reward function
-3. Register your reward function in `rllm/rewards/__init__.py`
+3. Register your reward function in `pettingllms/rewards/__init__.py`
 4. Add tests in `tests/rewards/` -->
 
 ## Submitting a Pull Request
@@ -98,4 +98,4 @@ After submitting a pull request:
 
 ## License
 
-By contributing to rLLM, you agree that your contributions will be licensed under the project's MIT license. 
+By contributing to pettingllms, you agree that your contributions will be licensed under the project's MIT license. 

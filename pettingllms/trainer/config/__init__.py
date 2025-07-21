@@ -1,0 +1,2 @@
+# config for pettingllms trainer
+

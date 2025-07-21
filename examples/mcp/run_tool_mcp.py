@@ -5,13 +5,13 @@ import sys
 from prepare_hotpotqa_data import prepare_hotpotqa_data
 from transformers import AutoTokenizer
 
-from rllm.agents.system_prompts import SEARCH_SYSTEM_PROMPT
-from rllm.agents.tool_agent import MCPToolAgent
-from rllm.data.dataset import DatasetRegistry
-from rllm.engine.agent_execution_engine import AgentExecutionEngine
-from rllm.environments.tools.mcp_env import MCPConnectionManager, MCPEnvironment
-from rllm.rewards.reward_fn import search_reward_fn
-from rllm.utils import save_trajectories
+from pettingllms.agents.system_prompts import SEARCH_SYSTEM_PROMPT
+from pettingllms.agents.tool_agent import MCPToolAgent
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.engine.agent_execution_engine import AgentExecutionEngine
+from pettingllms.environments.tools.mcp_env import MCPConnectionManager, MCPEnvironment
+from pettingllms.rewards.reward_fn import search_reward_fn
+from pettingllms.utils import save_trajectories
 
 
 async def main():

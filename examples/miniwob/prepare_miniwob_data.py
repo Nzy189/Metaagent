@@ -4,7 +4,7 @@ import random
 import browsergym.miniwob
 import gymnasium as gym
 
-from rllm.data.dataset import DatasetRegistry
+from pettingllms.data.dataset import DatasetRegistry
 
 importlib.reload(browsergym.miniwob)
 

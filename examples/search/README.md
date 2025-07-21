@@ -1,4 +1,4 @@
-# Dense Search Training with RLLM
+# Dense Search Training with pettingllms
 
 Train search agents using dense retrieval on Wikipedia with pre-built E5 embeddings. Only uses the dense index.
 

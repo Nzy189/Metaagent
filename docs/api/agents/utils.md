@@ -2,4 +2,4 @@
 
 Utility functions and helpers for agent implementations.
 
-::: rllm.agents.utils 
+::: pettingllms.agents.utils 

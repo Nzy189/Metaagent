@@ -1,10 +1,10 @@
 # Installation Guide
 
-This guide will help you set up rLLM on your system.
+This guide will help you set up pettingllms on your system.
 
 ## Prerequisites
 
-Before installing rLLM, ensure you have the following:
+Before installing pettingllms, ensure you have the following:
 
 - Python 3.10 or higher
 - CUDA version >= 12.1
@@ -20,22 +20,22 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## Basic Installation
 
-rLLM uses [verl](https://github.com/volcengine/verl) as its training backend. Follow these steps to install rLLM and our custom fork of verl:
+pettingllms uses [verl](https://github.com/volcengine/verl) as its training backend. Follow these steps to install pettingllms and our custom fork of verl:
 
 ```bash
 # Clone the repository
-git clone --recurse-submodules https://github.com/agentica-project/rllm.git
-cd rllm
+git clone --recurse-submodules https://github.com/agentica-project/pettingllms.git
+cd pettingllms
 
 # create a conda environment
-conda create -n rllm python=3.10
-conda activate rllm
+conda create -n pettingllms python=3.10
+conda activate pettingllms
 
 # Install all dependencies
 pip install -e ./verl
 pip install -e .
 ```
 
-This will install rLLM and all its dependencies in development mode.
+This will install pettingllms and all its dependencies in development mode.
 
-For more help, refer to the [GitHub issues page](https://github.com/agentica-project/rllm/issues). 
+For more help, refer to the [GitHub issues page](https://github.com/agentica-project/pettingllms/issues). 

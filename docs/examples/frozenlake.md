@@ -48,4 +48,4 @@ Agent training implementation:
 --8<-- "examples/frozenlake/train_frozenlake_agent.py"
 ```
 
-For more details, see the [FrozenLake README](https://github.com/agentica-project/rllm/blob/main/examples/frozenlake/README.md). 
+For more details, see the [FrozenLake README](https://github.com/agentica-project/pettingllms/blob/main/examples/frozenlake/README.md). 

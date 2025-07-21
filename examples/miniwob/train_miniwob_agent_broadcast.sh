@@ -6,13 +6,13 @@ export VLLM_USE_V1=1
 export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
 export VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
 
-# Find the directory where rllm package is located
-RLLM_DIR=$(python3 -c "import rllm; import os; print(os.path.dirname(os.path.dirname(rllm.__file__)))")
+# Find the directory where pettingllms package is located
+pettingllms_DIR=$(python3 -c "import pettingllms; import os; print(os.path.dirname(os.path.dirname(pettingllms.__file__)))")
 
 python3 -m examples.frozenlake.train_frozenlake_agent \
     algorithm.adv_estimator=grpo \
-    data.train_files=${RLLM_DIR}/data/rllm-miniwob/train.parquet \
-    data.val_files=${RLLM_DIR}/data/rllm-miniwob/test.parquet \
+    data.train_files=${pettingllms_DIR}/data/pettingllms-miniwob/train.parquet \
+    data.val_files=${pettingllms_DIR}/data/pettingllms-miniwob/test.parquet \
     data.train_batch_size=8 \
     data.val_batch_size=128 \
     data.max_prompt_length=16384 \
@@ -53,7 +53,7 @@ python3 -m examples.frozenlake.train_frozenlake_agent \
     algorithm.clip_advantages=False \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='rllm-agent' \
+    trainer.project_name='pettingllms-agent' \
     trainer.experiment_name='1.7b-miniwob_agent_stepwise_broadcast' \
     trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \

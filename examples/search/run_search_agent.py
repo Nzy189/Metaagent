@@ -5,13 +5,13 @@ from dotenv import load_dotenv
 from local_retrieval_tool import LocalRetrievalTool
 from transformers import AutoTokenizer
 
-from rllm.agents.system_prompts import SEARCH_SYSTEM_PROMPT
-from rllm.agents.tool_agent import ToolAgent
-from rllm.data.dataset import DatasetRegistry
-from rllm.engine.agent_execution_engine import AgentExecutionEngine
-from rllm.environments.tools.tool_env import ToolEnvironment
-from rllm.rewards.reward_fn import search_reward_fn
-from rllm.utils import save_trajectories
+from pettingllms.agents.system_prompts import SEARCH_SYSTEM_PROMPT
+from pettingllms.agents.tool_agent import ToolAgent
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.engine.agent_execution_engine import AgentExecutionEngine
+from pettingllms.environments.tools.tool_env import ToolEnvironment
+from pettingllms.rewards.reward_fn import search_reward_fn
+from pettingllms.utils import save_trajectories
 
 
 def load_search_data(train_size=3000, test_size=100):

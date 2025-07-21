@@ -7,8 +7,8 @@ export VLLM_USE_V1=1
 export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
 export VLLM_ENGINE_ITERATION_TIMEOUT_S=1000000000
 
-# Find the directory where rllm package is located
-RLLM_DIR=$(python3 -c "import rllm; import os; print(os.path.dirname(os.path.dirname(rllm.__file__)))")
+# Find the directory where pettingllms package is located
+pettingllms_DIR=$(python3 -c "import pettingllms; import os; print(os.path.dirname(os.path.dirname(pettingllms.__file__)))")
 
 # DeepCoder base model - 14B parameter DeepSeek-R1 distilled model
 MODEL_PATH=deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
@@ -62,7 +62,7 @@ python3 -m examples.deepcoder.train_deepcoder \
     algorithm.clip_advantages=False \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='rllm-deepcoder' \
+    trainer.project_name='pettingllms-deepcoder' \
     trainer.experiment_name='deepcoder-14b-16k-stage1' \
     trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \

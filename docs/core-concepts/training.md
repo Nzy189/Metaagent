@@ -1,10 +1,10 @@
 # RL Training with AgentTrainer
 
-Training in rLLM uses reinforcement learning algorithms to update agent policies based on rewards. This page explains the training architecture, available algorithms, and how to configure and run training jobs.
+Training in pettingllms uses reinforcement learning algorithms to update agent policies based on rewards. This page explains the training architecture, available algorithms, and how to configure and run training jobs.
 
 ## Overview
 
-The `AgentTrainer` is the high-level interface for training reinforcement learning agents in rLLM. It provides a simplified API that wraps the underlying training infrastructure (verl), allowing you to train custom agents in custom environments without directly managing the complex distributed training setup.
+The `AgentTrainer` is the high-level interface for training reinforcement learning agents in pettingllms. It provides a simplified API that wraps the underlying training infrastructure (verl), allowing you to train custom agents in custom environments without directly managing the complex distributed training setup.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ The AgentTrainer orchestrates several key components:
 
 The AgentTrainer serves as a wrapper over the training engine `verl`. When `trainer.train()` is called, the following process occurs:
 
-**Initialization**: The system initializes the `AgentPPOTrainer`, which inherits from `verl`'s `RayPPOTrainer`. We replace the original trajectory generation logic with rLLM's AgentExecutionEngine.
+**Initialization**: The system initializes the `AgentPPOTrainer`, which inherits from `verl`'s `RayPPOTrainer`. We replace the original trajectory generation logic with pettingllms's AgentExecutionEngine.
 
 **Setup Phase**: The `AgentPPOTrainer` performs the following setup:
 
@@ -30,7 +30,7 @@ The AgentTrainer serves as a wrapper over the training engine `verl`. When `trai
 
 **Training Loop**: For each mini-batch:
 
-   - Data is passed to rLLM's AgentExecutionEngine
+   - Data is passed to pettingllms's AgentExecutionEngine
    - The engine initializes agent-environment pairs to process the mini-batch in parallel
    - Agent trajectories are collected through environment interactions
 
@@ -39,7 +39,7 @@ The AgentTrainer serves as a wrapper over the training engine `verl`. When `trai
    - The trainer transforms trajectories into `verl`'s format
    - Gradient updates are performed using the collected trajectories
 
-For more details, reference `rllm/trainer/agent_ppo_trainer.py`, where we implement our custom RL training flow for agents.
+For more details, reference `pettingllms/trainer/agent_ppo_trainer.py`, where we implement our custom RL training flow for agents.
 
 ## Basic Usage
 
@@ -47,12 +47,12 @@ For more details, reference `rllm/trainer/agent_ppo_trainer.py`, where we implem
 
 ```python
 import hydra
-from rllm.train.agent_trainer import AgentTrainer
-from rllm.agents import YourCustomAgent
-from rllm.environments import YourCustomEnvironment
-from rllm.data import DatasetRegistry
+from pettingllms.train.agent_trainer import AgentTrainer
+from pettingllms.agents import YourCustomAgent
+from pettingllms.environments import YourCustomEnvironment
+from pettingllms.data import DatasetRegistry
 
-@hydra.main(config_path="pkg://rllm.train.config", config_name="ppo_trainer")
+@hydra.main(config_path="pkg://pettingllms.train.config", config_name="ppo_trainer")
 def main(config):
     # Load datasets
     train_dataset = DatasetRegistry.load_dataset("your_dataset", "train")
@@ -77,7 +77,7 @@ def main(config):
 
 ### Main Configuration File
 
-rLLM adopts the same configuration structure as verl's `ppo_trainer.yaml`, with additional rLLM-specific configurations for our AgentExecutionEngine.
+pettingllms adopts the same configuration structure as verl's `ppo_trainer.yaml`, with additional pettingllms-specific configurations for our AgentExecutionEngine.
 
 #### Agent-Specific Configuration
 ```yaml

@@ -15,12 +15,12 @@
 •
 <a href="https://agentica-project.com/" > 🌐 Project Page</a>
 •
-<a href="https://github.com/agentica-project/rllm" > 🧑‍💻 Code</a>
+<a href="https://github.com/agentica-project/pettingllms" > 🧑‍💻 Code</a>
 </p>
 
 <div align="center">
 
-[![Github](https://img.shields.io/badge/RLLM-000000?style=for-the-badge&logo=github&logoColor=000&logoColor=white)](https://github.com/agentica-project/rllm)
+[![Github](https://img.shields.io/badge/pettingllms-000000?style=for-the-badge&logo=github&logoColor=000&logoColor=white)](https://github.com/agentica-project/pettingllms)
 [![Website](https://img.shields.io/badge/Site-%23000000.svg?style=for-the-badge&logo=semanticweb&logoColor=white)](https://www.agentica-project.com) 
 [![Twitter](https://img.shields.io/badge/Agentica-white?style=for-the-badge&logo=X&logoColor=000&color=000&labelColor=white)](https://x.com/Agentica_)
 [![Hugging Face Collection](https://img.shields.io/badge/Agentica-fcd022?style=for-the-badge&logo=huggingface&logoColor=000&labelColor)](https://huggingface.co/agentica-org)
@@ -29,18 +29,18 @@
 
 We introduce DeepSWE-Preview, a reasoning-enabled coding agent trained from scratch from Qwen3-32B with only reinforcement learning (RL). It achieves 59.2% on SWE-Bench-Verified with test-time scaling, reaching SOTA for open-weight coding agents (42.2% Pass@1, 71.0% Pass@16).
 
-DeepSWE is trained using [**rLLM**](https://github.com/agentica-project/rllm), our framework for post-training language agents using high-quality SWE environments from [**R2E-Gym**](https://github.com/R2E-Gym/R2E-Gym). We’ve open-sourced everything—our dataset, code, training, and evaluation logs, for everyone to progress on scaling and improving agents with RL.
+DeepSWE is trained using [**pettingllms**](https://github.com/agentica-project/pettingllms), our framework for post-training language agents using high-quality SWE environments from [**R2E-Gym**](https://github.com/R2E-Gym/R2E-Gym). We’ve open-sourced everything—our dataset, code, training, and evaluation logs, for everyone to progress on scaling and improving agents with RL.
 
 ## Quick Start 🎯
 
 ### 1. 📦 Installation
 ```bash
 # Installing Python 3.10 Environment.
-conda create -n rllm python=3.10 -y
-conda activate rllm
+conda create -n pettingllms python=3.10 -y
+conda activate pettingllms
 
-# Installing RLLM dependencies.
-cd rllm
+# Installing pettingllms dependencies.
+cd pettingllms
 pip install -e ./verl
 pip install -e ./verl[vllm]
 pip install -e .
@@ -58,11 +58,11 @@ pip install -e .
 
 We provide two ways to interface with SWE-based environments.
 
-**rLLM**
+**pettingllms**
 
-rLLM's `SWEEnv` provides a nice wrapper and abstraction on top of `R2E-Gym`. Here is a short code snippet:
+pettingllms's `SWEEnv` provides a nice wrapper and abstraction on top of `R2E-Gym`. Here is a short code snippet:
 ```python
-from rllm.environments.swe.swe import SWEEnv
+from pettingllms.environments.swe.swe import SWEEnv
 from datasets import load_dataset
 
 # load gym dataset
@@ -74,7 +74,7 @@ env.reset()
 env.close()
 ```
 
-For further integration with rLLM's agents, see `run_deepswe.py`.
+For further integration with pettingllms's agents, see `run_deepswe.py`.
 
 **R2E-Gym**
 
@@ -167,7 +167,7 @@ cd R2E-Gym
 python app/app.py --traj_dir "./traj"
 ```
 
-## 🔥 4. Training DeepSWE-Preview with rLLM and R2E-Gym
+## 🔥 4. Training DeepSWE-Preview with pettingllms and R2E-Gym
 
 To train DeepSWE-Preview, we suggest deploying a Kubernetes (K8) cluster on AWS/GCP/Azure. Each node should have a large number of CPUs and diskspace. Each node in our K8 cluster contains 200 CPUs and over 6 TB+ of disk space to store 1000s of Docker images.
 
@@ -175,7 +175,7 @@ To run Kubernetes locally, we suggest installing [`kind`](https://kind.sigs.k8s.
 
 We provide the exact scripts to replicate our training curves in the DeepSWE-Preview blog post. It requires at least 64 GPUs and launches 512 Docker containers in parallel.
 ```bash
-cd rllm/examples/swe
+cd pettingllms/examples/swe
 bash deepswe_32b.sh
 ```
 

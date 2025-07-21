@@ -4,12 +4,12 @@ from datetime import datetime
 
 from transformers import AutoTokenizer
 
-from rllm.agents.code_agent import CompetitionCodingAgent
-from rllm.data.dataset import DatasetRegistry
-from rllm.engine.agent_execution_engine import AgentExecutionEngine
-from rllm.environments.base.single_turn_env import SingleTurnEnvironment
-from rllm.rewards.reward_fn import code_reward_fn
-from rllm.utils import save_trajectories
+from pettingllms.agents.code_agent import CompetitionCodingAgent
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.engine.agent_execution_engine import AgentExecutionEngine
+from pettingllms.environments.base.single_turn_env import SingleTurnEnvironment
+from pettingllms.rewards.reward_fn import code_reward_fn
+from pettingllms.utils import save_trajectories
 
 if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "true"

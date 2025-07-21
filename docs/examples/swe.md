@@ -6,7 +6,7 @@ This example demonstrates training and running [DeepSWE](https://pretty-radio-b7
 
 The DeepSWE examples demonstrate:
 
-- How to use rLLM's SWEAgent for software engineering tasks.
+- How to use pettingllms's SWEAgent for software engineering tasks.
 - How to train DeepSWE with compact filtering.
 - How to evaluate DeepSWE over SWE-Bench-Verified.
 
@@ -75,4 +75,4 @@ DeepSWE training configuration:
 --8<-- "examples/swe/train_deepswe_agent.py"
 ```
 
-For detailed setup instructions, see the [README](https://github.com/agentica-project/rllm/blob/main/examples/swe/README.md) in the deepswe example directory.
+For detailed setup instructions, see the [README](https://github.com/agentica-project/pettingllms/blob/main/examples/swe/README.md) in the deepswe example directory.

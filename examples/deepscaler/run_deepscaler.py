@@ -2,12 +2,12 @@ import asyncio
 
 from transformers import AutoTokenizer
 
-from rllm.agents.math_agent import MathAgent
-from rllm.data.dataset import DatasetRegistry
-from rllm.engine.agent_execution_engine import AgentExecutionEngine
-from rllm.environments.base.single_turn_env import SingleTurnEnvironment
-from rllm.rewards.reward_fn import math_reward_fn
-from rllm.utils import compute_pass_at_k
+from pettingllms.agents.math_agent import MathAgent
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.engine.agent_execution_engine import AgentExecutionEngine
+from pettingllms.environments.base.single_turn_env import SingleTurnEnvironment
+from pettingllms.rewards.reward_fn import math_reward_fn
+from pettingllms.utils import compute_pass_at_k
 
 if __name__ == "__main__":
     import os

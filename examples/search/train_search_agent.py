@@ -1,16 +1,16 @@
 import hydra
 
-from rllm.agents.system_prompts import SEARCH_SYSTEM_PROMPT
-from rllm.agents.tool_agent import ToolAgent
-from rllm.data import DatasetRegistry
-from rllm.environments.tools.tool_env import ToolEnvironment
-from rllm.rewards.reward_fn import search_reward_fn
-from rllm.trainer.agent_trainer import AgentTrainer
+from pettingllms.agents.system_prompts import SEARCH_SYSTEM_PROMPT
+from pettingllms.agents.tool_agent import ToolAgent
+from pettingllms.data import DatasetRegistry
+from pettingllms.environments.tools.tool_env import ToolEnvironment
+from pettingllms.rewards.reward_fn import search_reward_fn
+from pettingllms.trainer.agent_trainer import AgentTrainer
 
 from .local_retrieval_tool import LocalRetrievalTool
 
 
-@hydra.main(config_path="pkg://rllm.trainer.config", config_name="ppo_trainer", version_base=None)
+@hydra.main(config_path="pkg://pettingllms.trainer.config", config_name="ppo_trainer", version_base=None)
 def main(config):
     train_dataset = DatasetRegistry.load_dataset("hotpotqa", "train")
     val_dataset = DatasetRegistry.load_dataset("hotpotqa", "test")

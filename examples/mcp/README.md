@@ -1,6 +1,6 @@
 # MCP (Model Context Protocol) Integration Example
 
-This example demonstrates how to use external MCP servers as tool providers with RLLM's `AgentExecutionEngine`. It runs HotpotQA question-answering evaluation using the Tavily MCP server for web search capabilities.
+This example demonstrates how to use external MCP servers as tool providers with pettingllms's `AgentExecutionEngine`. It runs HotpotQA question-answering evaluation using the Tavily MCP server for web search capabilities.
 
 ## Dependencies
 
@@ -45,7 +45,7 @@ The server should be accessible at `http://localhost:30000/v1`
 
 ### Prerequisites
 
-1. **Python environment** with RLLM installed
+1. **Python environment** with pettingllms installed
 2. **Model server** running on port 30000 (see Model Hosting above)
 3. **Node.js** (for Tavily MCP server)
 4. **Tavily API key** from [https://app.tavily.com/home](https://app.tavily.com/home)
@@ -71,12 +71,12 @@ This will:
 - **`MCPEnvironment`** - Environment that manages MCP server connections and tool execution
 - **`MCPConnectionManager`** - Handles MCP server lifecycle and tool discovery
 
-### Integration with RLLM
+### Integration with pettingllms
 
-The example follows standard RLLM patterns:
+The example follows standard pettingllms patterns:
 - Uses `AgentExecutionEngine` for parallel execution
 - Uses `ToolAgent` for agent logic with search system prompt
-- Integrates with RLLM's evaluation pipeline and reward system
+- Integrates with pettingllms's evaluation pipeline and reward system
 - Saves trajectories in standard format
 
 ## Dataset

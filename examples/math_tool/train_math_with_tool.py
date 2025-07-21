@@ -1,13 +1,13 @@
 import hydra
 
-from rllm.agents import ToolAgent
-from rllm.data.dataset import DatasetRegistry
-from rllm.environments.tools.tool_env import ToolEnvironment
-from rllm.rewards.reward_fn import math_reward_fn
-from rllm.trainer.agent_trainer import AgentTrainer
+from pettingllms.agents import ToolAgent
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.environments.tools.tool_env import ToolEnvironment
+from pettingllms.rewards.reward_fn import math_reward_fn
+from pettingllms.trainer.agent_trainer import AgentTrainer
 
 
-@hydra.main(config_path="pkg://rllm.trainer.config", config_name="ppo_trainer", version_base=None)
+@hydra.main(config_path="pkg://pettingllms.trainer.config", config_name="ppo_trainer", version_base=None)
 def main(config):
     train_dataset = DatasetRegistry.load_dataset("deepscaler_math", "train")
     test_dataset = DatasetRegistry.load_dataset("aime2024", "test")

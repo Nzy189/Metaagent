@@ -1,12 +1,12 @@
 import hydra
 
-from rllm.agents.frozenlake_agent import FrozenLakeAgent
-from rllm.data import DatasetRegistry
-from rllm.environments.frozenlake.frozenlake import FrozenLakeEnv
-from rllm.trainer.agent_trainer import AgentTrainer
+from pettingllms.agents.frozenlake_agent import FrozenLakeAgent
+from pettingllms.data import DatasetRegistry
+from pettingllms.environments.frozenlake.frozenlake import FrozenLakeEnv
+from pettingllms.trainer.agent_trainer import AgentTrainer
 
 
-@hydra.main(config_path="pkg://rllm.trainer.config", config_name="ppo_trainer", version_base=None)
+@hydra.main(config_path="pkg://pettingllms.trainer.config", config_name="ppo_trainer", version_base=None)
 def main(config):
     train_dataset = DatasetRegistry.load_dataset("frozenlake", "train")
     val_dataset = DatasetRegistry.load_dataset("frozenlake", "test")

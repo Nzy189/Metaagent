@@ -2,8 +2,8 @@ import json
 
 from datasets import load_dataset
 
-from rllm.data.dataset import DatasetRegistry
-from rllm.data.utils import fetch_live_code_bench_system_prompt
+from pettingllms.data.dataset import DatasetRegistry
+from pettingllms.data.utils import fetch_live_code_bench_system_prompt
 
 
 def prepare_deepcoder_data(train_size: int = None, test_size: int = None):

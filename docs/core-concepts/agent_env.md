@@ -1,10 +1,10 @@
 # Agent and Environment
 
-This guide explains how the two main components in rLLM work together: **agents** and **environments**. You'll learn about their core interfaces, interaction patterns, and how to implement your own custom agents and environments.
+This guide explains how the two main components in pettingllms work together: **agents** and **environments**. You'll learn about their core interfaces, interaction patterns, and how to implement your own custom agents and environments.
 
 ## Overview
 
-rLLM uses a modular approach where agents act as intelligent decision-makers and environments provide tasks and feedback. This separation enables:
+pettingllms uses a modular approach where agents act as intelligent decision-makers and environments provide tasks and feedback. This separation enables:
 
 - **Modular development**: Components can be built and tested independently
 - **Flexible reuse**: The same agent can work across different environments
@@ -12,14 +12,14 @@ rLLM uses a modular approach where agents act as intelligent decision-makers and
 
 ## Agents
 
-Agents are the core components in rLLM that generate intelligent actions based on environmental observations. They serve as the bridge between language models and interactive environments, enabling autonomous problem-solving and decision-making.
+Agents are the core components in pettingllms that generate intelligent actions based on environmental observations. They serve as the bridge between language models and interactive environments, enabling autonomous problem-solving and decision-making.
 
 ### BaseAgent Interface
 
 All agents inherit from the `BaseAgent` class, which defines the essential methods for environment interaction:
 
 ```python
-from rllm.agents.agent import BaseAgent, Step, Trajectory
+from pettingllms.agents.agent import BaseAgent, Step, Trajectory
 
 class BaseAgent(ABC):
     @abstractmethod
@@ -68,10 +68,10 @@ Environments complement agents by defining the tasks, evaluation criteria, and i
 
 ### BaseEnv Interface
 
-All environments in rLLM inherit from the `BaseEnv` class, which follows the Gymnasium interface with rLLM-specific extensions:
+All environments in pettingllms inherit from the `BaseEnv` class, which follows the Gymnasium interface with pettingllms-specific extensions:
 
 ```python
-from rllm.environments.base.base_env import BaseEnv
+from pettingllms.environments.base.base_env import BaseEnv
 
 class BaseEnv(ABC):
     @abstractmethod
@@ -105,7 +105,7 @@ Each environment handles:
 
 ## The Interaction Cycle
 
-Understanding how agents and environments work together is crucial for effective rLLM usage. The interaction follows a structured cycle that enables learning and adaptation.
+Understanding how agents and environments work together is crucial for effective pettingllms usage. The interaction follows a structured cycle that enables learning and adaptation.
 
 ### Step-by-Step Flow
 
@@ -131,7 +131,7 @@ The `MathAgent` demonstrates how to implement the core agent interface for mathe
 ```python
 from typing import Any, Dict, List
 
-from rllm.agents.agent import BaseAgent, Step, Trajectory
+from pettingllms.agents.agent import BaseAgent, Step, Trajectory
 
 class MathAgent(BaseAgent):
     """
@@ -227,8 +227,8 @@ The `MathEnv` demonstrates how to create an environment that supports self-corre
 
 ```python
 from typing import Any, Dict, Tuple
-from rllm.environments.base.base_env import BaseEnv
-from rllm.rewards.reward_fn import math_reward_fn
+from pettingllms.environments.base.base_env import BaseEnv
+from pettingllms.rewards.reward_fn import math_reward_fn
 
 
 class MathEnv(BaseEnv):
@@ -266,7 +266,7 @@ class MathEnv(BaseEnv):
         """
         self.current_attempt += 1
         
-        # Use rllm's math reward function to evaluate the response
+        # Use pettingllms's math reward function to evaluate the response
         reward_output = math_reward_fn(self.task, action)
         reward = reward_output.reward
         self.is_correct = reward > 0.0
