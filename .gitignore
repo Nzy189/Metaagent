@@ -129,12 +129,26 @@ celerybeat.pid
 
 # Environments
 .env
-.venv
+.pettingllms
 env/
-venv/
+
 ENV/
 env.bak/
-venv.bak/
+pettingllms.bak/
+
+# Virtual environment directories
+pettingllms/bin/
+pettingllms/lib/
+pettingllms/lib64/
+pettingllms/include/
+pettingllms/Scripts/
+pettingllms/pypettingllms.cfg
+.pettingllms/bin/
+.pettingllms/lib/
+.pettingllms/lib64/
+.pettingllms/include/
+.pettingllms/Scripts/
+.pettingllms/pypettingllms.cfg
 
 # Spyder project settings
 .spyderproject
