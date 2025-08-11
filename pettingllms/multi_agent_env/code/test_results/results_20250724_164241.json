@@ -1,0 +1,169 @@
+{
+  "total_tasks": 5,
+  "successful_tasks": 0,
+  "success_rate": 0.0,
+  "average_iterations": 0.0,
+  "average_test_pass_rate": 0.0,
+  "total_errors": 5,
+  "pass@1": 0.0,
+  "pass@5": 0.0,
+  "pass@10": 0.0,
+  "error_statistics": {
+    "timeout_errors": 0,
+    "execution_errors": 0,
+    "output_mismatches": 0,
+    "exceptions": 0,
+    "no_solution": 0
+  },
+  "termination_reasons": {
+    "ERROR: Initial observation must be a dict with a 'question' key.": 5
+  },
+  "evaluation_timestamp": 1753400575.048242,
+  "num_evaluated_tasks": 5,
+  "detailed_results": [
+    {
+      "task_id": "cure_0",
+      "problem_description": "",
+      "expected_output": "",
+      "success": false,
+      "total_iterations": 0,
+      "final_code": "",
+      "final_tests": "",
+      "termination_reason": "ERROR: Initial observation must be a dict with a 'question' key.",
+      "iterations": [],
+      "agent_data": {
+        "agent1": {
+          "original_name": "code_agent",
+          "steps": [],
+          "total_reward": 0.0
+        },
+        "agent2": {
+          "original_name": "test_agent",
+          "steps": [],
+          "total_reward": 0.0
+        }
+      },
+      "code_files": {
+        "code_files": [],
+        "test_files": [],
+        "total_files": 0
+      }
+    },
+    {
+      "task_id": "cure_1",
+      "problem_description": "",
+      "expected_output": "",
+      "success": false,
+      "total_iterations": 0,
+      "final_code": "",
+      "final_tests": "",
+      "termination_reason": "ERROR: Initial observation must be a dict with a 'question' key.",
+      "iterations": [],
+      "agent_data": {
+        "agent1": {
+          "original_name": "code_agent",
+          "steps": [],
+          "total_reward": 0.0
+        },
+        "agent2": {
+          "original_name": "test_agent",
+          "steps": [],
+          "total_reward": 0.0
+        }
+      },
+      "code_files": {
+        "code_files": [],
+        "test_files": [],
+        "total_files": 0
+      }
+    },
+    {
+      "task_id": "cure_2",
+      "problem_description": "",
+      "expected_output": "",
+      "success": false,
+      "total_iterations": 0,
+      "final_code": "",
+      "final_tests": "",
+      "termination_reason": "ERROR: Initial observation must be a dict with a 'question' key.",
+      "iterations": [],
+      "agent_data": {
+        "agent1": {
+          "original_name": "code_agent",
+          "steps": [],
+          "total_reward": 0.0
+        },
+        "agent2": {
+          "original_name": "test_agent",
+          "steps": [],
+          "total_reward": 0.0
+        }
+      },
+      "code_files": {
+        "code_files": [],
+        "test_files": [],
+        "total_files": 0
+      }
+    },
+    {
+      "task_id": "cure_3",
+      "problem_description": "",
+      "expected_output": "",
+      "success": false,
+      "total_iterations": 0,
+      "final_code": "",
+      "final_tests": "",
+      "termination_reason": "ERROR: Initial observation must be a dict with a 'question' key.",
+      "iterations": [],
+      "agent_data": {
+        "agent1": {
+          "original_name": "code_agent",
+          "steps": [],
+          "total_reward": 0.0
+        },
+        "agent2": {
+          "original_name": "test_agent",
+          "steps": [],
+          "total_reward": 0.0
+        }
+      },
+      "code_files": {
+        "code_files": [],
+        "test_files": [],
+        "total_files": 0
+      }
+    },
+    {
+      "task_id": "cure_4",
+      "problem_description": "",
+      "expected_output": "",
+      "success": false,
+      "total_iterations": 0,
+      "final_code": "",
+      "final_tests": "",
+      "termination_reason": "ERROR: Initial observation must be a dict with a 'question' key.",
+      "iterations": [],
+      "agent_data": {
+        "agent1": {
+          "original_name": "code_agent",
+          "steps": [],
+          "total_reward": 0.0
+        },
+        "agent2": {
+          "original_name": "test_agent",
+          "steps": [],
+          "total_reward": 0.0
+        }
+      },
+      "code_files": {
+        "code_files": [],
+        "test_files": [],
+        "total_files": 0
+      }
+    }
+  ],
+  "dataset_info": {
+    "num_samples": 5,
+    "max_iterations": 5
+  }
+}

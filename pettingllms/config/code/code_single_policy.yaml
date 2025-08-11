@@ -1,0 +1,30 @@
+# Configuration for Code multi-agent training with SINGLE shared policy
+# Both code_generator and test_generator use the same policy (Qwen/Qwen2.5-Coder-3B)
+
+# Inherit from base configuration
+defaults:
+  - code_base
+  - _self_
+# Shared model configurations
+models:
+  model_0:
+    path: Qwen/Qwen2.5-Coder-3B
+    name: "code_generator_model"
+    ppo_trainer_config:
+    # Inherit from base.yaml and override specific settings
+      defaults:
+        - base  # This will inherit all configurations from base.yaml
+    
+# Multi-agent configuration for single policy
+agent_policy_configs:
+  # Number of agents to train
+  num_agents: 2
+  policy_list: ["code_generator"]
+  agent_configs:
+    agent_0:
+      name: "code_generator"
+      policy_name: "code_generator_model" # Both agents use the same policy
+      
+    agent_1:
+      name: "test_generator"
+      policy_name: "code_generator_model"  # Both agents use the same policy

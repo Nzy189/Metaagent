@@ -37,7 +37,7 @@ install-other:
 	pip install fastapi uvicorn latex2sympy2 pylatexenc nltk scikit-image
 	pip install swebench e2b_code_interpreter jupyter ipython notebook
 	pip install fire gdown tabulate sortedcontainers PyMuPDF together wandb pybind11 gym
-	pip install "tqdm>=4.67.0" rich "antlr4-python3-runtime>=4.9.0,<5.0.0" "pydantic>=2.11.0,<3.0.0"
+    pip install "tqdm>=4.67.0" rich "antlr4-python3-runtime==4.7.2" "pydantic>=2.11.0,<3.0.0"
 
 # 6. 开发工具
 install-dev:

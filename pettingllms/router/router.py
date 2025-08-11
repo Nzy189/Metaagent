@@ -66,21 +66,19 @@ async def poll_completions_openai(address: str, **completions_request) -> Comple
 
 class Router:
     """
-    Router chooses the least-used server address from a static list of
-    server addresses across multiple processes using asyncio locks.
+    Least-used routing by address. Each model/policy has its own Router instance.
     """
 
     def __init__(self, config, tokenizer, addresses: list[str]):
-        # List of "ip:port" strings
-        self.addresses = addresses
+        # A set of "ip:port" addresses
+        self.addresses = addresses or []
         self.tensor_parallel_size = config.actor_rollout_ref.rollout.get("tensor_model_parallel_size", 1)
         self._lock = asyncio.Lock()
-        self._usage: dict[str, int] = {}
+        # Track usage count for each address
+        self._usage: dict[str, int] = {addr: 0 for addr in self.addresses}
+        # Pin application_id to an address to improve data locality
         self._application_id_to_address: dict[str, str] = {}
-        # Initialize usage counts for any new addresses
-        for addr in self.addresses:
-            if addr not in self._usage:
-                self._usage[addr] = 0
+
         self.counter = 0
         self.config = config
         self.tokenizer = tokenizer
@@ -91,31 +89,32 @@ class Router:
 
     async def get_address(self, application_id: str) -> str:
         """
-        Pick the server address with the smallest usage count and increment its counter.
+        Select the least-used address and increment its usage count.
         """
         async with self._lock:
+            if not self._usage:
+                raise RuntimeError("Router has no available addresses")
+
             min_address, min_usage = min(self._usage.items(), key=lambda x: x[1])
             if application_id not in self._application_id_to_address:
                 self._application_id_to_address[application_id] = min_address
-                self._usage[min_address] += 1
+                self._usage[min_address] = self._usage.get(min_address, 0) + 1
             else:
-                # Data locality
+                # Try to keep data locality while roughly balancing load
                 cur_address = self._application_id_to_address[application_id]
-                cur_usage = self._usage[cur_address]
-                # Load balance if there is skew
+                cur_usage = self._usage.get(cur_address, 0)
                 if (min_usage == 0 or cur_usage - min_usage >= 4) and cur_usage > 0:
                     self._application_id_to_address[application_id] = min_address
-                    self._usage[min_address] += 1
+                    self._usage[min_address] = self._usage.get(min_address, 0) + 1
                 else:
-                    self._usage[cur_address] += 1
+                    self._usage[cur_address] = self._usage.get(cur_address, 0) + 1
         return self._application_id_to_address[application_id]
 
     async def release_address(self, addr: str, application_id: str) -> None:
-        """
-        Decrement the usage count for a server address when done.
-        """
+        """当前 application 的请求完成后，释放一次占用计数。"""
         async with self._lock:
-            self._usage[addr] = max(0, self._usage.get(addr, 0) - 1)
+            if addr in self._usage:
+                self._usage[addr] = max(0, self._usage.get(addr, 0) - 1)
 
     async def generate_sequences(self, batch: DataProto, application_id: str, **sampling_params):
         kwargs = dict(

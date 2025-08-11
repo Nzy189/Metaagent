@@ -142,13 +142,13 @@ pettingllms/lib/
 pettingllms/lib64/
 pettingllms/include/
 pettingllms/Scripts/
-pettingllms/pypettingllms.cfg
+pettingllms/pyvenv.cfg
 .pettingllms/bin/
 .pettingllms/lib/
 .pettingllms/lib64/
 .pettingllms/include/
 .pettingllms/Scripts/
-.pettingllms/pypettingllms.cfg
+.pettingllms/pyvenv.cfg
 
 # Spyder project settings
 .spyderproject
@@ -186,10 +186,60 @@ cython_debug/
 # DS_Store
 .DS_Store
 
+# Project specific ignores
+scripts copy/
+**/scripts copy/
+data/.cache/
+**/cache/
+*.egg-info/
+pettingllms.egg-info/
+ragen.egg-info/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vim/
+.nvim/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
 # Ignore verl script outputs.
 **/outputs/
 **/wandb/
 **/checkpoints/
+
+# Machine Learning and AI specific
+models/
+*.model
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.pth
+*.pt
+*.onnx
+*.tflite
+runs/
+tensorboard/
+mlruns/
+lightning_logs/
+.neptune/
+
+# Hugging Face cache
+.cache/
+huggingface_hub/
 
 # Ignore parquet files.
 data/* 
@@ -211,3 +261,29 @@ pettingllms/data/train/code/livecodebench.json
 pettingllms/data/train/code/kodcode.json
 pettingllms/data/train/code/primeintellect.json
 pettingllms/data/train/code/primeintellect_dedupe.json
+
+# Build and deployment
+dist/
+build/
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# Version control
+.git/
+.gitmodules
+.git-credentials
+
+# Documentation build
+docs/_build/
+site/
+_site/
+.jekyll-cache/
+.sass-cache/
+
+# Local configuration
+local_config.py
+local_settings.py
+.local/
+config.local.*

@@ -1,0 +1,49 @@
+{
+  "total_tasks": 5,
+  "successful_tasks": 0,
+  "success_rate": 0.0,
+  "average_iterations": 0.0,
+  "average_test_pass_rate": 0.0,
+  "total_errors": 5,
+  "pass@1": 0.0,
+  "pass@5": 0.0,
+  "pass@10": 0.0,
+  "error_statistics": {
+    "timeout_errors": 0,
+    "execution_errors": 0,
+    "output_mismatches": 0,
+    "exceptions": 0,
+    "no_solution": 0
+  },
+  "termination_reasons": {
+    "unknown": 5
+  },
+  "evaluation_timestamp": 1753399121.1755064,
+  "num_evaluated_tasks": 5,
+  "detailed_results": [
+    {
+      "task_id": "mock_problem_1",
+      "error": "CodeTestEnv.__init__() got an unexpected keyword argument 'max_steps'"
+    },
+    {
+      "task_id": "mock_problem_2",
+      "error": "CodeTestEnv.__init__() got an unexpected keyword argument 'max_steps'"
+    },
+    {
+      "task_id": "mock_problem_3",
+      "error": "CodeTestEnv.__init__() got an unexpected keyword argument 'max_steps'"
+    },
+    {
+      "task_id": "mock_problem_4",
+      "error": "CodeTestEnv.__init__() got an unexpected keyword argument 'max_steps'"
+    },
+    {
+      "task_id": "mock_problem_5",
+      "error": "CodeTestEnv.__init__() got an unexpected keyword argument 'max_steps'"
+    }
+  ],
+  "dataset_info": {
+    "num_samples": 5,
+    "max_iterations": 5
+  }
+}

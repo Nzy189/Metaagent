@@ -74,6 +74,9 @@ dependencies = [
     "pybind11",
     "gym",
 
+    # Grammar runtime: pinned for compatibility with latex2sympy2
+    "antlr4-python3-runtime==4.7.2",
+
     # Development and testing
     "pytest",
     "pre-commit",
