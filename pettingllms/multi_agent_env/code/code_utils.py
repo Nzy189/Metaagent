@@ -655,7 +655,7 @@ def extract_code_from_response(response: str) -> str:
     matches = re.findall(python_pattern, response, re.DOTALL)
     
     if matches:
-        return matches[-1].strip()  # 返回最后一个代码块
+        return matches[-1].strip()  # Return the last code block
     
     # Look for generic code block
     code_pattern = r'```\s*(.*?)```'

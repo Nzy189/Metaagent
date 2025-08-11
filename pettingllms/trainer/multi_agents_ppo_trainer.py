@@ -106,6 +106,7 @@ class MultiAgentsPPOTrainer:
                     self.ppo_trainer_dict[model_name] = ppo_trainer
                     self.tokenizer_dict[model_name] = model_tokenizer
                     colorful_print(f"PPO trainer created for model: {model_name}", "green")
+        colorful_print(f"the number of ppo_trainer_dict: {len(self.ppo_trainer_dict)}", "green")
         
         colorful_print(f"Number of PPO trainers: {len(self.ppo_trainer_dict)}", "cyan")
         colorful_print(f"Number of agent mappings: {len(self.agent_policy_mapping)}", "cyan")

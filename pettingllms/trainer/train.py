@@ -16,8 +16,8 @@ from verl.trainer.ppo.reward import load_reward_manager
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
 def main(config: DictConfig):
     OmegaConf.to_yaml(config)
-    print(config.models.model_0.ppo_trainer_config.actor_rollout_ref.model.path)
-    print(config.models.model_1.ppo_trainer_config.actor_rollout_ref.model)
+    #print(config.models.model_0.ppo_trainer_config.actor_rollout_ref.model.path)
+    #print(config.models.model_1.ppo_trainer_config.actor_rollout_ref.model)
     #print(config.models.model_0.ppo_trainer_config)
 
     run_ppo(config)

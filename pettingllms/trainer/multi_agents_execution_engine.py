@@ -18,7 +18,7 @@ from pettingllms.trainer.multiagentssys_register import AGENT_CLASS_MAPPING, ENV
 from functools import partial
 import multiprocessing
 
-from pettingllms.multiagentsys.base.env import Env, EnvBatch
+from pettingllms.multi_agent_env.base.env import Env, EnvBatch
 from pettingllms.misc import colorful_print
 from pettingllms.parser.chat_template.parser import ChatTemplateParser
 from pettingllms.router.router import Router

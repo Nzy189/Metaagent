@@ -519,7 +519,7 @@ class FrontendDesignAgentGraph:
                     "visual_response": "",
                     "code_response": "",
                     "task_description": None,
-                    "env_info": {}  # 添加环境info信息存储
+                    "env_info": {}  # Store environment info
                 }
                 
                 for agent_name, agent_data in step_update_data.items():

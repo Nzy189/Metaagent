@@ -41,7 +41,7 @@ class UnitTestGenerationAgent(Agent):
         - If either state.current_code or state.current_test_input is None/empty, prompt to generate test cases.
         - Otherwise, refine or correct tests based on existing code and test cases.
         """
-        # 保存环境数据
+        # Save environment data
         self.env_data = env_data
 
         state = getattr(env_data, "state", None)
@@ -160,11 +160,11 @@ class UnitTestGenerationAgent(Agent):
         golden_pass_ratio = 0.0
 
         if state is not None:
-            # 生成测试 vs 生成代码
+            # Generated tests vs generated code
             gen_vs_gen = getattr(state, "generated_test_vs_generated_code_match_ratio", None)
-            # 生成测试 vs 黄金代码（作为回退）
+            # Generated tests vs golden code (as fallback)
             gen_vs_gold = getattr(state, "generated_test_vs_golden_code_match_ratio", None)
-            # 黄金测试 vs 生成代码
+            # Golden tests vs generated code
             gold_vs_gen = getattr(state, "golden_test_vs_generated_code_match_ratio", None)
 
             if isinstance(gen_vs_gen, (int, float)):
@@ -183,7 +183,7 @@ class UnitTestGenerationAgent(Agent):
         else:
             reward = generated_pass_ratio + golden_pass_ratio
 
-        # 记录并返回
+        # Record and return
         self.agent_data.agent_reward = reward
         if self.agent_data.info is None:
             self.agent_data.info = {}

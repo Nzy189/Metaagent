@@ -14,21 +14,21 @@ def run_pip_install(packages, description=""):
         print(f"\n🔧 {description}")
     
     for package in packages:
-        print(f"📦 Installing {package}...")
+        print(f"📦 正在安装 {package}...")
         try:
             result = subprocess.run([
                 sys.executable, "-m", "pip", "install", package
             ], check=True, capture_output=True, text=True)
-            print(f"✅ Successfully installed {package}")
+            print(f"✅ 安装成功 {package}")
         except subprocess.CalledProcessError as e:
-            print(f"❌ Failed to install {package}")
-            print(f"Error: {e.stderr}")
+            print(f"❌ 安装失败 {package}")
+            print(f"错误信息: {e.stderr}")
             return False
         time.sleep(1)  # Short delay to avoid potential concurrency issues
     return True
 
 def main():
-    print("🚀 Start installing PettingLLMs dependencies in order...")
+    print("🚀 开始按顺序安装 PettingLLMs 依赖...")
     
     # Group 1: Basic build tools and core deps
     basic_deps = [
@@ -131,32 +131,32 @@ def main():
         "pymdown-extensions>=10.0.0",
     ]
     
-    # Install each group in sequence
+    # 按顺序安装各组
     install_groups = [
-        (basic_deps, "Install basic build tools"),
-        (torch_deps, "Install PyTorch ecosystem"),
-        (ml_deps, "Install core ML libraries"),
-        (compiled_deps, "Install packages requiring compilation"),
-        (other_deps, "Install other dependencies"),
-        (dev_deps, "Install development tools"),
+        (basic_deps, "安装基础构建工具"),
+        (torch_deps, "安装 PyTorch 生态"),
+        (ml_deps, "安装基础机器学习库"),
+        (compiled_deps, "安装需要编译的包"),
+        (other_deps, "安装其他依赖"),
+        (dev_deps, "安装开发工具"),
     ]
     
     for deps, description in install_groups:
         if not run_pip_install(deps, description):
-            print(f"❌ Installation failed, stopping at: {description}")
+            print(f"❌ 安装失败，停止于: {description}")
             return False
     
-    print("\n🎉 All dependencies installed!")
+    print("\n🎉 所有依赖安装完成！")
     
-    # 最后以可编辑模式安装项目本身
-    print("\n📦 Installing project in editable mode...")
+    # Finally install the project itself in editable mode
+    print("\n📦 以可编辑模式安装项目...")
     try:
         subprocess.run([
             sys.executable, "-m", "pip", "install", "-e", ".", "--no-deps"
         ], check=True)
-        print("✅ Project installed successfully!")
+        print("✅ 项目安装成功！")
     except subprocess.CalledProcessError as e:
-        print(f"❌ Project installation failed: {e}")
+        print(f"❌ 项目安装失败: {e}")
         return False
         
     return True

@@ -10,28 +10,23 @@ export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
 export VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
 export HYDRA_FULL_ERROR=1
 
-# 确保能找到 CUDA 运行时库（libcudart）
+
 export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda}
 export LD_LIBRARY_PATH=$CUDA_HOME/targets/x86_64-linux/lib:${LD_LIBRARY_PATH}
-# 一些系统使用 lib64 目录
+
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}
 
-# 修复配置路径，确保正确引用 code 命名空间下的配置
 model_0_config_path="models.model_0.ppo_trainer_config"
-model_1_config_path="models.model_1.ppo_trainer_config"
 train_data_size=256
 val_data_size=128
 model_0_data_dir=~/data/code/model_0
-model_1_data_dir=~/data/code/model_1
+
 
 model_0_USE_GRPO="$model_0_config_path.algorithm.adv_estimator=grpo $model_0_config_path.actor_rollout_ref.actor.use_kl_loss=True"
-model_1_USE_GRPO="$model_1_config_path.algorithm.adv_estimator=grpo $model_1_config_path.actor_rollout_ref.actor.use_kl_loss=True"
 
 model_0_resource="$model_0_config_path.trainer.n_gpus_per_node=1 $model_0_config_path.trainer.nnodes=1"
-model_1_resource="$model_1_config_path.trainer.n_gpus_per_node=1 $model_1_config_path.trainer.nnodes=1"
 
 model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/train.parquet +$model_0_config_path.data.val_files=$model_0_data_dir/text/test.parquet"
-model_1_data="+$model_1_config_path.data.train_files=$model_1_data_dir/text/train.parquet +$model_1_config_path.data.val_files=$model_1_data_dir/text/test.parquet"
 
 python3 -m pettingllms.data.preprocess.prepare \
     --mode 'text' \
@@ -39,11 +34,6 @@ python3 -m pettingllms.data.preprocess.prepare \
     --local_dir $model_0_data_dir \
     --val_data_size $((val_data_size * 2)) # evaluate 2 × val_data_size tasks during each iteration
 
-python3 -m pettingllms.data.preprocess.prepare \
-    --mode 'text' \
-    --train_data_size $train_data_size \
-    --local_dir $model_1_data_dir \
-    --val_data_size $((val_data_size * 2)) # evaluate 2 × val_data_size tasks during each iteration
 
-python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_two_policies \
+python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_single_policy \
     $model_0_USE_GRPO $model_1_USE_GRPO $model_0_resource $model_1_resource $model_0_data $model_1_data
