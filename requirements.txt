@@ -25,6 +25,7 @@ sentence-transformers
 openai>=1.68.2,<1.76.0
 together>=0.21.0
 anthropic
+sglang
 
 ######## Numeric / dataframe
 numpy<2.0.0
@@ -84,6 +85,7 @@ kubernetes
 ######## CLI / utilities / PDF
 IPython
 matplotlib
+Pillow
 fire
 gdown
 tabulate
