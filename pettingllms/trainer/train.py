@@ -32,7 +32,7 @@ def run_ppo(config):
 
 
 @ray.remote(num_cpus=1)  # please make sure main_task is not scheduled on head
-def train_multi_agents(config, agent_args=None, env_args=None):
+def train_multi_agents(config):
     # print initial config
     from pprint import pprint
 

@@ -33,6 +33,8 @@ from typing import Dict
 from pettingllms.router.router import Router
 from verl.utils.profiler.performance import _timer
 from verl.trainer.ppo.reward import load_reward_manager
+from pettingllms.trainer.utils import AsyncLLMServerManager, initialize_llm_servers
+import ray
 
 def colorful_print(text, color="white"):
     """Simple colorful print function for debugging"""
@@ -110,26 +112,39 @@ class MultiAgentsPPOTrainer:
         
         colorful_print(f"Number of PPO trainers: {len(self.ppo_trainer_dict)}", "cyan")
         colorful_print(f"Number of agent mappings: {len(self.agent_policy_mapping)}", "cyan")
-        
- 
+
+
+
+
 
     def init_multi_agent_sys_execution_engine(self):
+        from verl.workers.rollout.vllm_rollout.vllm_async_server import AsyncvLLMServer
         # Get the rollout engines and tokenizers from the trainers
         rollout_engine_dict = {}
         tokenizer_dict = {}
-        router_dict = {}
+        server_manager_dict = {}
+        
         for model_name, trainer in self.ppo_trainer_dict.items():
             rollout_engine_dict[model_name] = trainer.actor_rollout_wg
             tokenizer_dict[model_name] = trainer.tokenizer
-            server_addresses = getattr(trainer.actor_rollout_wg, "server_addresses", [])
+
+
+            #TODO: add async_servser_class
+            async_servser_class=AsyncvLLMServer
+            async_llm_servers, server_addresses = initialize_llm_servers(worker_group=trainer.actor_rollout_wg,server_class=async_servser_class,server_config=trainer.config)
+            ray.get([server.init_engine.remote() for server in async_llm_servers])
+
+            
+            #server_addresses = getattr(trainer.async_rollout_manager, "server_addresses", [])
+            server_manager_dict[model_name] = AsyncLLMServerManager(config=trainer.config, async_llm_servers=async_llm_servers)
+ 
             # Construct an independent Router for each model
-            router_dict[model_name] = Router(config=trainer.config, tokenizer=trainer.tokenizer, addresses=server_addresses)
+            
         
         self.agent_execution_engine = MultiAgentsExecutionEngine(
             config=self.config,
             tokenizer_dict=tokenizer_dict,
-            processor_dict=self.processor_dict,
-            router_dict=router_dict,
+            server_manager_dict=server_manager_dict,
             agent_policy_mapping=self.agent_policy_mapping,
         )
 

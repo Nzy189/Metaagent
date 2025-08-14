@@ -35,7 +35,7 @@ data:
 actor_rollout_ref:
   hybrid_engine: True
   model:
-    path: null  # 设置为null，允许被覆盖
+    path: Qwen/Qwen2.5-0.5B-Instruct  # Set to null to allow overriding
     use_shm: False
     external_lib: null
     override_config: { }
@@ -115,7 +115,7 @@ actor_rollout_ref:
     entropy_from_logits_with_chunking: False
   rollout:
     name: vllm
-    mode: sync # sync: LLM, async: AsyncLLM
+    mode: async # sync: LLM, async: AsyncLLM
     chat_scheduler: null # async chat scheduler, e.g verl.schedulers.naive_chat_scheduler.NaiveChatCompletionScheduler
     chat_template: null
     temperature: 1.0
@@ -126,11 +126,11 @@ actor_rollout_ref:
     response_length: 512
     # for vllm rollout
     dtype: bfloat16 # should align with FSDP
-    gpu_memory_utilization: 0.5
+    gpu_memory_utilization: 0.8  # 增加内存利用率
     ignore_eos: False
-    enforce_eager: False
+    enforce_eager: True  # 强制使用eager模式，避免编译问题
     free_cache_engine: False
-    load_format: dummy_dtensor  # safetensors (for huge model, and set use_shm=True); dummy_dtensor: randomly init model weight
+    load_format: auto  # 使用auto而不是dummy_dtensor
     layered_summon: False # for huge model, layered summon can save memory (prevent OOM) but make it slower
     tensor_model_parallel_size: 1
     max_num_batched_tokens: 8192

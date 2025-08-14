@@ -93,7 +93,7 @@ class CodeGenerationAgent(Agent):
                 f"**Explanation:**\nexplanation here."
             )
 
-        self.agent_data.current_prompt = {"text": formatted_prompt, "image": None}
+        self.current_prompt = {"text": formatted_prompt, "image": None}
         
     def update_from_model(self, response: str):
         # Parse the response and update agent_data

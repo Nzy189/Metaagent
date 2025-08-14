@@ -3,7 +3,7 @@
 
 # Inherit from base configuration
 defaults:
-  # 为两个模型分别注入一份 ppo_trainer/base 子树，彼此独立可覆盖
+  # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently
   - ppo_trainer@models.model_0.ppo_trainer_config: base
   - ppo_trainer@models.model_1.ppo_trainer_config: base
   - _self_
@@ -52,13 +52,13 @@ multi_agent_interaction:
 # Shared model configurations
 models:
   model_0:
-    path: Qwen/Qwen2.5-0.5B
+    path: Qwen/Qwen3-0.6B
     name: "code_generator_model"
     ppo_trainer_config:
       actor_rollout_ref:
         model:
           path: ${models.model_0.path}
-    # ppo_trainer_config 由 defaults 注入，上面的设置将覆盖base中的默认值
+    # ppo_trainer_config is injected via defaults; the above settings override the defaults in base
     
   model_1:
     path: Qwen/Qwen2.5-0.5B
@@ -67,7 +67,7 @@ models:
       actor_rollout_ref:
         model:
           path: ${models.model_1.path}
-    # ppo_trainer_config 由 defaults 注入，上面的设置将覆盖base中的默认值
+    # ppo_trainer_config is injected via defaults; the above settings override the defaults in base
 
 # Multi-agent configuration for two policies
 agent_policy_configs:

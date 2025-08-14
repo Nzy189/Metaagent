@@ -5,11 +5,24 @@ from copy import deepcopy
 import aiohttp
 import numpy as np
 import torch
-from openai.types.completion import Completion
+from openai.types.chat import ChatCompletion
 from tensordict import TensorDict
 
 from verl.protocol import DataProto
 from verl.utils.torch_functional import get_response_mask, pad_2d_list_to_length
+from verl.workers.rollout.vllm_rollout import vLLMRollout,vLLMAsyncRollout
+from verl.workers.sharding_manager.fsdp_vllm import FSDPVLLMShardingManager
+from verl.utils import hf_tokenizer
+from verl.experimental.agent_loop import AgentLoopManager
+from verl.workers.fsdp_workers import AsyncActorRolloutRefWorker
+import ray
+from verl.single_controller.ray.base import (
+    RayWorkerGroup,
+    RayResourcePool,
+    RayClassWithInitArgs,
+    create_colocated_worker_cls,
+)
+from verl.workers.rollout.vllm_rollout.vllm_async_server import AsyncvLLMServer
 
 logger = logging.getLogger(__name__)
 
@@ -21,46 +34,62 @@ def _repeat_interleave(value: torch.Tensor | np.ndarray, repeats: int) -> torch.
         return np.repeat(value, repeats, axis=0)
 
 
-async def poll_completions_openai(address: str, **completions_request) -> Completion:
-    # Use aiohttp directly instead of AsyncOpenAI to avoid potential blocking
-    base_url = f"http://{address}/v1/completions"
+async def poll_completions_openai(address: str, **completions_request) -> ChatCompletion | dict:
+    # OpenAI-compatible chat completion endpoint
+    # Build multiple address candidates to be robust to IPv4/IPv6 binding nuances
     headers = {
         "Content-Type": "application/json",
     }
 
-    # Remove meta_info if present
-    if "meta_info" in completions_request:
-        completions_request.pop("meta_info")
-    # Remove extra_headers from the payload
-    if "extra_headers" in completions_request:
-        completions_request.pop("extra_headers")
+    # Remove non-OpenAI fields if present
+    completions_request.pop("meta_info", None)
+    completions_request.pop("extra_headers", None)
+
+    # Normalize address candidates
+    def _format_host(host: str) -> str:
+        # Bracket IPv6 literals
+        if ":" in host and not host.startswith("["):
+            return f"[{host}]"
+        return host
+
+    try:
+        host, port = address.rsplit(":", 1)
+    except ValueError:
+        host, port = address, "80"
+    candidates = [f"{_format_host(host)}:{port}"]
+    # Local fallbacks if the server is on the same node
+    candidates.append(f"127.0.0.1:{port}")
+    candidates.append(f"[::1]:{port}")
 
     max_retries = 3
-    retry_delay = 1  # Initial delay in seconds
+    retry_delay = 1  # seconds
 
+    last_exc = None
     for retry in range(max_retries):
-        try:
-            # Create a new session for each request to avoid blocking
-            async with aiohttp.ClientSession() as session:
-                async with session.post(base_url, json=completions_request, headers=headers, timeout=aiohttp.ClientTimeout(total=2700)) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        raise Exception(f"API request failed with status {response.status}: {error_text}")
-                    result = await response.json()
-                    # Convert the raw JSON response to an OpenAI Completion object
-                    return result
-        except Exception as e:
-            import traceback
+        for cand in candidates:
+            base_url = f"http://{cand}/v1/chat/completions"
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        base_url,
+                        json=completions_request,
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=2700),
+                    ) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            raise Exception(f"API request failed with status {response.status}: {error_text}")
+                        return await response.json()
+            except Exception as e:
+                last_exc = e
+                continue
+        if retry == max_retries - 1:
+            break
+        await asyncio.sleep(retry_delay)
+        retry_delay *= 2
 
-            traceback.print_exc()
-            # If this is the last retry, raise the exception
-            if retry == max_retries - 1:
-                raise e
-            # Exponential backoff
-            await asyncio.sleep(retry_delay)
-            retry_delay *= 2
-
-    # This should never be reached due to the raise in the loop, but mypy requires it
+    if last_exc:
+        raise last_exc
     raise Exception("All retries failed")
 
 
@@ -152,18 +181,18 @@ class Router:
         address = await self.get_address(application_id)
 
         tasks = []
-        # Bug: len(batch) is used later but batch might not have a __len__ method
         batch_size = len(batch.non_tensor_batch["formatted_prompts"])
         batch_response_ids: list[list[int]] = [[] for _ in range(batch_size)]
 
         for batch_index, formatted_prompt in enumerate(batch.non_tensor_batch["formatted_prompts"]):
-            # For Completion API, we need to convert the conversation to a prompt string
+            # Convert to Chat Completions request with single user message
             self.counter += 1
+            messages = [{"role": "user", "content": formatted_prompt}]
             tasks.append(
-                self.submit_completions(  # Changed from submit_chat_completions
+                self.submit_completions(
                     address=address,
                     model=self.model_name,
-                    prompt=formatted_prompt,  # Changed from messages
+                    messages=messages,
                     **kwargs,
                 )
             )
@@ -176,16 +205,41 @@ class Router:
         for batch_index, completions in enumerate(completions_list):
             comps = []
             for choice in completions.get("choices", []):
-                token_ids = choice.get("logprobs", {}).get("tokens", [])
-                token_ids = [int(t.split(":")[1]) for t in token_ids]
+                token_ids = []
+                logprobs = choice.get("logprobs")
+                if isinstance(logprobs, dict):
+                    # vLLM chat logprobs may return structured tokens under content with token_id
+                    content_tokens = logprobs.get("content")
+                    if isinstance(content_tokens, list) and len(content_tokens) > 0:
+                        # Each item may be a dict with token or token_id
+                        for tk in content_tokens:
+                            if isinstance(tk, dict) and "token_id" in tk:
+                                token_ids.append(int(tk["token_id"]))
+                    elif "tokens" in logprobs:
+                        # Legacy support: tokens like ["id:123", ...]
+                        for t in logprobs.get("tokens", []):
+                            try:
+                                token_ids.append(int(str(t).split(":")[1]))
+                            except Exception:
+                                continue
+                if not token_ids:
+                    # Fallback: tokenize the returned text/content
+                    text = None
+                    if isinstance(choice.get("message"), dict):
+                        text = choice["message"].get("content", "")
+                    if text is None:
+                        text = choice.get("text", "")
+                    if text is None:
+                        text = ""
+                    token_ids = self.tokenizer.encode(text, add_special_tokens=False)
                 comps.append(token_ids)
             batch_response_ids[batch_index] = comps
 
         return await self.postprocess_batch(batch, batch_response_ids, kwargs["n"])
 
-    async def submit_completions(self, address, model, prompt, **kwargs):
+    async def submit_completions(self, address, model, **kwargs):
         # Potential blocking: network I/O can block
-        return await poll_completions_openai(address=address, model=model, prompt=prompt, **kwargs)
+        return await poll_completions_openai(address=address, model=model, **kwargs)
 
     async def postprocess_batch(self, batch: DataProto, response_ids: list[list[int]], n: int) -> DataProto:
         # NOTE: For Completion API, batch_completions is a list of lists of strings (not dictionaries)
@@ -246,17 +300,128 @@ class Router:
             batch_size=batch_size,
         )
         return DataProto(batch=output, meta_info=batch.meta_info)
+    
+def test_router_simple():
+    from omegaconf import OmegaConf, open_dict
+    config = OmegaConf.load("pettingllms/config/code/ppo_trainer/base.yaml")
+    test_serve_num=3
+    addresses = []
+    if not ray.is_initialized():
+        ray.init(num_cpus=4)
+    for _ in range(test_serve_num):
+        server = AsyncvLLMServer.options(
+            scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=__import__("ray._raylet")._raylet.NodeID.from_hex(ray.nodes()[0]["NodeID"]),
+                        soft=False,
+                    ),
+            name=f"async_llm_server_{_}",
+        ).remote(config, 3, _, "actor_rollout")
+        address = ray.get(server.get_server_address.remote())
+        addresses.append(address)
+    print(addresses)
+    model_path = "Qwen/Qwen2.5-0.5B-Instruct"
+    tokenizer = hf_tokenizer(model_path, trust_remote_code=True)
+    router = Router(config, tokenizer, addresses)
+    print(router.get_address("test"))
+
+
 
 
 def test_router():
+    import os
+    import gc
+    import torch.distributed as dist
+    from transformers import AutoConfig
+    from omegaconf import OmegaConf, open_dict
+    from verl.utils import hf_tokenizer
+    from verl.workers.rollout.vllm_rollout.vllm_rollout_spmd import vLLMRollout
 
-    router = Router(config=None, tokenizer=None, addresses=["127.0.0.1:8000"])
-    batch = DataProto(batch=None, meta_info=None)
-    response_ids = [[1, 2, 3], [4, 5, 6]]
-    n = 1
-    output = router.postprocess_batch(batch, response_ids, n)
-    print(output)
+
+    if not dist.is_initialized():
+        os.environ.setdefault("RANK", "0")
+        os.environ.setdefault("LOCAL_RANK", "0")
+        os.environ.setdefault("RAY_LOCAL_WORLD_SIZE", "1")
+        os.environ.setdefault("RAY_LOCAL_RANK", "0")
+        os.environ.setdefault("WORLD_SIZE", "1")
+        os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+        os.environ.setdefault("MASTER_PORT", "29500")
+        dist.init_process_group(backend="gloo", rank=0, world_size=1)
+
+
+    model_path = "Qwen/Qwen2.5-0.5B-Instruct"
+    #tokenizer = hf_tokenizer(model_path, trust_remote_code=True)
+
+
+    ppo_config = OmegaConf.load("pettingllms/config/code/ppo_trainer/base.yaml")
+    with open_dict(ppo_config):
+        ppo_config.actor_rollout_ref.model.path = model_path
+        ppo_config.actor_rollout_ref.model.tokenizer_path = model_path
+        ppo_config.actor_rollout_ref.model.use_shm = False
+        ppo_config.actor_rollout_ref.rollout.mode = "async"
+        ppo_config.actor_rollout_ref.rollout.tensor_model_parallel_size = 1
+        if ppo_config.actor_rollout_ref.rollout.get("agent") is None:
+            ppo_config.actor_rollout_ref.rollout.agent = OmegaConf.create({})
+        if ppo_config.actor_rollout_ref.rollout.agent.get("num_workers") is None:
+            ppo_config.actor_rollout_ref.rollout.agent.num_workers = 1
+        if ppo_config.actor_rollout_ref.rollout.agent.get("custom_async_server", "__MISSING__") == "__MISSING__":
+            ppo_config.actor_rollout_ref.rollout.agent.custom_async_server = None
+
+
+    # rollout_config.engine_kwargs.vllm.compilation_config.level = 0
+    # rollout_config.engine_kwargs.vllm.compilation_config.use_cudagraph = False
+    with open_dict(ppo_config):
+        if ppo_config.get("engine_kwargs") is None:
+            ppo_config.engine_kwargs = OmegaConf.create({})
+        if ppo_config.engine_kwargs.get("vllm") is None:
+            ppo_config.engine_kwargs.vllm = OmegaConf.create({})
+        if ppo_config.engine_kwargs.vllm.get("compilation_config") is None:
+            ppo_config.engine_kwargs.vllm.compilation_config = OmegaConf.create({})
+        ppo_config.engine_kwargs.vllm.compilation_config.level = 0
+        ppo_config.engine_kwargs.vllm.compilation_config.use_cudagraph = False
+
+
+    #model_hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        gc.collect()
+    if not ray.is_initialized():
+        ray.init(num_cpus=1)
+
+    use_gpu = torch.cuda.is_available()
+    resource_pool = RayResourcePool(
+        process_on_nodes=[1], use_gpu=use_gpu, name_prefix="actor_rollout", max_colocate_count=1
+    )
+    actor_remote = ray.remote(AsyncActorRolloutRefWorker)
+    actor_cia = RayClassWithInitArgs(
+        cls=actor_remote,
+        config=ppo_config.actor_rollout_ref,
+        role="actor_rollout",
+    )
+    # 使用共置包装 + spawn，模拟训练器创建流程，避免注册中心边缘问题
+    worker_dict_cls = create_colocated_worker_cls({"actor_rollout": actor_cia})
+    wg_top = RayWorkerGroup(
+        resource_pool=resource_pool,
+        ray_cls_with_init=worker_dict_cls,
+        name_prefix="actor_rollout",
+    )
+    spawned = wg_top.spawn(prefix_set={"actor_rollout"})
+    worker_group = spawned["actor_rollout"]
+    worker_group.init_model()
+
+
+    rollout_manager = AgentLoopManager(
+        config=ppo_config,
+        worker_group=worker_group
+    )
+ 
+
+    addresses = getattr(rollout_manager, "server_addresses", [])
+    print("addresses:", addresses)
 
 
 if __name__ == "__main__":
-    test_router()
+    test_router_simple()

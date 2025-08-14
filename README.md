@@ -4,7 +4,7 @@
 <img src="figures/logo.svg" alt="PettingLLMs Logo" width="800">
 </div>
 
-# pettingllms
+# PETTINGLLMS
 
 <div>
 🚀 Reinforcement Learning Framework for Multi LLM Agents🌟

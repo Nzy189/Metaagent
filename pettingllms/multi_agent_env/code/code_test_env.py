@@ -1,4 +1,5 @@
 import logging
+import copy
 import io
 import sys
 import time
@@ -236,11 +237,14 @@ class CodeTestEnv(MultiAgentsEnvironment):
             self.state.generated_test_vs_generated_code_mismatch_ratio = len(failed_cases_dicts) / total
 
 class CodeTestEnvBatch:
-    def __init__(self, env_idx_list: List[int], rollout_idx_list: List[int], max_turns: int, config: dict):
+    def __init__(self, env_idx_list: List[int], rollout_idx_list: List[int], samples: int, max_turns: int, config: dict):
         self.env_list=[]
         self.problem_list=load_problem_batch(config.env.benchmark, len(env_idx_list))
         for i,problem in enumerate(self.problem_list):
             state=CodeTestEnvState(problem=problem["problem"], golden_code=problem["golden_code"], golden_test_input=problem["golden_test_input"], golden_test_output=problem["golden_test_output"])
-            env=CodeTestEnv(env_idx=env_idx_list[i], rollout_idx=rollout_idx_list[i], max_turns=max_turns, config=None)
-            env.state=state
-            self.env_list.append(env)
+            for s in range(samples):
+                env=CodeTestEnv(env_idx=env_idx_list[i], rollout_idx=rollout_idx_list[i*samples+s], max_turns=max_turns, config=None)
+                env.state=copy.deepcopy(state)
+                self.env_list.append(env)
+        if len(self.env_list)!=len(rollout_idx_list):
+            raise ValueError(f"len(self.env_list)!=len(rollout_idx_list), {len(self.env_list)}!={len(rollout_idx_list)}")

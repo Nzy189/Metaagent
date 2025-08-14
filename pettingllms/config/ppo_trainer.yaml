@@ -100,7 +100,7 @@ actor_rollout_ref:
     ulysses_sequence_parallel_size: 1 # sp size
   rollout:
     name: vllm
-    mode: sync # sync: LLM, async: AsyncLLM
+    mode: async # sync: LLM, async: AsyncLLM
     chat_scheduler: null # async chat scheduler, e.g verl.schedulers.naive_chat_scheduler.NaiveChatCompletionScheduler
     chat_template: null
     temperature: 1.0
