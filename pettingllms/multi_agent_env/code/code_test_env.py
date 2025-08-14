@@ -82,9 +82,9 @@ class CodeTestEnv(MultiAgentsEnvironment):
 
    
     def step(self, role: str, action: str):
-        if role == "code_agent":
+        if role == "code_generator":
             self._code_step(action)
-        elif role == "test_agent":
+        elif role == "test_generator":
             self._test_step(action)
         else:
             raise ValueError(f"Invalid role: {role}")

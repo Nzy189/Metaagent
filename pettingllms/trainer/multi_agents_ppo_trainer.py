@@ -30,9 +30,7 @@ from verl.trainer.ppo.ray_trainer import (
 )
 from verl.utils.torch_functional import pad_sequence_to_length
 from typing import Dict
-from pettingllms.router.router import Router
 from verl.utils.profiler.performance import _timer
-from verl.trainer.ppo.reward import load_reward_manager
 from pettingllms.trainer.utils import AsyncLLMServerManager, initialize_llm_servers
 import ray
 

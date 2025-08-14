@@ -17,7 +17,7 @@ from omegaconf import DictConfig, OmegaConf
 from pydantic import BaseModel, ConfigDict
 from tensordict import TensorDict
 from transformers import AutoProcessor, AutoTokenizer
-
+from pettingllms.misc import colorful_print
 
 from verl.protocol import DataProto
 from verl.single_controller.ray.base import RayWorkerGroup
@@ -66,14 +66,12 @@ def initialize_llm_servers(worker_group,server_class,server_config):
     
 
         for rollout_dp_rank, server in servers.items():
-            try:
-                address = ray.get(server.get_server_address.remote())
-                server_addresses[rollout_dp_rank] = address
-                async_llm_servers[rollout_dp_rank] = server
-                unready_dp_ranks.remove(rollout_dp_rank)
-            except Exception:
-                ray.kill(server)
-                print(f"rollout server {rollout_dp_rank} failed, maybe address already in use, restarting...")
+    
+            address = ray.get(server.get_server_address.remote())
+            server_addresses[rollout_dp_rank] = address
+            async_llm_servers[rollout_dp_rank] = server
+            unready_dp_ranks.remove(rollout_dp_rank)
+          
     
     return async_llm_servers, server_addresses
 
@@ -124,6 +122,7 @@ class AsyncLLMServerManager:
         self,
         dpr_prompt:DataProto,
         sampling_params: Optional[dict[str, Any]] = None,
+        tokenizer: Optional[AutoTokenizer] = None,
         image_data: Optional[list[Any]] = None,
         application_id: Optional[str] = None,
     ) -> DataProto:
@@ -140,9 +139,9 @@ class AsyncLLMServerManager:
             application_id (str, optional): Application ID for new usage.
 
         Returns:
-            DataProto: 与 Router 的 generate_sequences 一致的 DataProto 格式输出。
+            DataProto: DataProto format output consistent with Router's generate_sequences.
         """
-        print(f"=== DEBUG: AsyncLLMServerManager.generate 调用 ===")
+        print(f"=== DEBUG: AsyncLLMServerManager.generate call ===")
       
         print(f"dpr_prompt: {dpr_prompt.batch['input_ids']}")
         print(f"sampling_params: {sampling_params}")
@@ -154,53 +153,136 @@ class AsyncLLMServerManager:
      
         
         server = self._choose_server(application_id)
-        print(f"选择的服务器: {server}")
+        print(f"Selected server: {server}")
         
-        output = await server.generate.remote(
-            request_id=application_id,
-            prompt_ids=dpr_prompt.batch['input_ids'],
-            sampling_params=sampling_params,
-        )
-        print(f"output: {output}")
-        """The output  of server.engine.generate
+        # Ensure sampling_params is a dictionary (vLLM requires mapping, not None)
+        if sampling_params is None:
+            sampling_params = {}
+        
+        # Extract prompt_ids from DataProto and convert to list
+        prompt_ids = dpr_prompt.batch['input_ids'][0].tolist() 
+        
+        
+        while prompt_ids and prompt_ids[0] == 151643:
+            prompt_ids.pop(0)
+            
+        colorful_print(f"DEBUG: Removed padding, final prompt_ids length: {len(prompt_ids)}","yellow")
+        colorful_print(f"DEBUG: First 10 tokens: {prompt_ids[:10]}","yellow")
+        
+        # Ensure we have valid tokens
+        if not prompt_ids:
+            raise ValueError("No valid tokens found after removing padding") 
+        
+        # Get max_model_len from config to avoid negative max_tokens
+        rollout_cfg = getattr(self.config, "actor_rollout_ref", None)
+        rollout_cfg = getattr(rollout_cfg, "rollout", None)
+        
+        
+        
+        # Use direct await on Ray remote call - this is the correct async pattern!
+        import asyncio
+        
+        try:
+            # Directly await the Ray remote call with timeout
+            output = await asyncio.wait_for(
+                server.generate.remote(
+                    prompt_ids=prompt_ids,
+                    sampling_params=sampling_params,
+                    request_id=str(application_id),  # Convert UUID to string
+                ),
+                timeout=20.0
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError(f"Generate request timed out after 20 seconds for request {application_id}")
+        except Exception as e:
+            print(f"ERROR in async ray call: {e}")
+            raise
+        colorful_print(f"====begin to decode output====","green")
+        response_str = tokenizer.decode(output, skip_special_tokens=True)
+        colorful_print(f"server output string: {response_str}","green")
 
-    Args:
-        request_id: The unique ID of the request.
-        prompt: The prompt string of the request.
-                For encoder/decoder models, this is the
-                decoder input prompt.
-        prompt_token_ids: The token IDs of the prompt.
-                          For encoder/decoder models, this is the
-                          decoder input prompt token ids.
-        prompt_logprobs: The log probabilities to return per prompt token.
-        outputs: The output sequences of the request.
-        finished: Whether the whole request is finished.
-        metrics: Metrics associated with the request.
-        lora_request: The LoRA request that was used to generate the output.
-        encoder_prompt: The encoder prompt string of the request.
-                        None if decoder-only.
-        encoder_prompt_token_ids: The token IDs of the encoder prompt.
-                                  None if decoder-only.
-        num_cached_tokens: The number of tokens with prefix cache hit.
+        # Transform vLLM output to DataProto
+        # Response ids from vLLM (output is list[int])
+        if not isinstance(output, list):
+            raise TypeError(
+                f"Unexpected output type from server.generate: {type(output)}; expected list[int]"
+            )
+        response_ids_generated = output
 
-    transform to DataProto
+        # Read lengths from config with sensible fallbacks
+        rollout_cfg = getattr(self.config, "actor_rollout_ref", None)
+        rollout_cfg = getattr(rollout_cfg, "rollout", None)
+        prompt_max_len = int(getattr(rollout_cfg, "prompt_length", len(prompt_ids)))
+        response_max_len = int(getattr(rollout_cfg, "response_length", len(response_ids_generated)))
 
-    """
+        # Truncate to fit
+        prompt_ids_tail = prompt_ids[-prompt_max_len:]
+        response_ids_tail = response_ids_generated[:response_max_len]
+
+        # Build tensors: prompts left-pad, responses right-pad
+        device = torch.device("cpu")
+        batch_size = 1
+        pad_token_id = 0
+
+        # prompts
+        prompts_tensor = torch.full((batch_size, prompt_max_len), pad_token_id, dtype=torch.long, device=device)
+        if len(prompt_ids_tail) > 0:
+            prompts_tensor[0, -len(prompt_ids_tail) :] = torch.tensor(
+                prompt_ids_tail, dtype=torch.long, device=device
+            )
+        prompt_attention_mask = torch.zeros((batch_size, prompt_max_len), dtype=torch.long, device=device)
+        if len(prompt_ids_tail) > 0:
+            prompt_attention_mask[0, -len(prompt_ids_tail) :] = 1
+
+        # responses
+        responses_tensor = torch.full((batch_size, response_max_len), pad_token_id, dtype=torch.long, device=device)
+        if len(response_ids_tail) > 0:
+            responses_tensor[0, : len(response_ids_tail)] = torch.tensor(
+                response_ids_tail, dtype=torch.long, device=device
+            )
+        response_attention_mask = torch.zeros((batch_size, response_max_len), dtype=torch.long, device=device)
+        if len(response_ids_tail) > 0:
+            response_attention_mask[0, : len(response_ids_tail)] = 1
+
+        # merge
+        input_ids_tensor = torch.cat([prompts_tensor, responses_tensor], dim=1)
+        attention_mask_tensor = torch.cat([prompt_attention_mask, response_attention_mask], dim=1)
+        position_ids_full = compute_position_id_with_mask(attention_mask_tensor)
+
+        batch_dict = {
+            "prompts": prompts_tensor,
+            "responses": responses_tensor,
+            "response_mask": response_attention_mask,
+            "input_ids": input_ids_tensor,
+            "attention_mask": attention_mask_tensor,
+            "position_ids": position_ids_full,
+        }
+       
+        colorful_print(f"shape of batch_dict_prompts: {batch_dict['prompts'].shape}","cyan")
+        colorful_print(f"shape of batch_dict_responses: {batch_dict['responses'].shape}","cyan")
+        colorful_print(f"shape of batch_dict_response_mask: {batch_dict['response_mask'].shape}","cyan")
+        colorful_print(f"shape of batch_dict_input_ids: {batch_dict['input_ids'].shape}","cyan")
+        colorful_print(f"shape of batch_dict_attention_mask: {batch_dict['attention_mask'].shape}","cyan")
+        colorful_print(f"shape of batch_dict_position_ids: {batch_dict['position_ids'].shape}","cyan")
+        output_dpr = DataProto.from_dict(batch_dict)
+        print(f"output_dpr_keys: {output_dpr}")
+
+        return output_dpr,response_str
             
 
 def convert_prompt_to_dpr(tokenizer, chat_parser, processor, prompts, max_prompt_length, multi_modal=False, **kwargs):
     """
-    将 prompt dict 转换为 veRL 的 DataProto。
+    Convert prompt dict to veRL's DataProto.
     
     Args:
-        tokenizer: HF tokenizer，需支持 apply_chat_template 与 __call__ 分词
-        chat_parser: 预留（当前未使用）
-        prompts: dict，{"text": str, "image": None 或 图片路径}
-        max_prompt_length: 最长 prompt 长度（左侧 padding）
-        multi_modal: 是否多模态（若 True，应同时传入 processor 等必要信息）
-        kwargs: 可选参数，如 processor、meta_info 等
+        tokenizer: HF tokenizer, must support apply_chat_template and __call__ tokenization
+        chat_parser: Reserved (currently unused)
+        prompts: dict, {"text": str, "image": None or image path}
+        max_prompt_length: Maximum prompt length (left padding)
+        multi_modal: Whether multimodal (if True, should also pass processor and other necessary information)
+        kwargs: Optional parameters, such as processor, meta_info, etc.
     Returns:
-        DataProto: 包含张量与非张量信息
+        DataProto: Contains tensor and non-tensor information
     """
     from verl.protocol import DataProto, union_two_dict
     from verl.utils.model import compute_position_id_with_mask
@@ -209,7 +291,7 @@ def convert_prompt_to_dpr(tokenizer, chat_parser, processor, prompts, max_prompt
     import torch
 
     if not isinstance(prompts, dict) or "text" not in prompts:
-        raise ValueError("prompts 必须是包含 'text' 键的字典: {'text': str, 'image': Optional[path]} ")
+        raise ValueError("prompts must be a dictionary containing 'text' key: {'text': str, 'image': Optional[path]} ")
 
     text = prompts.get("text", "") or ""
     image_path = prompts.get("image", None)
@@ -281,20 +363,27 @@ def convert_prompt_to_dpr(tokenizer, chat_parser, processor, prompts, max_prompt
 
 
 def convert_dpr_to_response(tokenizer, chat_parser, dpr, max_prompt_length, multi_modal=False, **kwargs):
-    attn = dpr.batch["attention_mask"][0, max_prompt_length :]
-    tokens = dpr.batch["responses"][0]
+    try:
+        attn = dpr.batch["attention_mask"][0, max_prompt_length :]
+        tokens = dpr.batch["responses"][0]
 
-    # Find last index where attention == 1
-    non_pad_indices = (attn == 1).nonzero(as_tuple=True)[0]
-    if len(non_pad_indices) == 0:
-        trimmed = tokens[:0]  # empty
-    else:
-        last_valid_idx = non_pad_indices[-1].item()
-        trimmed = tokens[: last_valid_idx + 1]  # include the last valid token
+        # Find last index where attention == 1
+        non_pad_indices = (attn == 1).nonzero(as_tuple=True)[0]
+        if len(non_pad_indices) == 0:
+            trimmed = tokens[:0]  # empty
+        else:
+            last_valid_idx = non_pad_indices[-1].item()
+            trimmed = tokens[: last_valid_idx + 1]  # include the last valid token
 
-    response = tokenizer.decode(trimmed, skip_special_tokens=False)
+        response = tokenizer.decode(trimmed, skip_special_tokens=False)
 
-    pad_token = tokenizer.pad_token
-    eos_token = tokenizer.eos_token
-    response = response.replace(pad_token, "").replace(eos_token, "")
+        pad_token = tokenizer.pad_token if tokenizer.pad_token else ""
+        eos_token = tokenizer.eos_token if tokenizer.eos_token else ""
+        response = response.replace(pad_token, "").replace(eos_token, "")
+        
+        # Ensure we always return a string
+        return response if response is not None else ""
+    except Exception as e:
+        print(f"Error in convert_dpr_to_response: {e}")
+        return ""
 

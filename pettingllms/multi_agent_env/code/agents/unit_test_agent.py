@@ -106,7 +106,7 @@ class UnitTestGenerationAgent(Agent):
                 f"**Explanation:**\nexplanation here."
             )
 
-        self.agent_data.current_prompt = {"text": formatted_prompt, "image": None}
+        self.current_prompt = {"text": formatted_prompt, "image": None}
         
         
         
@@ -145,8 +145,8 @@ class UnitTestGenerationAgent(Agent):
         if not test_cases:
             test_cases = [{"input": "", "output": "", "explanation": response.strip()}]
 
-        self.agent_data.current_action = test_cases
-        return self.agent_data.current_action
+        self.current_action = test_cases
+        return self.current_action
     
     def calculate_reward(self, env_data: Env, mode: str = "sum") -> float:
         """
@@ -184,10 +184,10 @@ class UnitTestGenerationAgent(Agent):
             reward = generated_pass_ratio + golden_pass_ratio
 
         # Record and return
-        self.agent_data.agent_reward = reward
-        if self.agent_data.info is None:
-            self.agent_data.info = {}
-        self.agent_data.info.update({
+        self.agent_reward = reward
+        if self.info is None:
+            self.info = {}
+        self.info.update({
             "generated_pass_ratio": generated_pass_ratio,
             "golden_pass_ratio": golden_pass_ratio,
             "reward_mode": m,
@@ -198,4 +198,11 @@ class UnitTestGenerationAgent(Agent):
         """
         Reset the agent's internal state for a new episode.
         """
-        self.agent_data = AgentData()
+        self.current_action = None
+        self.current_prompt = None
+        self.current_response = None
+        self.current_reward = None
+        self.current_info = None
+        self.current_action = None
+        self.current_prompt = None
+        self.current_response = None

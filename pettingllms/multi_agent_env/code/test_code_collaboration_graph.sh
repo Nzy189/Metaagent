@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# 代码生成智能体协作图测试脚本 - 简化版
-# 功能：启动SGLang、清理退出、测试5个样本
+# Code Generation Agent Collaboration Graph Test Script - Simplified Version
+# Function: Start SGLang, cleanup exit, test 5 samples
 
 set -e
 
-# 基本配置
+# Basic configuration
 HOSTNAME="localhost"
 CODE_PORT=8000
 TEST_PORT=8000
@@ -13,14 +13,14 @@ MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 NUM_SAMPLES=5
 OUTPUT_DIR="./test_results"
 
-# 颜色输出
+# Color output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# 日志函数
+# Log functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -37,29 +37,29 @@ log_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
-# 清理端口
+# Cleanup port
 cleanup_port() {
     local port=$1
-    log_info "清理端口 $port..."
+    log_info "Cleaning up port $port..."
     pkill -f ".*python.*sglang.*--port.*$port" 2>/dev/null || true
     lsof -ti:$port | xargs kill -9 2>/dev/null || true
     sleep 2
 }
 
-# 启动SGLang服务器
+# Start server
 start_sglang() {
     local port=$1
     local server_name=$2
     
-    log_info "启动 $server_name SGLang服务器 (端口: $port)..."
+    log_info "Starting $server_name SGLang server (port: $port)..."
     
-    # 清理端口
+    # Clean up port
     cleanup_port $port
     
-    # 创建输出目录
+    # Create output directory
     mkdir -p "$OUTPUT_DIR"
     
-    # 启动服务器
+    # Start server
     local cmd="python -m sglang.launch_server \
         --model-path $MODEL_NAME \
         --port $port \
@@ -67,51 +67,51 @@ start_sglang() {
         --trust-remote-code \
         --dtype auto"
     
-    log_info "执行命令: $cmd"
+    log_info "Executing command: $cmd"
     nohup $cmd > "${OUTPUT_DIR}/${server_name}_${port}.log" 2>&1 &
     
     local pid=$!
     echo $pid > "${OUTPUT_DIR}/${server_name}_${port}.pid"
-    log_success "服务器已启动 (PID: $pid)"
+    log_success "Server started (PID: $pid)"
     
-    # 等待服务器启动
-    log_info "等待服务器启动..."
+    # Wait for server to start
+    log_info "Waiting for server to start..."
     local max_wait=60
     local wait_time=0
     
     while [ $wait_time -lt $max_wait ]; do
         if curl -s --max-time 3 "http://$HOSTNAME:$port/health" >/dev/null 2>&1; then
-            log_success "$server_name 服务器就绪!"
+            log_success "$server_name server ready!"
             return 0
         fi
         sleep 3
         wait_time=$((wait_time + 3))
-        printf "等待中... (${wait_time}s/${max_wait}s)\r"
+        printf "Waiting... (${wait_time}s/${max_wait}s)\r"
     done
     
     echo ""
-    log_error "$server_name 服务器启动超时"
+    log_error "$server_name server startup timeout"
     return 1
 }
 
-# 停止所有SGLang服务器
+# Stop all SGLang servers
 stop_sglang() {
-    log_info "停止SGLang服务器..."
+    log_info "Stopping SGLang servers..."
     
     for port in $CODE_PORT $TEST_PORT; do
         cleanup_port $port
         
-        # 删除PID文件
+        # Delete PID files
         rm -f "${OUTPUT_DIR}"/code_${CODE_PORT}.pid
         rm -f "${OUTPUT_DIR}"/test_${TEST_PORT}.pid
     done
     
-    log_success "SGLang服务器已停止"
+    log_success "SGLang servers stopped"
 }
 
-# 测试连接
+# Test connection
 test_connection() {
-    log_info "测试连接..."
+    log_info "Testing connection..."
     
     python agent_collaboration_graph.py \
         --code-port $CODE_PORT \
@@ -119,9 +119,9 @@ test_connection() {
         --test-mode connectivity
 }
 
-# 运行测试
+# Run test
 run_test() {
-    log_info "运行 $NUM_SAMPLES 个样本测试..."
+    log_info "Running $NUM_SAMPLES sample tests..."
     
     local output_file="$OUTPUT_DIR/results_$(date +%Y%m%d_%H%M%S).json"
     
@@ -130,40 +130,40 @@ run_test() {
         --test-port $TEST_PORT \
         --output-path "$output_file"
     
-    log_success "测试完成，结果保存到: $output_file"
+    log_success "Test completed, results saved to: $output_file"
 }
 
-# 清理函数
+# Cleanup function
 cleanup() {
     echo ""
-    log_info "执行清理..."
+    log_info "Executing cleanup..."
     stop_sglang
 }
 
-# 显示帮助
+# Show help
 show_help() {
-    echo "代码生成智能体协作测试脚本 - 简化版"
+    echo "Code Generation Agent Collaboration Test Script - Simplified Version"
     echo ""
-    echo "用法: $0 [命令]"
+    echo "Usage: $0 [command]"
     echo ""
-    echo "命令:"
-    echo "  start     启动SGLang服务器"
-    echo "  stop      停止SGLang服务器"
-    echo "  test      运行5个样本测试"
-    echo "  clean     清理所有进程和文件"
-    echo "  conn      测试连接"
-    echo "  help      显示帮助"
+    echo "Commands:"
+    echo "  start     Start SGLang servers"
+    echo "  stop      Stop SGLang servers"
+    echo "  test      Run 5 sample tests"
+    echo "  clean     Clean up all processes and files"
+    echo "  conn      Test connection"
+    echo "  help      Show help"
     echo ""
-    echo "无参数运行: 启动服务器 → 测试连接 → 运行测试 → 停止服务器"
+    echo "No parameter run: Start servers → Test connection → Run tests → Stop servers"
 }
 
-# 主函数
+# Main function
 main() {
     local command=${1:-"full"}
     
     case $command in
         "start")
-            echo "启动SGLang服务器..."
+            echo "Starting SGLang servers..."
             start_sglang $CODE_PORT "code"
             if [ $TEST_PORT -ne $CODE_PORT ]; then
                 start_sglang $TEST_PORT "test"
@@ -188,36 +188,36 @@ main() {
             ;;
         "full")
             echo "========================================"
-            echo "  代码生成智能体协作测试 - 简化版"
+            echo "  Code Generation Agent Collaboration Test - Simplified Version"
             echo "========================================"
-            echo "模型: $MODEL_NAME"
-            echo "端口: $CODE_PORT, $TEST_PORT"
-            echo "样本数: $NUM_SAMPLES"
+            echo "Model: $MODEL_NAME"
+            echo "Ports: $CODE_PORT, $TEST_PORT"
+            echo "Samples: $NUM_SAMPLES"
             echo ""
             
             
             #trap cleanup EXIT INT TERM
             
-            # 启动服务器
+            # Start servers
             #start_sglang $CODE_PORT "code" || exit 1
             if [ $TEST_PORT -ne $CODE_PORT ]; then
                 start_sglang $TEST_PORT "test" || exit 1
             fi
             
-            # 测试连接
+            # Test connection
             if test_connection; then
-                log_success "连接测试通过"
+                log_success "Connection test passed"
             else
-                log_warning "连接测试失败，使用模拟模式"
+                log_warning "Connection test failed, using simulation mode"
             fi
             
-            # 运行测试
+            # Run test
             run_test || exit 1
             
-            log_success "所有任务完成!"
+            log_success "All tasks completed!"
             ;;
         *)
-            log_error "未知命令: $command"
+            log_error "Unknown command: $command"
             show_help
             exit 1
             ;;

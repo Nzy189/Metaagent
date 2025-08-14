@@ -75,7 +75,7 @@ def load_problem_batch(
         A list of dicts of length batch_size with keys problem/golden_code/golden_test_input/golden_test_output
     """
     if not DATASETS_AVAILABLE:
-        print("❌ datasets库不可用")
+        print("❌ datasets library unavailable")
         return []
     
     print(f"🔄 Loading {batch_size} problems from dataset {dataset_name}...")
@@ -878,13 +878,13 @@ def print_evaluation_summary(metrics: Dict[str, Any]) -> None:
     
     # Print error statistics
     if "error_statistics" in metrics:
-        print(f"\n❌ 错误统计:")
+        print(f"\n❌ Error statistics:")
         for error_type, count in metrics["error_statistics"].items():
             if count > 0:
                 print(f"  {error_type}: {count}")
 
 
-# =================== 主要评估函数 ===================
+# =================== Main Evaluation Functions ===================
 
 def evaluate_code_generation_task(
     code: str,
@@ -892,21 +892,21 @@ def evaluate_code_generation_task(
     timeout: float = 1.0
 ) -> Dict[str, Any]:
     """
-    评估单个代码生成任务
+    Evaluate single code generation task
     
     Args:
-        code: 生成的代码
-        problem: 问题字典
-        timeout: 执行超时时间
+        code: Generated code
+        problem: Problem dictionary
+        timeout: Execution timeout
         
     Returns:
-        评估结果字典
+        Evaluation result dictionary
     """
-    # 获取测试用例
+    # Get test cases
     test_inputs = problem.get("test_input", [])
     test_outputs = problem.get("test_output", [])
     
-    # 如果没有私有测试用例，使用示例测试用例
+    # If no private test cases, use example test cases
     if not test_inputs or not test_outputs:
         test_inputs = problem.get("example_input", [])
         test_outputs = problem.get("example_output", [])
@@ -914,11 +914,11 @@ def evaluate_code_generation_task(
     if not test_inputs or not test_outputs:
         return {
             "success": False,
-            "error": "没有可用的测试用例",
+            "error": "No available test cases",
             "pass_rate": 0.0
         }
     
-    # 执行评估
+    # Execute evaluation
     reward, detailed_info = evaluate_code_against_tests(
         code, test_inputs, test_outputs, timeout
     )
@@ -942,31 +942,31 @@ def evaluate_test_generation_task(
     timeout: float = 1.0
 ) -> Dict[str, Any]:
     """
-    评估单个测试生成任务
+    Evaluate single test generation task
     
     Args:
-        test_cases: 生成的测试用例列表
-        golden_code: 黄金标准代码
-        timeout: 执行超时时间
+        test_cases: Generated test case list
+        golden_code: Golden standard code
+        timeout: Execution timeout
         
     Returns:
-        评估结果字典
+        Evaluation result dictionary
     """
     if not test_cases:
         return {
             "success": False,
-            "error": "没有生成测试用例",
+            "error": "No test cases generated",
             "pass_rate": 0.0
         }
     
     if not golden_code:
         return {
             "success": False,
-            "error": "没有黄金代码可用",
+            "error": "No golden code available",
             "pass_rate": 0.0
         }
     
-    # 执行评估
+    # Execute evaluation
     reward, detailed_info = evaluate_tests_against_golden_code(
         test_cases, golden_code, timeout
     )
@@ -985,19 +985,19 @@ def evaluate_test_generation_task(
 
 
 def test_load_problem(benchmark: str, batch_size: int):
-    # 获取问题
+    # Get problems
     results= load_problem_batch(
         dataset_name=benchmark,
         batch_size=batch_size
     )
 
     for problem in results:
-        print(f"问题描述: {problem['problem']}")
+        print(f"Problem description: {problem['problem']}")
         print(f"Golden Code: {problem['golden_code']}")
-        print(f"测试用例数量: {len(problem['golden_test_input'])}")
-        print(f"测试用例: {problem['golden_test_input']}")
-        print(f"测试用例输出: {problem['golden_test_output']}")
-    print(f"问题数量: {len(results)}")
+        print(f"Number of test cases: {len(problem['golden_test_input'])}")
+        print(f"Test cases: {problem['golden_test_input']}")
+        print(f"Test case outputs: {problem['golden_test_output']}")
+    print(f"Number of problems: {len(results)}")
 
 if __name__ == "__main__":
     test_load_problem("deepmind/code_contests", 10)

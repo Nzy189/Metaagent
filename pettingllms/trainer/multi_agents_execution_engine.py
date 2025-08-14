@@ -172,13 +172,13 @@ class MultiAgentsExecutionEngine:
         
 
         
-        print(f"=== DEBUG: 开始多轮对话，最大轮数: {self.max_turns} ===")
-        print(f"转换顺序: {self.turn_order}")
-        print(f"可用的 tokenizer: {list(self.tokenizer_dict.keys())}")
-        print(f"可用的 server_manager: {list(self.server_manager_dict.keys())}")
+        print(f"=== DEBUG: Starting multi-turn conversation, max turns: {self.max_turns} ===")
+        print(f"Turn order: {self.turn_order}")
+        print(f"Available tokenizers: {list(self.tokenizer_dict.keys())}")
+        print(f"Available server_managers: {list(self.server_manager_dict.keys())}")
         
         for turn_idx in range(self.max_turns):
-            print(f"\n=== DEBUG: 第 {turn_idx + 1} 轮对话 ===")
+            print(f"\n=== DEBUG: Turn {turn_idx + 1} conversation ===")
             for agent_idx, agent_name in enumerate(self.turn_order):
                 print(f"\n--- Agent {agent_idx}: {agent_name} ---")
                 current_agent = agent_group[agent_idx]
@@ -191,11 +191,11 @@ class MultiAgentsExecutionEngine:
                 if policy_name is None:
                     policy_name = next(iter(self.server_manager_dict.keys())) if self.server_manager_dict else next(iter(self.tokenizer_dict.keys()))
                 
-                print(f"使用的策略: {policy_name}")
-                print(f"tokenizer 类型: {type(self.tokenizer_dict[policy_name])}")
+                print(f"Using policy: {policy_name}")
+                print(f"Tokenizer type: {type(self.tokenizer_dict[policy_name])}")
                 
                 # Convert to DataProto format
-                print("=== DEBUG: 转换 prompt 到 DataProto 格式 ===")
+                print("=== DEBUG: Converting prompt to DataProto format ===")
                 
                 dpr_prompt = convert_prompt_to_dpr(self.tokenizer_dict[policy_name], 
                         self.chat_parser_dict.get(policy_name), 
@@ -206,57 +206,53 @@ class MultiAgentsExecutionEngine:
                    )
                 
                 # Generate responses
-                print("=== DEBUG: 调    用 server_manager.generate ===")
+                print("=== DEBUG: Calling server_manager.generate ===")
                 print(f"application_id: {rollout_id}")
                 try:
-                    output_dpr = await self.server_manager_dict[policy_name].generate(
+                    output_dpr,response_str = await self.server_manager_dict[policy_name].generate(
                         dpr_prompt, 
-                        application_id=rollout_id
+                        application_id=rollout_id,
+                        tokenizer=self.tokenizer_dict[policy_name]
                     )
-                    print(f"server_manager.generate 成功，output 类型: {type(output_dpr)}")
+                    print(f"server_manager.generate successful, output type: {type(output_dpr)}")
                     if hasattr(output_dpr, 'batch'):
                         print(f"output batch keys: {list(output_dpr.batch.keys())}")
                 except Exception as e:
-                    print(f"server_manager.generate 失败: {e}")
+                    print(f"server_manager.generate failed: {e}")
                     import traceback
                     traceback.print_exc()
                     raise
+                colorful_print(f"response_str: {response_str}","green")
+                colorful_print(f"output_dpr: {output_dpr}","yellow")
+               
                 
-                # Convert response format
-                print("=== DEBUG: 转换响应格式 ===")
-                try:
-                    response = convert_dpr_to_response(
-                        self.tokenizer_dict[policy_name], 
-                        self.chat_parser_dict.get(policy_name), 
-                        output_dpr, 
-                        self.max_prompt_length
-                    )
-                    print(f"响应转换成功: {response}")
-                except Exception as e:
-                    print(f"响应转换失败: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    raise
+                current_agent.update_from_model(response_str)
                 
-                current_agent.update_from_model(response)
-                
-                env.step(agent_name, current_agent.action)
+                env.step(agent_name, current_agent.current_action)
                 
                 current_agent.calculate_reward(env,mode="sum")
 
-                output_dpr.non_tensor_batch["reward"] = [current_agent.reward]
-                # union returns a new DataProto, so reassign back
-                trajectory_per_task_dict[policy_name] = trajectory_per_task_dict[policy_name].union(output_dpr)
+                output_dpr.non_tensor_batch["reward"] = [current_agent.agent_reward]
+           
+                if trajectory_per_task_dict[policy_name].batch is None:
+                    # If empty, assign directly
+                    trajectory_per_task_dict[policy_name] = output_dpr
+                else:
+                    # Use concat instead of union, because each response content is different
+                    trajectory_per_task_dict[policy_name] = DataProto.concat([
+                        trajectory_per_task_dict[policy_name], 
+                        output_dpr
+                    ])
                 
-                # 打印轨迹信息
-                print(f"\n=== 轨迹信息 ===")
+
+                print(f"\n=== Trajectory Information ===")
                 print(f"current agent name: {agent_name}")
                 print(f"current agent prompt: {prompt}")
-                print(f"current agent response: {response}")
-                print(f"current agent reward: {current_agent.reward}")
-                print(f"current agent action: {current_agent.action}")
-                print(f"current agent observation: {env.observation}")
-                print(f"=== 轨迹信息结束 ===\n")
+                print(f"current agent response: {response_str}")
+                print(f"current agent reward: {current_agent.agent_reward}")
+                print(f"current agent action: {current_agent.current_action}")
+                print(f"current agent observation: {env.state}")
+                print(f"=== End of Trajectory Information ===\n")
         return trajectory_per_task_dict
         
        
@@ -282,7 +278,7 @@ def test_server_manager_simple(trainer_config,config):
 
     os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
     
-    print(f"=== DEBUG: 开始测试 ===")
+    print(f"=== DEBUG: Starting test ===")
     print(f"trainer_config type: {type(trainer_config)}")
     print(f"config type: {type(config)}")
     print(f"Model path: {trainer_config.actor_rollout_ref.model.path}")
@@ -306,37 +302,45 @@ def test_server_manager_simple(trainer_config,config):
 
         
         ray.get(server.init_engine.remote(), timeout=60)
-        if server.engine is None:
-            raise ValueError("engine is not initialized")
-
         print(f"begin to init server manager")
         from pettingllms.trainer.utils import AsyncLLMServerManager
         from verl.utils import hf_tokenizer
 
-        server_manager = AsyncLLMServerManager(config=trainer_config, server_handles=[server])
+
 
         model_path_local =trainer_config.actor_rollout_ref.model.path
         tokenizer_local = hf_tokenizer(model_path_local, trust_remote_code=True)
+        server_manager = AsyncLLMServerManager(config=trainer_config, server_handles=[server])
         
-        print(f"=== DEBUG: Tokenizer信息 ===")
+        print(f"=== DEBUG: Tokenizer Information ===")
         print(f"tokenizer_local type: {type(tokenizer_local)}")
         print(f"tokenizer_local has keys method: {hasattr(tokenizer_local, 'keys')}")
         
-        # 修复：创建正确的 tokenizer_dict（字典格式）
         tokenizer_dict = {"code_generator": tokenizer_local}
         
         prompt_text = "Hello"
-        prompt_ids = tokenizer_local.encode(prompt_text, add_special_tokens=False)
+        prompt={"text":prompt_text, "image":None}
+    
+        prompt_dpr = convert_prompt_to_dpr(tokenizer_local, None, None, prompt, trainer_config.actor_rollout_ref.rollout.prompt_length, multi_modal=False)
+        prompt_ids = prompt_dpr.batch["input_ids"][0].tolist() 
+        print(f"length of prompt_ids: {len(prompt_ids)}")
+        output_server = ray.get(server.generate.remote(prompt_ids, request_id="test", sampling_params={}))
+        colorful_print(f"test server output: {output_server}","green")
+
+        output_server_manager = asyncio.run(server_manager.generate(prompt_dpr, tokenizer=tokenizer_local, application_id="test", sampling_params={}))
+        colorful_print(f"test server_manager output: {output_server_manager}","green")
+
         print(f"prompt_ids: {prompt_ids}")
         print(f"begin to generate")
         server_manager_dict={}
         server_manager_dict["code_generator"]=server_manager
+        
 
-        print("=== DEBUG: 初始化多智能体执行引擎 ===")
+        print("=== DEBUG: Initializing Multi-Agent Execution Engine ===")
         print(f"tokenizer_dict keys: {list(tokenizer_dict.keys())}")
         print(f"server_manager_dict keys: {list(server_manager_dict.keys())}")
         
-        # 修复：传递正确的 tokenizer_dict
+        # Fix: Pass correct tokenizer_dict
         multi_agent_execution_engine = MultiAgentsExecutionEngine(
             config=config, 
             tokenizer_dict=tokenizer_dict, 
@@ -344,24 +348,24 @@ def test_server_manager_simple(trainer_config,config):
         )
         
         async def _run_manager_gen():
-            print("=== DEBUG: 开始生成单个rollout ===")
+            print("=== DEBUG: Starting single rollout generation ===")
             try:
                 result = await multi_agent_execution_engine.generate_single_rollout(0, None, None)
-                print(f"=== DEBUG: 生成完成，结果类型: {type(result)} ===")
+                print(f"=== DEBUG: Generation completed, result type: {type(result)} ===")
                 return result
             except Exception as e:
-                print(f"=== DEBUG: generate_single_rollout 内部错误: {e} ===")
+                print(f"=== DEBUG: generate_single_rollout internal error: {e} ===")
                 import traceback
                 traceback.print_exc()
                 raise
 
         try:
             dpr = asyncio.run(_run_manager_gen())
-            print(f"[AsyncLLMServerManager.generate] 成功生成！")
+            print(f"[AsyncLLMServerManager.generate] Successfully generated!")
             
-            # 检查返回结果的结构
+            # Check the structure of returned results
             if isinstance(dpr, dict):
-                print(f"返回的是字典，键: {list(dpr.keys())}")
+                print(f"Returned is a dictionary, keys: {list(dpr.keys())}")
                 for key, value in dpr.items():
                     print(f"  {key}: {type(value)}")
                     if hasattr(value, 'batch') and 'prompts' in value.batch:
