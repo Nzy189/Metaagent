@@ -24,7 +24,6 @@ import multiprocessing
 from pettingllms.multi_agent_env.base.env import Env, EnvBatch
 from pettingllms.misc import colorful_print
 from pettingllms.parser.chat_template.parser import ChatTemplateParser
-from pettingllms.router.router import Router
 from pettingllms.trainer.utils import convert_prompt_to_dpr, convert_dpr_to_response
 from threading import Thread
 
