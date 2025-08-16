@@ -82,11 +82,20 @@ def initialize_llm_servers(worker_group,server_class,server_config):
     
 
         for rollout_dp_rank, server in servers.items():
-    
-            address = ray.get(server.get_server_address.remote())
-            server_addresses[rollout_dp_rank] = address
-            async_llm_servers[rollout_dp_rank] = server
-            unready_dp_ranks.remove(rollout_dp_rank)
+            try:
+                address = ray.get(server.get_server_address.remote())
+                server_addresses[rollout_dp_rank] = address
+                async_llm_servers[rollout_dp_rank] = server
+                unready_dp_ranks.remove(rollout_dp_rank)
+            except Exception as e:
+                print(f"Failed to get server address for rank {rollout_dp_rank}: {e}")
+                # 清理失败的 server
+                try:
+                    ray.kill(server)
+                except:
+                    pass
+                # 重新抛出异常，让外层重试逻辑处理
+                raise e
         
         ray.get([server.init_engine.remote() for server in async_llm_servers])
 

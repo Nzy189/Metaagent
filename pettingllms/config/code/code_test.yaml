@@ -10,8 +10,8 @@ defaults:
 # dataset config (shared by all agents)
 data:
   #rollout config
-  gen_batch_size: 4
-  gen_n_samples: 2
+  gen_batch_size: 16
+  gen_n_samples: 4
   sample_temperature: 0.7
 
   # Batch sizes
@@ -30,7 +30,7 @@ resource:
 # Environment configuration (shared by all agents)
 env:
   name: code_env
-  benchmark: "deepmind/code_contests"
+  benchmark: "CodeContests_train"
   max_turns: 8
   resolve: false
   multi_modal: false
@@ -51,7 +51,7 @@ multi_agent_interaction:
 # Shared model configurations
 models:
   model_0:
-    path: Qwen/Qwen2.5-0.5B
+    path: Qwen/Qwen3-4B
     name: "code_generator_model"
     ppo_trainer_config:
       actor_rollout_ref:

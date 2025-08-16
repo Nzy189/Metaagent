@@ -11,11 +11,13 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+datasets/
 downloads/
 eggs/
 .eggs/
 lib/
 lib64/
+log/
 parts/
 sdist/
 var/

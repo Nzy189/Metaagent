@@ -30,7 +30,7 @@ resource:
 # Environment configuration (shared by all agents)
 env:
   name: code_env
-  benchmark: "deepmind/code_contests"
+  benchmark: "CodeContests_train"
   max_turns: 8
   resolve: false
   multi_modal: false
@@ -73,3 +73,7 @@ agent_policy_configs:
     agent_1:
       name: "test_generator"
       policy_name: "code_generator_model"
+
+project_name: pettingllms
+experiment_name: code_single_policy
+logger: [ 'console', 'wandb' ]

@@ -12,13 +12,18 @@ import json
 import io
 import time
 import typing
+import multiprocessing
 import multiprocessing as mp
 import re
 import random
+import asyncio
+import concurrent.futures
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, List, Union
 from tqdm import tqdm
 import numpy as np
 from dataclasses import dataclass
+from huggingface_hub import hf_hub_download
 
 @dataclass
 class evaluate_result:
@@ -72,364 +77,236 @@ def load_problem_batch(
         split: Dataset split ("train", "test", etc.)
         
     Returns:
-        A list of dicts of length batch_size with keys problem/golden_code/golden_test_input/golden_test_output
+        A list of dicts of length batch_size with keys problem/test_input/test_output
     """
     if not DATASETS_AVAILABLE:
         print("❌ datasets library unavailable")
         return []
     
+    # 根据数据集名称确定默认的split，但允许用户覆盖
+    if dataset_name == "CodeContests_train":
+        default_split = "train"
+    else:
+        default_split = "test"
+    
+    # 如果用户没有指定split，使用默认值
+    if split == "train":
+        split = default_split
+    
     print(f"🔄 Loading {batch_size} problems from dataset {dataset_name}...")
     
+    # 首先尝试从本地 datasets 文件夹加载
+    local_dataset_path = None
     try:
-        # Try streaming mode first
-        try:
-            ds = hf_load_dataset(dataset_name, streaming=True)[split]
-            
-            batch_results = []
-            iterator = ds.take(batch_size * 2)  # Take more to ensure enough valid problems
-            
-            for i, example in enumerate(iterator):
-                if len(batch_results) >= batch_size:
-                    break
-                    
-                problem, golden_code, test_input, test_output = _format_competition_problem_with_golden(example, i)
-                if problem:
-                    result_dict = {
-                        "problem": problem,
-                        "golden_code": golden_code,
-                        "golden_test_input": test_input,
-                        "golden_test_output": test_output
-                    }
-                    batch_results.append(result_dict)
-                    print(f"✅ Loaded problem {len(batch_results)}/{batch_size} (index={i})")
-            
-            if batch_results:
-                print(f"✅ Successfully loaded {len(batch_results)} problems")
-                return batch_results
-            else:
-                raise Exception("No valid problems found in streaming mode")
-            
-        except Exception as e:
-            print(f"⚠️ Streaming mode failed: {e}")
-            print("💡 Trying traditional loading method...")
-            
-            # Traditional loading method
-            ds = hf_load_dataset(dataset_name)[split]
-            
-            if len(ds) == 0:
-                print("❌ Dataset is empty")
-                return []
-            
-            batch_results = []
-            max_attempts = min(batch_size * 3, len(ds))  # Try more to ensure enough valid problems
-            
-            for i in range(max_attempts):
-                if len(batch_results) >= batch_size:
-                    break
-                    
-                problem, golden_code, test_input, test_output = _format_competition_problem_with_golden(ds[i], i)
-                if problem:
-                    result_dict = {
-                        "problem": problem,
-                        "golden_code": golden_code,
-                        "golden_test_input": test_input,
-                        "golden_test_output": test_output
-                    }
-                    batch_results.append(result_dict)
-                    print(f"✅ Loaded problem {len(batch_results)}/{batch_size} (index={i})")
-            
-            if batch_results:
-                print(f"✅ Successfully loaded {len(batch_results)} problems")
-                return batch_results
-            else:
-                print("❌ Failed to find valid problems")
-                return []
-            
+        # 检查是否存在本地数据集
+        current_dir = Path(__file__).parent.parent.parent.parent  # 回到 pettingllms 根目录
+        local_datasets_dir = current_dir / "data" / "datasets" / dataset_name.lower().replace("/", "_")
+        
+        # 检查是否存在 parquet 文件
+        parquet_file = local_datasets_dir / f"{split}.parquet"
+        if parquet_file.exists():
+            print(f"📁 Found local dataset at: {local_datasets_dir}")
+            local_dataset_path = str(local_datasets_dir)
+        else:
+            print(f"📁 Local dataset not found at: {local_datasets_dir}")
     except Exception as e:
-        print(f"❌ Failed to load dataset {dataset_name}: {e}")
-        print("💡 Trying fallback method...")
+        print(f"⚠️ Error checking local dataset: {e}")
+    
+    # 如果本地存在数据集，优先使用本地数据
+    if local_dataset_path:
         try:
-            # Fallback: traditional loading
-            ds = hf_load_dataset(dataset_name)[split]
-            if len(ds) == 0:
-                print("❌ Dataset is empty")
+            print(f"🔄 Loading from local dataset: {local_dataset_path}")
+            ds = hf_load_dataset("parquet", data_files=f"{local_dataset_path}/{split}.parquet", split=split)
+            print(f"✅ Successfully loaded local dataset with {len(ds)} samples")
+        except Exception as e:
+            print(f"❌ Error loading local dataset: {e}")
+            local_dataset_path = None
+    
+    # 如果本地加载失败或不存在，则从 Hugging Face 加载
+    if not local_dataset_path:
+        hf_dataset_name = f"Gen-Verse/{dataset_name}"
+        print(f"🌐 Loading from Hugging Face: {hf_dataset_name}")
+        
+        try:
+            # Use streaming=True to avoid downloading the entire dataset
+            ds = hf_load_dataset(hf_dataset_name, split=split, streaming=True)
+        except Exception as e:
+            print(f"❌ Error loading dataset with streaming: {e}")
+            print("💡 Trying fallback method without streaming...")
+            try:
+                # Fallback: load traditional way
+                ds = hf_load_dataset(hf_dataset_name, split=split)
+            except Exception as e2:
+                print(f"❌ Failed to load dataset: {e2}")
                 return []
+    
+    batch_results = []
+    iterator = ds.take(batch_size * 2)  # Take more to ensure enough valid problems
+    
+    for i, example in enumerate(iterator):
+        if len(batch_results) >= batch_size:
+            break
             
-            batch_results = []
-            max_attempts = min(batch_size * 2, len(ds))
-            
-            for i in range(max_attempts):
-                if len(batch_results) >= batch_size:
-                    break
-                    
-                problem, golden_code, test_input, test_output = _format_competition_problem_with_golden(ds[i], i)
-                if problem:
-                    result_dict = {
-                        "problem": problem,
-                        "golden_code": golden_code,
-                        "golden_test_input": test_input,
-                        "golden_test_output": test_output
-                    }
-                    batch_results.append(result_dict)
-                    print(f"✅ Loaded problem {len(batch_results)}/{batch_size} (index={i})")
-            
-            if batch_results:
-                print(f"✅ Fallback succeeded, loaded {len(batch_results)} problems")
-                return batch_results
-            else:
-                print("❌ Fallback did not find valid problems")
-                return []
-                
-        except Exception as e2:
-            print(f"❌ Fallback method also failed: {e2}")
-            return []
+        problem_dict = _format_competition_problem(example, i)
+        if problem_dict:
+            batch_results.append(problem_dict)
+            print(f"✅ Loaded problem {len(batch_results)}/{batch_size} (index={i})")
+    
+    if not batch_results:
+        raise Exception("No valid problems found in streaming mode")
+        
+    print(f"✅ Successfully loaded {len(batch_results)} problems")
+    return batch_results
+
 
 
 def _format_competition_problem(example: Dict, index: int) -> Optional[Dict]:
     """
-    Convert raw dataset example to a unified competition problem format.
+    Convert raw dataset format and extract problem data in the required format.
     
     Args:
         example: Raw dataset sample
         index: Sample index
         
     Returns:
-        Formatted problem dict or None
+        Dict with keys: question, example_input, example_output, test_input, test_output
+        or None if extraction fails
     """
-    try:
-        # Try different dataset formats
-        if "description" in example:
-            # Code Contests format
-            return {
-                "problem_id": f"code_contests_{index}",
-                "question": example["description"],
-                "test_time_limit": example.get("time_limit", 1.0),
-                "example_input": example.get("public_tests", {}).get("input", []),
-                "example_output": example.get("public_tests", {}).get("output", []),
-                "test_input": example.get("private_tests", {}).get("input", []),
-                "test_output": example.get("private_tests", {}).get("output", []),
-                "difficulty": example.get("difficulty", "unknown"),
-                "memory_limit": example.get("memory_limit_bytes", 0)
-            }
-        elif "question" in example:
-            # CURE format
-            return {
-                "problem_id": f"cure_{index}",
-                "question": example["question"],
-                "test_time_limit": example.get("test_time_limit", 1.0),
-                "example_input": example.get("example_input", []),
-                "example_output": example.get("example_output", []),
-                "test_input": example.get("test_input", []),
-                "test_output": example.get("test_output", [])
-            }
-        elif "prompt" in example:
-            # APPS/HumanEval format
-            return {
-                "problem_id": f"apps_{index}",
-                "question": example["prompt"],
-                "test_time_limit": 1.0,
-                "example_input": [],
-                "example_output": [],
-                "test_input": example.get("input_output", {}).get("inputs", []),
-                "test_output": example.get("input_output", {}).get("outputs", [])
-            }
-        else:
-            print(f"⚠️ Unknown data format: {list(example.keys())[:5]}")
-            return None
-            
-    except Exception as e:
-        print(f"⚠️ Failed to format problem {index}: {e}")
-        return None
-
-
-def _format_competition_problem_with_golden(example: Dict, index: int) -> Tuple[Optional[Dict], Optional[str], Optional[List], Optional[List]]:
-    """
-    Convert raw dataset format and extract golden_code and test data.
+    # Check if example is a dictionary
+    if not isinstance(example, dict):
+        raise TypeError(f"Expected dict but got {type(example)} for problem {index}")
     
-    Args:
-        example: Raw dataset sample
-        index: Sample index
-        
-    Returns:
-        (problem, golden_code, test_input, test_output) or (None, None, None, None)
-    """
-    try:
-        # First, format the problem
-        problem = _format_competition_problem(example, index)
-        if not problem:
-            return None, None, None, None
-        
-        # Extract golden_code
-        golden_code = _extract_golden_code(example)
-        
-        # Extract test inputs/outputs
-        test_input = problem.get("test_input", [])
-        test_output = problem.get("test_output", [])
-        
-        return problem, golden_code, test_input, test_output
-            
-    except Exception as e:
-        print(f"⚠️ Failed to format problem {index}: {e}")
-        return None, None, None, None
+    # First, format the problem
+    question = _extract_problem(example)
+    if not question:
+        raise ValueError(f"Failed to extract problem from example {index}")
+    
+    # Extract example inputs/outputs
+    example_input = example.get("example_input", [])
+    example_output = example.get("example_output", [])
+    
+    # Extract test inputs/outputs
+    test_input = example.get("test_input", [])
+    if not test_input:
+        print(f"Warning: No test_input found in example {index}, using empty list")
+        test_input = []
+    test_output = example.get("test_output", [])
+    if not test_output:
+        print(f"Warning: No test_output found in example {index}, using empty list")
+        test_output = []
+    
+    # Return in the required format
+    return {
+        "question": question,
+        "example_input": example_input,
+        "example_output": example_output,
+        "test_input": test_input,
+        "test_output": test_output
+    }
 
-
-def _extract_golden_code(example: Dict) -> Optional[str]:
+def _extract_problem(example: Dict) -> Optional[str]:
     """
-    Extract golden_code from raw dataset example.
+    Extract problem from raw dataset example.
     
     Args:
         example: Raw dataset sample
         
     Returns:
-        golden_code string or None
+        problem string or None
     """
-    try:
-        # Try various field names
-        code_fields = ["solution", "golden_code", "code", "answer", "implementation"]
-        
-        for field in code_fields:
-            if field in example and example[field]:
-                code = example[field]
-                if isinstance(code, str):
-                    return code
-                elif isinstance(code, list) and len(code) > 0:
-                    return code[0] if isinstance(code[0], str) else str(code[0])
-        
-        # If not found, return None
-        return None
-        
-    except Exception as e:
-        print(f"⚠️ Failed to extract golden_code: {e}")
-        return None
+    # Try various field names
+    code_fields = ["problem", "description", "question", "prompt"]
+    
+    for field in code_fields:
+        if field in example and example[field]:
+            code = example[field]
+            if isinstance(code, str):
+                return code
+            elif isinstance(code, list) and len(code) > 0:
+                return code[0] if isinstance(code[0], str) else str(code[0])
+    
+    # If not found, return None
+    return None
 
 
 # =================== Code execution and validation ===================
 
-def execute_code_with_timeout(
-    code: str, 
-    test_input: str, 
-    timeout: float = 1.0
-) -> str:
+async def worker(script, input_val, timeout: float = 10.0):
     """
-    Execute Python code with a timeout.
-    
-    Args:
-        code: Python code to execute
-        test_input: Input string
-        timeout: Timeout in seconds
-        
-    Returns:
-        Output string or error message
+    Worker function for executing code in a separate process.
+    Based on the reference worker function provided.
     """
-    def worker_target(script, input_val, output_queue):
-        input_lines = iter(input_val.splitlines())
-        
-        def fake_input(prompt=""):
-            try:
-                return next(input_lines)
-            except StopIteration:
-                raise EOFError("No more input")
-        
-        stdout_capture = io.StringIO()
-        original_stdout = sys.stdout
-        original_stdin = sys.stdin
-        sys.stdout = stdout_capture
-        sys.stdin = io.StringIO(input_val)
+    # Create an iterator over the input lines.
+    input_lines = iter(input_val.splitlines())
 
-        context = {
-            "__name__": "__main__",
-            "input": fake_input,
-            "List": typing.List,
-            "Tuple": typing.Tuple,
-            "Optional": typing.Optional,
-        }
-
+    # Override the input() function in the exec context.
+    def fake_input(prompt=""):
         try:
-            exec(script, context)
-            printed_output = stdout_capture.getvalue()
-            output_queue.put(printed_output)
+            return next(input_lines)
+        except StopIteration:
+            raise EOFError("No more input")
 
-        except SystemExit:
-            printed_output = stdout_capture.getvalue()
-            output_queue.put(printed_output)
+    # Redirect sys.stdout to capture printed output.
+    stdout_capture = io.StringIO()
+    original_stdout = sys.stdout
+    original_stdin = sys.stdin  # Save original stdin
+    sys.stdout = stdout_capture
+    sys.stdin = io.StringIO(input_val)  # Simulate stdin with input_val
 
-        except Exception as e:
-            output_queue.put(f"error: {e}")
+    context = {
+        "__name__": "__main__",   # Ensures that `if __name__ == "__main__": ...` will fire
+        "input": fake_input,
+        "List": typing.List,
+        "Tuple": typing.Tuple,
+        "Optional": typing.Optional,
+    }
 
-        finally:
-            sys.stdout = original_stdout
-            sys.stdin = original_stdin
-
-    # Use multiprocessing to enforce timeout
-    output_queue = mp.Queue()
-    process = mp.Process(target=worker_target, args=(code, test_input, output_queue))
-    process.start()
-    process.join(timeout=timeout)
-    
-    if process.is_alive():
-        process.terminate()
-        process.join()
-        return "Timeout Error"
-    
     try:
-        return output_queue.get_nowait()
-    except:
-        return "Execution Error"
+        # Use asyncio.wait_for to implement timeout
+        await asyncio.wait_for(
+            asyncio.to_thread(exec, script, context),
+            timeout=timeout
+        )
+        printed_output = stdout_capture.getvalue()
+
+    except asyncio.TimeoutError:
+        printed_output = None  # Return None for timeout
+        
+    except SystemExit:
+        printed_output = stdout_capture.getvalue()
+       
+    except Exception as e:
+        printed_output = f"error: {e}"
+
+    finally:
+        sys.stdout = original_stdout
+        sys.stdin = original_stdin
+        
+    return printed_output
 
 
-def test_code_equality(output1: str, output2: str) -> bool:
+
+
+async def test_if_eq(x, y):
     """
     Test equality of two outputs ignoring whitespace differences.
-    
-    Args:
-        output1: First output
-        output2: Second output
-        
-    Returns:
-        Boolean indicating equality
+    Based on the reference test_if_eq function provided.
     """
-    return " ".join(output1.split()) == " ".join(output2.split())
+    return " ".join(x.split()) == " ".join(y.split())
 
 
-def detailed_test_comparison(
-    actual_output: str, 
-    expected_output: str, 
-    test_case_info: Dict
-) -> evaluate_result:
-    """
-    Compare outputs and return a detailed result.
-    
-    Args:
-        actual_output: Actual output
-        expected_output: Expected output
-        test_case_info: Test case information
-        
-    Returns:
-        evaluate_result object
-    """
-    is_correct = test_code_equality(actual_output, expected_output)
-    
-    return evaluate_result(
-        test_case_id=test_case_info.get("test_case", 0),
-        input=test_case_info.get("input", ""),
-        expected_output=expected_output,
-        actual_output=actual_output,
-        passed=is_correct,
-        error_type=None if is_correct else (
-            "timeout" if "Timeout" in actual_output else 
-            "execution_error" if "error:" in actual_output else "output_mismatch"
-        )
-    )
 
 
-def evaluate_code_against_tests(
+
+async def evaluate_code_against_tests(
     code: str, 
     test_inputs: List[str], 
     test_outputs: List[str],
-    timeout: float = 1.0
-) -> Tuple[float, Dict]:
+    timeout: float = 10.0,
+) -> Tuple[float, List, List]:
     """
     Evaluate code against test cases and return detailed results.
+    Uses async execution for improved performance.
     
     Args:
         code: Code to evaluate
@@ -438,208 +315,89 @@ def evaluate_code_against_tests(
         timeout: Execution timeout
         
     Returns:
-        (reward_score, detailed_info_dict)
+        (passed_ratio, passed_cases, failed_cases)
     """
     if not test_inputs or not test_outputs:
-        return 0.0, {"error": "No available test cases"}
+        return 0.0, [], []
     
     if len(test_inputs) != len(test_outputs):
-        return 0.0, {"error": "Mismatched number of inputs and outputs"}
+        return 0.0, [], []
     
-    passed_tests = 0
     total_tests = len(test_inputs)
-    execution_results = []
+    
+    # Execute all test cases asynchronously
+    tasks = [worker(code, test_input, timeout) for test_input in test_inputs]
+    actual_outputs = await asyncio.gather(*tasks)
+    
+    # Process results
+    passed_tests = 0
     passed_cases = []
     failed_cases = []
     
-    for i, (test_input, expected_output) in enumerate(zip(test_inputs, test_outputs)):
+    for i, (test_input, expected_output, actual_output) in enumerate(zip(test_inputs, test_outputs, actual_outputs)):
         test_case_info = {"test_case": i, "input": test_input}
         
-        try:
-            actual_output = execute_code_with_timeout(code, str(test_input), timeout)
-            detailed_result = detailed_test_comparison(
-                actual_output, str(expected_output), test_case_info
-            )
-            
-            if detailed_result.passed:
-                passed_tests += 1
-                passed_cases.append(detailed_result)
-            else:
-                failed_cases.append(detailed_result)
-            
-            execution_results.append(detailed_result)
-            
-        except Exception as e:
-            error_result = evaluate_result(
-                test_case_id=i,
-                input=test_input,
-                expected_output=expected_output,
-                actual_output=f"Exception: {str(e)}",
-                passed=False,
-                error_type="exception"
-            )
-            failed_cases.append(error_result)
-            execution_results.append(error_result)
-    
-    reward = passed_tests / total_tests if total_tests > 0 else 0.0
-    
-    # Build detailed evaluation result
-    detailed_info = {
-        "overall_result": {
-            "passed_tests": passed_tests,
-            "total_tests": total_tests,
-            "pass_rate": reward,
-            "all_passed": passed_tests == total_tests,
-            "summary": f"{passed_tests}/{total_tests} tests passed"
-        },
-        "passed_cases": passed_cases,
-        "failed_cases": failed_cases,
-        "execution_results": execution_results,
-        "statistics": {
-            "timeout_errors": len([r for r in execution_results if r.get("error_type") == "timeout"]),
-            "execution_errors": len([r for r in execution_results if r.get("error_type") == "execution_error"]),
-            "output_mismatches": len([r for r in execution_results if r.get("error_type") == "output_mismatch"]),
-            "exceptions": len([r for r in execution_results if r.get("error_type") == "exception"])
-        }
-    }
-    
-    return reward, detailed_info
-
-
-def evaluate_tests_against_golden_code(
-    test_cases: List[Dict], 
-    golden_code: str,
-    timeout: float = 1.0
-) -> Tuple[float, Dict]:
-    """
-    Evaluate generated test cases against golden code.
-    
-    Args:
-        test_cases: List of test cases, each containing 'input' and 'output'
-        golden_code: Golden standard code
-        timeout: Execution timeout
+        if actual_output is None: # Check for timeout
+            if_passed = False
+            error_type = "timeout"
+        elif actual_output.startswith("error:"): # Check for execution errors
+            if_passed = False
+            error_type = actual_output.replace("error: ", "")
+        else:
+            if_passed = await test_if_eq(actual_output, str(expected_output))
+            error_type = None
         
-    Returns:
-        (reward_score, detailed_info_dict)
-    """
-    if not test_cases:
-        return 0.0, {"error": "No test cases provided"}
-    
-    if not golden_code:
-        return 0.0, {"error": "No golden code available"}
-    
-    passed_tests = 0
-    total_tests = len(test_cases)
-    execution_results = []
-    passed_cases = []
-    failed_cases = []
-    
-    for i, test_case in enumerate(test_cases):
-        test_case_info = {"test_case": i, "input": test_case.get("input", "")}
+        if if_passed:
+            passed_tests += 1
+            passed_cases.append(test_case_info)
+        else:
+            failed_cases.append(test_case_info)
         
-        try:
-            test_input = test_case.get("input", "")
-            expected_output = test_case.get("output", "")
-            
-            actual_output = execute_code_with_timeout(golden_code, str(test_input), timeout)
-            detailed_result = detailed_test_comparison(
-                actual_output, str(expected_output), test_case_info
-            )
-            
-            if detailed_result.passed:
-                passed_tests += 1
-                passed_cases.append(detailed_result)
-            else:
-                failed_cases.append(detailed_result)
-            
-            execution_results.append(detailed_result)
-            
-        except Exception as e:
-            error_result = evaluate_result(
-                test_case_id=i,
-                input=test_case.get("input", ""),
-                expected_output=test_case.get("output", ""),
-                actual_output=f"Exception: {str(e)}",
-                passed=False,
-                error_type="exception"
-            )
-            failed_cases.append(error_result)
-            execution_results.append(error_result)
+        passed_ratio = passed_tests / total_tests
     
-    reward = passed_tests / total_tests if total_tests > 0 else 0.0
-    
-    # Build detailed evaluation result
-    detailed_info = {
-        "overall_result": {
-            "passed_tests": passed_tests,
-            "total_tests": total_tests,
-            "pass_rate": reward,
-            "all_passed": passed_tests == total_tests,
-            "summary": f"{passed_tests}/{total_tests} test cases are valid"
-        },
-        "passed_cases": passed_cases,
-        "failed_cases": failed_cases,
-        "execution_results": execution_results,
-        "statistics": {
-            "timeout_errors": len([r for r in execution_results if r.get("error_type") == "timeout"]),
-            "execution_errors": len([r for r in execution_results if r.get("error_type") == "execution_error"]),
-            "output_mismatches": len([r for r in execution_results if r.get("error_type") == "output_mismatch"]),
-            "exceptions": len([r for r in execution_results if r.get("error_type") == "exception"])
-        },
-        "generated_test_cases": test_cases
-    }
-    
-    return reward, detailed_info
+    return passed_ratio, passed_cases, failed_cases
 
-
+def modify(c):
+    c = c.replace("plaintext\n", "")
+    c = c.replace("\\n", "\n")
+    if not c.endswith("\n"):
+        c += "\n"
+    return c
 # =================== Test case parsing ===================
+def extract_test_cases(full_output):
+    # First, try extracting with the updated triple-backtick pattern
+    pattern_input_backticks = r'\*\*Test Input:\*\*\s*```(.*?)```'
+    pattern_output_backticks = r'\*\*Test Output:\*\*\s*```(.*?)```'
+    matches_input = re.findall(pattern_input_backticks, full_output, re.DOTALL)
+    matches_output = re.findall(pattern_output_backticks, full_output, re.DOTALL)
 
-def parse_test_cases_from_response(response: str) -> List[Dict]:
-    """
-    Parse test cases from agent response.
-    
-    Args:
-        response: Agent response string
-        
-    Returns:
-        List of parsed test cases
-    """
-    test_cases = []
-    
-    # Try extracting input/output pairs
-    pattern_input = r'\*\*Test Input:\*\*\s*```(.*?)```'
-    pattern_output = r'\*\*Test Output:\*\*\s*```(.*?)```'
-    
-    inputs = re.findall(pattern_input, response, re.DOTALL)
-    outputs = re.findall(pattern_output, response, re.DOTALL)
-    
-    # Fallback patterns (without backticks)
-    if not inputs:
+    # For Test Input: either use the updated triple-backtick version or fallback to plain text
+    if matches_input:
+        test_input = [modify(matches_input[-1].lstrip('\n'))]
+    else:
+        # Fallback pattern without backticks: capture until **Test Output:**
         pattern_input_plain = r'\*\*Test Input:\*\*\s*([\s\S]*?)(?=\*\*Test Output:\*\*)'
-        inputs = re.findall(pattern_input_plain, response, re.DOTALL)
+        matches_input_plain = re.findall(pattern_input_plain, full_output, re.DOTALL)
+        if matches_input_plain:
+            test_input = [modify(matches_input_plain[-1].strip())]
+        else:
+            test_input = []
     
-    if not outputs:
-        pattern_output_plain = r'\*\*Test Output:\*\*\s*([\s\S]*?)(?=\*\*Test Input:|$)'
-        outputs = re.findall(pattern_output_plain, response, re.DOTALL)
+    # For Test Output: either use the updated triple-backtick version or fallback to plain text
+    if matches_output:
+        test_output = [modify(matches_output[-1].lstrip('\n'))]
+    else:
+        # Fallback: capture until the **Explanation:** marker or end-of-string
+        pattern_output_plain = r'\*\*Test Output:\*\*\s*([\s\S]*?)(?=\*\*Explanation:|\*\*Test Input:|$)'
+        matches_output_plain = re.findall(pattern_output_plain, full_output, re.DOTALL)
+        if matches_output_plain:
+            test_output = [modify(matches_output_plain[-1].strip())]
+        else:
+            test_output = []
     
-    # Try other common formats
-    if not inputs or not outputs:
-        # Format: Input: ... Output: ...
-        pattern_alt = r'Input:\s*(.*?)\s*Output:\s*(.*?)(?=Input:|$)'
-        matches = re.findall(pattern_alt, response, re.DOTALL)
-        if matches:
-            inputs = [m[0].strip() for m in matches]
-            outputs = [m[1].strip() for m in matches]
+    test_action= {"input": test_input, "output": test_output}
     
-    for i in range(min(len(inputs), len(outputs))):
-        test_cases.append({
-            "input": inputs[i].strip(),
-            "output": outputs[i].strip()
-        })
-    
-    return test_cases
-
-
+    return test_action
 def extract_code_from_response(response: str) -> str:
     """
     Extract code from agent response.
@@ -842,19 +600,15 @@ def save_evaluation_results(
         output_path: Output file path
         pretty_print: Whether to pretty print JSON
     """
-    try:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        with open(output_path, 'w', encoding='utf-8') as f:
-            if pretty_print:
-                json.dump(results, f, indent=2, ensure_ascii=False)
-            else:
-                json.dump(results, f, ensure_ascii=False)
-                
-        print(f"💾 Evaluation results saved to: {output_path}")
-        
-    except Exception as e:
-        print(f"❌ Failed to save results: {e}")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        if pretty_print:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        else:
+            json.dump(results, f, ensure_ascii=False)
+            
+    print(f"💾 Evaluation results saved to: {output_path}")
 
 
 def print_evaluation_summary(metrics: Dict[str, Any]) -> None:
@@ -896,7 +650,7 @@ def evaluate_code_generation_task(
     
     Args:
         code: Generated code
-        problem: Problem dictionary
+        problem: Problem dictionary with keys: question, example_input, example_output, test_input, test_output
         timeout: Execution timeout
         
     Returns:
@@ -906,7 +660,7 @@ def evaluate_code_generation_task(
     test_inputs = problem.get("test_input", [])
     test_outputs = problem.get("test_output", [])
     
-    # If no private test cases, use example test cases
+    # If no test cases, use example test cases
     if not test_inputs or not test_outputs:
         test_inputs = problem.get("example_input", [])
         test_outputs = problem.get("example_output", [])
@@ -936,68 +690,15 @@ def evaluate_code_generation_task(
     }
 
 
-def evaluate_test_generation_task(
-    test_cases: List[Dict],
-    golden_code: str,
-    timeout: float = 1.0
-) -> Dict[str, Any]:
-    """
-    Evaluate single test generation task
-    
-    Args:
-        test_cases: Generated test case list
-        golden_code: Golden standard code
-        timeout: Execution timeout
-        
-    Returns:
-        Evaluation result dictionary
-    """
-    if not test_cases:
-        return {
-            "success": False,
-            "error": "No test cases generated",
-            "pass_rate": 0.0
-        }
-    
-    if not golden_code:
-        return {
-            "success": False,
-            "error": "No golden code available",
-            "pass_rate": 0.0
-        }
-    
-    # Execute evaluation
-    reward, detailed_info = evaluate_tests_against_golden_code(
-        test_cases, golden_code, timeout
-    )
-    
-    overall_result = detailed_info.get("overall_result", {})
-    
-    return {
-        "success": overall_result.get("all_passed", False),
-        "pass_rate": overall_result.get("pass_rate", 0.0),
-        "valid_tests": overall_result.get("passed_tests", 0),
-        "total_tests": overall_result.get("total_tests", 0),
-        "reward": reward,
-        "detailed_results": detailed_info,
-        "generated_test_cases": test_cases
-    }
-
-
 def test_load_problem(benchmark: str, batch_size: int):
     # Get problems
     results= load_problem_batch(
         dataset_name=benchmark,
         batch_size=batch_size
     )
-
-    for problem in results:
-        print(f"Problem description: {problem['problem']}")
-        print(f"Golden Code: {problem['golden_code']}")
-        print(f"Number of test cases: {len(problem['golden_test_input'])}")
-        print(f"Test cases: {problem['golden_test_input']}")
-        print(f"Test case outputs: {problem['golden_test_output']}")
-    print(f"Number of problems: {len(results)}")
+       
 
 if __name__ == "__main__":
-    test_load_problem("deepmind/code_contests", 10)
+    for benchmark in ["CodeContests_train"]:
+        print(f"test load {benchmark}")
+        test_load_problem(f"{benchmark}", 2)

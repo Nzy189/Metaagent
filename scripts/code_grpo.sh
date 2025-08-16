@@ -32,6 +32,9 @@ model_1_resource="$model_1_config_path.trainer.n_gpus_per_node=1 $model_1_config
 model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/train.parquet +$model_0_config_path.data.val_files=$model_0_data_dir/text/test.parquet"
 model_1_data="+$model_1_config_path.data.train_files=$model_1_data_dir/text/train.parquet +$model_1_config_path.data.val_files=$model_1_data_dir/text/test.parquet"
 
+# download codecontests dataset
+python3 -m pettingllms.data.download_codecontests
+
 python3 -m pettingllms.data.preprocess.prepare \
     --mode 'text' \
     --train_data_size $train_data_size \

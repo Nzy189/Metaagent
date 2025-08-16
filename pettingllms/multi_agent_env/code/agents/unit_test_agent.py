@@ -5,6 +5,7 @@ from typing import Any
 from pettingllms.multi_agent_env.base.agent import Agent, AgentData
 from pettingllms.multi_agent_env.base.env import Env
 from pettingllms.utils.logger_config import get_multi_logger
+from pettingllms.multi_agent_env.code.code_utils import extract_test_cases
 
 logger = logging.getLogger(__name__)
 
@@ -85,105 +86,46 @@ class UnitTestGenerationAgent(Agent):
         if need_generate:
             # Test-case generation mode
             formatted_prompt = (
-                f"You are a helpful assistant that generates test examples for coding tasks.\n\n"
-                f"Problem:\n{question}\n\n"
-                f"Please generate diverse, accurate, and discriminative test cases (inputs and outputs).\n"
-                f"Cover normal, edge, and special cases.\n\n"
-                f"Respond in the format:\n\n"
+                f"<|im_start|>You are a helpful assistant that generates test examples for coding tasks.<|im_end|>\n"
+                f"<|im_start|>User: Given a coding task, instead of providing the final script, your task is to generate a new test example (both input, output and explanation).\n"
+                f"This is the problem:\n{question}\n\n"
+                f"You need to provide a new test example. A good test example should be completely accurate and conform to the problem's format requirements, while also possessing enough discriminative power to distinguish correct code from incorrect code.\n"
+                f"Before providing a test example, you must think carefully and reason step by step to derive an input and output you are very confident are correct. For example, start by designing an input you can reliably handle, then compute the output step by step. If you're unsure about the output, revise or re-design the input to ensure accuracy. Directly providing input/output pairs without this process is discouraged, as it often results in low accuracy.\n"
+                f"Finally, after completing these previous thinking and derivation steps (you should not write the final test example unless you have gone through these steps very thoroughly), you MUST put your final test example in the following format:\n\n"
                 f"**Test Input:**\n```\ninput here\n```\n\n"
                 f"**Test Output:**\n```\noutput here\n```\n\n"
-                f"**Explanation:**\nreasoning here."
+                f"**Explanation:**\nexplanation here.<|im_end|>\n"
+                f"<|im_start|>Assistant:"
             )
         else:
             # Test-case refinement mode
             formatted_prompt = (
-                f"You are a helpful assistant that refines or corrects test examples for coding tasks.\n\n"
-                f"Problem:\n{question}\n\n"
+                f"<|im_start|>You are a helpful assistant that refines or corrects test examples for coding tasks.<|im_end|>\n"
+                f"<|im_start|>User: Given a coding task, instead of providing the final script, your task is to refine or correct test examples.\n"
+                f"This is the problem:\n{question}\n\n"
                 f"Current code output:\n{as_text(current_code_output)}\n\n"
                 f"Current tests (inputs):\n{as_text(current_test_input)}\n\n"
                 f"Current tests (expected outputs):\n{as_text(current_test_output)}\n\n"
                 f"Mismatch summary (if any):\n{as_text(mismatch_testcases)}\n\n"
-                f"Please provide corrected or more discriminative tests while keeping format consistent.\n\n"
-                f"Respond in the format:\n\n"
+                f"You need to provide corrected or more discriminative tests while keeping format consistent. A good test example should be completely accurate and conform to the problem's format requirements, while also possessing enough discriminative power to distinguish correct code from incorrect code.\n"
+                f"Before providing a test example, you must think carefully and reason step by step to derive an input and output you are very confident are correct. For example, start by designing an input you can reliably handle, then compute the output step by step. If you're unsure about the output, revise or re-design the input to ensure accuracy. Directly providing input/output pairs without this process is discouraged, as it often results in low accuracy.\n"
+                f"Finally, after completing these previous thinking and derivation steps (you should not write the final test example unless you have gone through these steps very thoroughly), you MUST put your final test example in the following format:\n\n"
                 f"**Test Input:**\n```\ninput here\n```\n\n"
                 f"**Test Output:**\n```\noutput here\n```\n\n"
-                f"**Explanation:**\nexplanation here."
+                f"**Explanation:**\nexplanation here.<|im_end|>\n"
+                f"<|im_start|>Assistant:"
             )
 
         self.current_prompt = {"text": formatted_prompt, "image": None}
-        
-        # 记录prompt生成
-        self.multi_logger.log_env_agent_info(
-            rollout_idx=self.rollout_idx if self.rollout_idx is not None else -1,
-            turn_idx=-1,
-            agent_name="test_generator",
-            message="Generated prompt for test generation",
-            extra_data={
-                "need_generate": need_generate,
-                "mode": "generation" if need_generate else "refinement",
-                "prompt_length": len(formatted_prompt),
-                "env_state_summary": {
-                    "has_current_code": current_code not in (None, ""),
-                    "has_current_test_input": current_test_input not in (None, ""),
-                    "question_length": len(question),
-                    "has_mismatch_testcases": mismatch_testcases not in (None, "")
-                }
-            }
-        )
-        
-        
-        
+          
     def update_from_model(self, response: str):
         # Parse the response and update agent_data
         import re
+        test_action = extract_test_cases(response)
         
         # Parse test cases
-        test_cases = []
-        
-        # First, extract with backticked input/output/explanation per our prompt format
-        pattern_input = r'\*\*Test Input:\*\*\s*```([\s\S]*?)```'
-        pattern_output = r'\*\*Test Output:\*\*\s*```([\s\S]*?)```'
-        pattern_explanation = r'\*\*Explanation:\*\*\s*([\s\S]*?)(?=\*\*Test Input:\*\*|$)'
-        inputs = re.findall(pattern_input, response, re.DOTALL)
-        outputs = re.findall(pattern_output, response, re.DOTALL)
-        explanations = re.findall(pattern_explanation, response, re.DOTALL)
-
-        # Fallback: extract without backticks using anchors
-        if not inputs:
-            inputs = re.findall(r'\*\*Test Input:\*\*\s*([\s\S]*?)(?=\*\*Test Output:\*\*|$)', response, re.DOTALL)
-        if not outputs:
-            outputs = re.findall(r'\*\*Test Output:\*\*\s*([\s\S]*?)(?=\*\*Explanation:\*\*|$)', response, re.DOTALL)
-
-        # If counts mismatch, truncate to shortest length
-        pair_count = min(len(inputs), len(outputs))
-        for i in range(pair_count):
-            test_case = {
-                "input": inputs[i].strip(),
-                "output": outputs[i].strip(),
-                "explanation": (explanations[i].strip() if i < len(explanations) else "")
-            }
-            test_cases.append(test_case)
-
-        # Final fallback: return raw text for environment handling/logging
-        if not test_cases:
-            test_cases = [{"input": "", "output": "", "explanation": response.strip()}]
-
-        self.current_action = test_cases
-        
-        # 记录模型响应解析
-        self.multi_logger.log_env_agent_info(
-            rollout_idx=self.rollout_idx if self.rollout_idx is not None else -1,
-            turn_idx=-1,
-            agent_name="test_generator",
-            message="Parsed model response",
-            extra_data={
-                "response_length": len(response),
-                "test_cases_parsed": len(test_cases),
-                "inputs_found": len(inputs) if 'inputs' in locals() else 0,
-                "outputs_found": len(outputs) if 'outputs' in locals() else 0,
-                "pair_count": pair_count if 'pair_count' in locals() else 0
-            }
-        )
+        self.current_action = test_action
+   
         
         return self.current_action
     
@@ -202,15 +144,10 @@ class UnitTestGenerationAgent(Agent):
             # Generated tests vs generated code
             gen_vs_gen = getattr(state, "generated_test_vs_generated_code_match_ratio", None)
             # Generated tests vs golden code (as fallback)
-            gen_vs_gold = getattr(state, "generated_test_vs_golden_code_match_ratio", None)
-            # Golden tests vs generated code
             gold_vs_gen = getattr(state, "golden_test_vs_generated_code_match_ratio", None)
 
             if isinstance(gen_vs_gen, (int, float)):
                 generated_pass_ratio = float(gen_vs_gen)
-            elif isinstance(gen_vs_gold, (int, float)):
-                generated_pass_ratio = float(gen_vs_gold)
-
             if isinstance(gold_vs_gen, (int, float)):
                 golden_pass_ratio = float(gold_vs_gen)
 
@@ -231,20 +168,6 @@ class UnitTestGenerationAgent(Agent):
             "golden_pass_ratio": golden_pass_ratio,
             "reward_mode": m,
         })
-        
-        # 记录奖励计算
-        self.multi_logger.log_env_agent_info(
-            rollout_idx=self.rollout_idx if self.rollout_idx is not None else -1,
-            turn_idx=-1,
-            agent_name="test_generator",
-            message="Calculated reward",
-            extra_data={
-                "reward": reward,
-                "generated_pass_ratio": generated_pass_ratio,
-                "golden_pass_ratio": golden_pass_ratio,
-                "reward_mode": m
-            }
-        )
         
         return reward
 

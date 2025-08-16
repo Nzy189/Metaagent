@@ -35,7 +35,7 @@ data:
 actor_rollout_ref:
   hybrid_engine: True
   model:
-    path: Qwen/Qwen2.5-0.5B-Instruct  # Set to null to allow overriding
+    path: Qwen/Qwen3-4B-Instruct-2507  # Set to null to allow overriding
     use_shm: False
     external_lib: null
     override_config: { }
@@ -166,6 +166,30 @@ actor_rollout_ref:
     # RLLM Arguments
     disable_logging: True # Disable logging for vLLM async rollout.
     entropy_from_logits_with_chunking: False
+    
+    # [Experimental] agent loop based rollout configs
+    agent:
+      # Number of agent loop workers
+      num_workers: 8
+      
+      # custom agent loop config path, which should contain list of configs to intialize AgentLoop instances.
+      # https://hydra.cc/docs/advanced/instantiate_objects/overview/
+      #
+      # - name: react_agent
+      #   _target_: recipe.langgraph_agent.react_agent_loop.ReactAgentLoop
+      #   tools: ["get_current_temperature"]
+      # - name: math_expression
+      #   _target_: recipe.langgraph_agent.example.math_expression.MathExpressionReactAgentLoop
+      #   min_terms: 2
+      #   max_terms: 6
+      agent_loop_config_path: null
+      
+      # custom async server configs
+      custom_async_server:
+        # Path to the custom async server implementation
+        path: null
+        # Class name of the custom async server class (e.g. AsyncvLLMServer)
+        name: null
 
 critic:
   _target_: verl.workers.config.FSDPCriticConfig

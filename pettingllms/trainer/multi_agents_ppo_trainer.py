@@ -17,7 +17,7 @@ from pettingllms.trainer.multi_agents_execution_engine import MultiAgentsExecuti
 from verl import DataProto
 from verl.protocol import pad_dataproto_to_divisor
 from verl.trainer.ppo.ray_trainer import (
-    RayPPOTrainer,
+    
     RayWorkerGroup,
     ResourcePoolManager,
     Role,
@@ -28,6 +28,8 @@ from verl.trainer.ppo.ray_trainer import (
     compute_timing_metrics,
     reduce_metrics,
 )
+
+from pettingllms.verl.ray_trainer import RayPPOTrainer
 from verl.utils.torch_functional import pad_sequence_to_length
 from typing import Dict
 from verl.utils.profiler.performance import _timer
@@ -110,6 +112,9 @@ class MultiAgentsPPOTrainer:
         
         colorful_print(f"Number of PPO trainers: {len(self.ppo_trainer_dict)}", "cyan")
         colorful_print(f"Number of agent mappings: {len(self.agent_policy_mapping)}", "cyan")
+        
+        # 存储 LLM servers 以便清理
+        self.llm_servers = []
 
 
 
@@ -129,12 +134,25 @@ class MultiAgentsPPOTrainer:
 
             #TODO: add async_servser_class
             async_servser_class=AsyncvLLMServer
-            async_llm_servers, server_addresses = initialize_llm_servers(worker_group=trainer.actor_rollout_wg,server_class=async_servser_class,server_config=trainer.config)
-            ray.get([server.init_engine.remote() for server in async_llm_servers])
+            try:
+                async_llm_servers, server_addresses = initialize_llm_servers(
+                    worker_group=trainer.actor_rollout_wg,
+                    server_class=async_servser_class,
+                    server_config=trainer.config
+                )
+                colorful_print(f"Successfully initialized {len(async_llm_servers)} LLM servers for model: {model_name}", "green")
+                # 存储 servers 以便后续清理
+                self.llm_servers.extend(async_llm_servers)
+            except Exception as e:
+                colorful_print(f"Failed to initialize LLM servers for model {model_name}: {str(e)}", "red")
+                # Clean up any partially created servers
+                if 'async_llm_servers' in locals():
+                    self._cleanup_llm_servers(async_llm_servers)
+                raise e
 
             
             #server_addresses = getattr(trainer.async_rollout_manager, "server_addresses", [])
-            server_manager_dict[model_name] = AsyncLLMServerManager(config=trainer.config, async_llm_servers=async_llm_servers)
+            server_manager_dict[model_name] = AsyncLLMServerManager(config=trainer.config, server_handles=async_llm_servers)
  
             # Construct an independent Router for each model
             
@@ -391,9 +409,9 @@ class MultiAgentsPPOTrainer:
         from verl.utils.tracking import Tracking
 
         logger = Tracking(
-            project_name=self.config.trainer.project_name,
-            experiment_name=self.config.trainer.experiment_name,
-            default_backend=self.config.trainer.logger,
+            project_name=self.config.project_name,
+            experiment_name=self.config.experiment_name,
+            default_backend=self.config.logger,
             config=OmegaConf.to_container(self.config, resolve=True),
         )
 
@@ -715,3 +733,36 @@ class MultiAgentsPPOTrainer:
             batch.non_tensor_batch["is_pad_step"][idx] = True
 
         return batch
+    
+    def _cleanup_llm_servers(self, servers):
+        """清理 LLM servers"""
+        for server in servers:
+            try:
+                ray.kill(server)
+                colorful_print(f"Killed LLM server: {server}", "yellow")
+            except Exception as e:
+                colorful_print(f"Error killing LLM server {server}: {e}", "red")
+    
+    def cleanup(self):
+        """清理所有资源"""
+        try:
+            # 清理 LLM servers
+            if hasattr(self, 'llm_servers') and self.llm_servers:
+                colorful_print("Cleaning up LLM servers...", "yellow")
+                self._cleanup_llm_servers(self.llm_servers)
+                self.llm_servers.clear()
+            
+            # 清理 PPO trainers
+            if hasattr(self, 'ppo_trainer_dict'):
+                for model_name, trainer in self.ppo_trainer_dict.items():
+                    try:
+                        # 如果 trainer 有清理方法，调用它
+                        if hasattr(trainer, 'cleanup'):
+                            trainer.cleanup()
+                        colorful_print(f"Cleaned up trainer for model: {model_name}", "yellow")
+                    except Exception as e:
+                        colorful_print(f"Error cleaning up trainer for {model_name}: {e}", "red")
+            
+            colorful_print("Multi-agent trainer cleanup completed", "green")
+        except Exception as e:
+            colorful_print(f"Error during cleanup: {e}", "red")
