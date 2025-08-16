@@ -5,6 +5,7 @@ import time
 import json
 import traceback
 import uuid
+from tqdm.asyncio import tqdm
 try:
     from verl.protocol import DataProto
 except Exception:  # fallback when verl is a src tree: verl/verl/protocol.py
@@ -141,6 +142,7 @@ class MultiAgentsExecutionEngine:
             
         else:
             self.env_batch_class=ENV_BATCH_CLASSES[self.env_name]
+            self.rollout_idx_list=range(self.gen_batch_size*self.gen_n_samples)
             self.envs_batch=self.env_batch_class(env_idx_list=range(self.gen_batch_size), rollout_idx_list=range(self.gen_batch_size*self.gen_n_samples), samples=self.gen_n_samples, max_turns=self.max_turns, config=self.config)
             self.envs=self.envs_batch.env_list
             self.env_list = self.envs
@@ -283,6 +285,7 @@ class MultiAgentsExecutionEngine:
                 # Only process trajectory if both generation and step succeeded
                 if output_dpr is not None:
                     output_dpr.non_tensor_batch["reward"] = [current_agent.agent_reward]
+                    output_dpr.non_tensor_batch["agent_name"] = [agent_name]  # Add agent name for metrics tracking
                
                     if trajectory_per_task_dict[policy_name].batch is None:
                         # If empty, assign directly
@@ -374,17 +377,42 @@ class MultiAgentsExecutionEngine:
             {"task_count": len(tasks), "rollout_indices": list(rollout_indices)}
         )
         
-        results = {}
+        # 初始化按policy_name分组的结果字典
+        aggregated_results = {}
+        for policy_name in self.tokenizer_dict.keys():
+            aggregated_results[policy_name] = DataProto()
+        
         completed_count = 0
         failed_count = 0
+        
+        # 添加异步任务的进度条
+        task_pbar = tqdm(total=len(tasks), desc="Rollouts", position=1, leave=False)
         
         try:
             # 使用as_completed来处理完成的任务
             for completed_task in asyncio.as_completed(tasks):
                 try:
-                    rollout_idx, result = await asyncio.wait_for(completed_task, timeout=self.generate_timeout)
-                    results[rollout_idx] = result
+                    rollout_idx, rollout_result = await asyncio.wait_for(completed_task, timeout=self.generate_timeout)
+                    
+                    # 聚合每个policy的数据
+                    for policy_name, policy_data in rollout_result.items():
+                        if policy_data.batch is not None:  # 只处理有数据的policy
+                            if aggregated_results[policy_name].batch is None:
+                                # 如果是空的，直接赋值
+                                aggregated_results[policy_name] = policy_data
+                            else:
+                                # 使用concat合并数据
+                                aggregated_results[policy_name] = DataProto.concat([
+                                    aggregated_results[policy_name], 
+                                    policy_data
+                                ])
+                    
                     completed_count += 1
+                    
+                    # 更新进度条
+                    task_pbar.update(1)
+                    task_pbar.set_description(f"Rollouts ({completed_count}/{len(tasks)})")
+                    
                     self.multi_logger.log_async_event(
                         rollout_idx, "task_complete",
                         f"Task {rollout_idx} completed",
@@ -396,6 +424,10 @@ class MultiAgentsExecutionEngine:
                     )
                 except asyncio.TimeoutError:
                     failed_count += 1
+                    # 更新进度条（失败的任务）
+                    task_pbar.update(1)
+                    task_pbar.set_description(f"Rollouts ({completed_count}/{len(tasks)}, {failed_count} failed)")
+                    
                     # 由于超时，我们无法获取rollout_idx，所以使用-1作为标识
                     self.multi_logger.log_async_event(
                         -1, "task_timeout",
@@ -408,6 +440,10 @@ class MultiAgentsExecutionEngine:
                     continue
                 except Exception as e:
                     failed_count += 1
+                    # 更新进度条（失败的任务）
+                    task_pbar.update(1)
+                    task_pbar.set_description(f"Rollouts ({completed_count}/{len(tasks)}, {failed_count} failed)")
+                    
                     self.multi_logger.log_async_event(
                         -1, "task_error",
                         f"Task failed with error: {e}",
@@ -436,6 +472,9 @@ class MultiAgentsExecutionEngine:
                     task.cancel()
             raise
         
+        # 关闭进度条
+        task_pbar.close()
+        
         self.multi_logger.log_async_event(
             -1, "concurrent_batch_complete",
             "Concurrent execution completed",
@@ -443,11 +482,12 @@ class MultiAgentsExecutionEngine:
                 "successfully_processed": completed_count,
                 "total_rollouts": len(rollout_indices),
                 "failed": failed_count,
-                "success_rate": f"{completed_count}/{len(rollout_indices)}"
+                "success_rate": f"{completed_count}/{len(rollout_indices)}",
+                "aggregated_policies": list(aggregated_results.keys())
             }
         )
         
-        return results
+        return aggregated_results
         
        
     

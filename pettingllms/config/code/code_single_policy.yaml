@@ -77,3 +77,7 @@ agent_policy_configs:
 project_name: pettingllms
 experiment_name: code_single_policy
 logger: [ 'console', 'wandb' ]
+
+trainer:
+  ${models.model_0.ppo_trainer_config.trainer}
+ 

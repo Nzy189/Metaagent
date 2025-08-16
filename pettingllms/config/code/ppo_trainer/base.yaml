@@ -126,11 +126,11 @@ actor_rollout_ref:
     response_length: 512
     # for vllm rollout
     dtype: bfloat16 # should align with FSDP
-    gpu_memory_utilization: 0.8  # 增加内存利用率
+    gpu_memory_utilization: 0.2  
     ignore_eos: False
-    enforce_eager: True  # 强制使用eager模式，避免编译问题
+    enforce_eager: True  
     free_cache_engine: False
-    load_format: auto  # 使用auto而不是dummy_dtensor
+    load_format: auto  
     layered_summon: False # for huge model, layered summon can save memory (prevent OOM) but make it slower
     tensor_model_parallel_size: 1
     max_num_batched_tokens: 8192
@@ -345,7 +345,7 @@ custom_reward_function:
   name: compute_score
 
 algorithm:
-  adv_estimator: gae
+  adv_estimator: grpo
   gamma: 1.0
   lam: 1.0
   norm_adv_by_std_in_grpo: True
