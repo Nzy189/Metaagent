@@ -1,7 +1,3 @@
-# Configuration for Code multi-agent training with TWO different policies
-# code_generator uses Qwen/Qwen2.5-Coder-3B, test_generator uses DeepSeek-R1-Distill
-
-# Inherit from base configuration
 defaults:
   # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently
   - ppo_trainer@models.model_0.ppo_trainer_config: base
@@ -10,28 +6,28 @@ defaults:
 # dataset config (shared by all agents)
 data:
   #rollout config
-  gen_batch_size: 64
-  gen_n_samples: 8
-  sample_temperature: 0.7
+  gen_batch_size: 32
+  gen_n_samples: 1
+  sample_temperature: 0
 
   # Batch sizes
-  train_batch_size: 256
-  val_batch_size: 128
+  train_batch_size: 16
+  val_batch_size: 8
   
   # Sequence lengths
-  max_prompt_length: 10240
-  max_response_length: 2048
+  max_prompt_length: 512
+  max_response_length: 512
 
 resource:
   nnodes: 1
-  n_gpus_per_node: 1
+  n_gpus_per_node: 4
   trust_remote_code: true
 
 # Environment configuration (shared by all agents)
 env:
   name: code_env
-  benchmark: "CodeContests_train"
-  max_turns: 8
+  benchmark: "CodeForces"
+  max_turns: 4
   resolve: false
   multi_modal: false
   batched_init: true
@@ -48,15 +44,6 @@ multi_agent_interaction:
   # Whether agents can see other agents' actions
   shared_observation: true
 
-# Shared model configurations
-models:
-  model_0:
-    path: Qwen/Qwen2.5-0.5B
-    name: "code_generator_model"
-    ppo_trainer_config:
-      actor_rollout_ref:
-        model:
-          path: ${models.model_0.path}
     # ppo_trainer_config is injected via defaults; the above settings override the defaults in base
     
 
@@ -69,10 +56,12 @@ agent_policy_configs:
     agent_0:
       name: "code_generator"
       policy_name: "code_generator_model"
+      sample_num: 4
       
     agent_1:
       name: "test_generator"
       policy_name: "code_generator_model"
+      sample_num: 4
 
 project_name: pettingllms
 experiment_name: code_single_policy

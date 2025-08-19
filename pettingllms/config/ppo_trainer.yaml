@@ -255,7 +255,7 @@ algorithm:
 
 trainer:
   device: cuda
-  n_gpus_per_node: 1
+  n_gpus_per_node: 4
   nnodes: 1
 
   balance_batch: True

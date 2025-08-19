@@ -36,6 +36,9 @@ def download_codecontests_dataset(local_dir: str = None, name: str = "CodeContes
         local_dir = root_dir / "datasets" / name
     
     local_dir = Path(local_dir)
+    if local_dir.exists():
+        print(f"Dataset already exists in {local_dir}")
+        return True
 
     local_dir.mkdir(parents=True, exist_ok=True)
     
@@ -70,19 +73,20 @@ def main():
     parser = argparse.ArgumentParser(description="Download dataset")
     parser.add_argument('--local_dir', type=str, default=None, 
                        help='Local directory to save the dataset')
-    parser.add_argument('--split', type=str, default='train', 
+    parser.add_argument('--split', type=str, default='test', 
                        choices=['train', 'validation', 'test'],
                        help='Dataset split to download')
-    parser.add_argument('--name', type=str, default='CodeContests_train', 
+    parser.add_argument('--name_list', type=list, default=["LiveBench","LiveCodeBench","CodeContests","CodeForces","MBPP"], 
                        help='Dataset name to download')
     
     args = parser.parse_args()
+    for name in args.name_list:
     
-    success = download_codecontests_dataset(
-        local_dir=args.local_dir,
-        split=args.split,
-        name=args.name
-    )
+        success = download_codecontests_dataset(
+            local_dir=args.local_dir,
+            split=args.split,
+            name=name
+        )
     
     if success:
         print("Dataset download completed successfully!")

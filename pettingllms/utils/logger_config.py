@@ -78,85 +78,73 @@ class MultiLoggerConfig:
         self._setup_summary_logger()
     
     def _setup_env_agent_logger(self):
-        """Setup env_agent.log logger"""
+        """Setup base env_agent logger without file handler (handlers are per-rollout)."""
         logger_name = "env_agent"
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.INFO)
-        
-        # Clear existing handlers
         logger.handlers.clear()
-        
-        # Create file handler
-        file_handler = logging.FileHandler(
-            self.log_dir / "env_agent.log", 
-            mode='a', 
-            encoding='utf-8'
-        )
-        file_handler.setLevel(logging.INFO)
-        
-        # Set format
-        formatter = logging.Formatter(
-            '[%(asctime)s] [ROLLOUT:%(rollout_idx)s] [TURN:%(turn_idx)s] [AGENT:%(agent_name)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        file_handler.setFormatter(formatter)
-        
-        logger.addHandler(file_handler)
+        logger.addHandler(logging.NullHandler())
+        logger.propagate = False
         self.loggers[logger_name] = logger
     
     def _setup_model_logger(self):
-        """Setup model.log logger"""
+        """Setup base model logger without file handler (handlers are per-rollout)."""
         logger_name = "model"
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.INFO)
-        
-        # Clear existing handlers
         logger.handlers.clear()
-        
-        # Create file handler
-        file_handler = logging.FileHandler(
-            self.log_dir / "model.log", 
-            mode='a', 
-            encoding='utf-8'
-        )
-        file_handler.setLevel(logging.INFO)
-        
-        # Set format
-        formatter = logging.Formatter(
-            '[%(asctime)s] [ROLLOUT:%(rollout_idx)s] [POLICY:%(policy_name)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        file_handler.setFormatter(formatter)
-        
-        logger.addHandler(file_handler)
+        logger.addHandler(logging.NullHandler())
+        logger.propagate = False
         self.loggers[logger_name] = logger
     
     def _setup_async_logger(self):
-        """Setup async.log logger"""
+        """Setup base async logger without file handler (handlers are per-rollout)."""
         logger_name = "async"
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.INFO)
-        
-        # Clear existing handlers
         logger.handlers.clear()
-        
-        # Create file handler
-        file_handler = logging.FileHandler(
-            self.log_dir / "async.log", 
-            mode='a', 
-            encoding='utf-8'
-        )
-        file_handler.setLevel(logging.INFO)
-        
-        # Set format
-        formatter = logging.Formatter(
-            '[%(asctime)s] [ROLLOUT:%(rollout_idx)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        file_handler.setFormatter(formatter)
-        
-        logger.addHandler(file_handler)
+        logger.addHandler(logging.NullHandler())
+        logger.propagate = False
         self.loggers[logger_name] = logger
+
+    def _get_or_create_rollout_logger(self, base_name: str, rollout_key) -> logging.Logger:
+        """Create or get a per-rollout logger writing under date/time/rollout_key/{base_name}.log"""
+        logger_key = f"{base_name}:{rollout_key}"
+        if logger_key in self.loggers:
+            return self.loggers[logger_key]
+
+        logger = logging.getLogger(logger_key)
+        logger.setLevel(logging.INFO)
+        logger.handlers.clear()
+        logger.propagate = False
+
+        rollout_dir = self.log_dir / str(rollout_key)
+        rollout_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = rollout_dir / f"{base_name}.log"
+        file_handler = logging.FileHandler(file_path, mode='a', encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+
+        if base_name == "env_agent":
+            formatter = logging.Formatter(
+                '[%(asctime)s] [ROLLOUT:%(rollout_idx)s] [TURN:%(turn_idx)s] [AGENT:%(agent_name)s] %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+        elif base_name == "model":
+            formatter = logging.Formatter(
+                '[%(asctime)s] [ROLLOUT:%(rollout_idx)s] [POLICY:%(policy_name)s] %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+        else:  # async
+            formatter = logging.Formatter(
+                '[%(asctime)s] [ROLLOUT:%(rollout_idx)s] %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+        self.loggers[logger_key] = logger
+        return logger
     
     def _setup_summary_logger(self):
         """Setup summary.log logger"""
@@ -197,8 +185,8 @@ class MultiLoggerConfig:
             message: Log message
             extra_data: Additional structured data
         """
-        logger = self.loggers["env_agent"]
-        
+        logger = self._get_or_create_rollout_logger("env_agent", rollout_idx)
+
         # Build log content and safely serialize
         log_content = {
             "message": message,
@@ -227,23 +215,19 @@ class MultiLoggerConfig:
             response: Model response
             extra_data: Additional data
         """
-        logger = self.loggers["model"]
-        
+        rollout_key = rollout_idx if rollout_idx is not None else "no_rollout"
+        logger = self._get_or_create_rollout_logger("model", rollout_key)
+
         log_content = {
             "prompt": prompt,
             "response": response,
             "timestamp": datetime.now().isoformat(),
             "extra_data": safe_serialize(extra_data or {})
         }
-        if rollout_idx is not None:
-            extra = {
-                "rollout_idx": rollout_idx,
-                "policy_name": policy_name
-            }
-        else:
-            extra = {
-                "policy_name": policy_name
-            }
+        extra = {
+            "rollout_idx": rollout_idx if rollout_idx is not None else "N/A",
+            "policy_name": policy_name
+        }
         
         logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
     
@@ -258,8 +242,8 @@ class MultiLoggerConfig:
             message: Event message
             extra_data: Additional data
         """
-        logger = self.loggers["async"]
-        
+        logger = self._get_or_create_rollout_logger("async", rollout_idx)
+
         log_content = {
             "event_type": event_type,
             "message": message,

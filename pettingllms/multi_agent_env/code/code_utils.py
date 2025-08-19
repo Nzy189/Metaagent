@@ -202,6 +202,8 @@ def _format_competition_problem(example: Dict, index: int) -> Optional[Dict]:
     example_output = example.get("example_output", [])
     
     # Extract test inputs/outputs
+    original_test_input = example.get("test_input", [])
+    original_test_output = example.get("test_output", [])
     test_input = example.get("test_input", [])
     if not test_input:
         print(f"Warning: No test_input found in example {index}, using empty list")
@@ -210,14 +212,31 @@ def _format_competition_problem(example: Dict, index: int) -> Optional[Dict]:
     if not test_output:
         print(f"Warning: No test_output found in example {index}, using empty list")
         test_output = []
+    max_test=8
+    ground_truth_test_input=[]
+    ground_truth_test_output=[]
+    total_test_cases = 0
+    for i in range(len(test_input)):
+
+
+        if total_test_cases >= max_test:
+            break
+        ground_truth_test_input.append(test_input[i] )
+        ground_truth_test_output.append(test_output[i])
+        total_test_cases += 1
+        
+        if total_test_cases >= max_test:
+            break
     
     # Return in the required format
     return {
         "question": question,
         "example_input": example_input,
         "example_output": example_output,
-        "test_input": test_input,
-        "test_output": test_output
+        "original_test_input": original_test_input,
+        "original_test_output": original_test_output,
+        "test_input": ground_truth_test_input,
+        "test_output": ground_truth_test_output
     }
 
 def _extract_problem(example: Dict) -> Optional[str]:
@@ -247,7 +266,7 @@ def _extract_problem(example: Dict) -> Optional[str]:
 
 # =================== Code execution and validation ===================
 
-async def worker(script, input_val, timeout: float = 10.0):
+async def worker(script, input_val,expected_output, timeout: float = 10.0):
     """
     Worker function for executing code in a separate process.
     Based on the reference worker function provided.
@@ -297,8 +316,12 @@ async def worker(script, input_val, timeout: float = 10.0):
     finally:
         sys.stdout = original_stdout
         sys.stdin = original_stdin
+
+    if_passed=await test_if_eq(printed_output,str(expected_output))
+
+    result={"test_input":input_val,"code_execution_output":printed_output,"test_output":expected_output,"passed":if_passed}
         
-    return printed_output
+    return result
 
 
 
@@ -336,22 +359,23 @@ async def evaluate_code_against_tests(
     if not test_inputs or not test_outputs:
         return 0.0, [], []
     
-    if len(test_inputs) != len(test_outputs):
-        return 0.0, [], []
     
     total_tests = len(test_inputs)
     
-    # Execute all test cases asynchronously
-    tasks = [worker(code, test_input, timeout) for test_input in test_inputs]
-    actual_outputs = await asyncio.gather(*tasks)
+   
+    
     
     # Process results
     passed_tests = 0
     passed_cases = []
     failed_cases = []
     
-    for i, (test_input, expected_output, actual_output) in enumerate(zip(test_inputs, test_outputs, actual_outputs)):
-        test_case_info = {"input": test_input,"generated_test_case_output":actual_output,"generated_code_execution_output":expected_output}
+    for i,test_input in enumerate(test_inputs):
+        result=await worker(code, test_input,test_outputs[i], timeout)
+        actual_output=result["code_execution_output"]
+        expected_output=result["test_output"]
+        if_passed=result["passed"]
+        test_case_info={"test_input":test_input,"code_execution_output":actual_output,"generated_test_output":expected_output,"passed":if_passed}
         
         if actual_output is None: # Check for timeout
             if_passed = False
@@ -706,15 +730,17 @@ def evaluate_code_generation_task(
     }
 
 
-def test_load_problem(benchmark: str, batch_size: int):
+def test_load_problem(benchmark: str, batch_size: int,split:str):
     # Get problems
     results= load_problem_batch(
         dataset_name=benchmark,
-        batch_size=batch_size
+        batch_size=batch_size,
+        split="test"
     )
+    print(results)
        
 
 if __name__ == "__main__":
-    for benchmark in ["CodeContests_train"]:
+    for benchmark in ["CodeContests"]:
         print(f"test load {benchmark}")
-        test_load_problem(f"{benchmark}", 2)
+        test_load_problem(f"{benchmark}", 5,split="test")

@@ -33,17 +33,24 @@ pandas
 pyarrow>=15.0.0
 polars
 
-######## Core ML / training
+######## Core ML / training - Updated for B200 support
 accelerate
 transformers
 peft
-vllm==0.8.4
+# Updated vLLM to latest version supporting B200
+vllm>=0.4.0
 ray>=2.10
-flash-attn==2.7.4.post1
+# Updated flash-attn for B200 compatibility
+flash-attn>=2.7.4
 torchdata
 tensordict>=0.8.0,<0.9.0
 pybind11
 einops
+
+######## OpenTelemetry - Updated for latest vLLM compatibility
+opentelemetry-api>=1.26.0,<1.27.0
+opentelemetry-sdk>=1.26.0,<1.27.0
+opentelemetry-semantic-conventions>=0.47b0,<0.48b0
 
 ######## Config / logging / misc tools
 hydra-core>=1.3.2,<1.4

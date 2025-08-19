@@ -150,10 +150,14 @@ class CodeTestEnvBatch:
    
         if not self.problem_list:
             raise ValueError(f"Failed to load problems from benchmark: {config.env.benchmark}. Please check if the dataset is available and accessible.")
-    
+        
+       
+        
+           
+
         
         for i,problem in enumerate(self.problem_list):
-            state=CodeTestEnvState(problem=problem["question"],ground_truth_test_input=problem["example_input"],ground_truth_test_output=problem["example_output"])
+            state=CodeTestEnvState(problem=problem["question"],ground_truth_test_input=problem["test_input"],ground_truth_test_output=problem["test_output"])
             for s in range(samples):
                 env=CodeTestEnv(env_idx=i, rollout_idx=rollout_idx_list[i*samples+s], max_turns=max_turns, config=None)
                 env.state=copy.deepcopy(state)

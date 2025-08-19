@@ -30,25 +30,41 @@ from pettingllms.utils.logger_config import get_multi_logger
 
 
 def initialize_llm_servers(worker_group,server_class,server_config):
-
+    print(f"DEBUG: Starting initialize_llm_servers, worker_group={worker_group}")
+    
     if worker_group is None:
         world_size=1
         name_prefix="actor_rollout"
     else:
         world_size=worker_group.world_size
         name_prefix=worker_group.name_prefix
+    
+    print(f"DEBUG: world_size={world_size}, name_prefix={name_prefix}")
+    
     rollout_tp_size = server_config.actor_rollout_ref.rollout.tensor_model_parallel_size
     rollout_dp_size = world_size // rollout_tp_size
-
-   
+    
+    # 当 world_size 小于 tp_size 时，确保至少启动 1 个 server
+    if rollout_dp_size < 1:
+        print(
+            f"DEBUG: rollout_dp_size computed as 0 (world_size={world_size}, tp_size={rollout_tp_size}), fallback to 1"
+        )
+        rollout_dp_size = 1
+    
+    print(f"DEBUG: rollout_tp_size={rollout_tp_size}, rollout_dp_size={rollout_dp_size}")
 
     async_llm_servers = [None] * rollout_dp_size
     server_addresses = [None] * rollout_dp_size
 
     # Start all server instances, restart if address already in use.
     unready_dp_ranks = set(range(rollout_dp_size))
+    print(f"DEBUG: unready_dp_ranks={unready_dp_ranks}")
+    
     while len(unready_dp_ranks) > 0:
+        print(f"DEBUG: Processing unready_dp_ranks: {unready_dp_ranks}")
+        
         if worker_group is None:
+            print(f"DEBUG: Creating server for worker_group=None case")
             options_kwargs = dict(
             scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=__import__("ray._raylet")._raylet.NodeID.from_hex(ray.nodes()[0]["NodeID"]),
@@ -57,12 +73,17 @@ def initialize_llm_servers(worker_group,server_class,server_config):
             name=f"async_llm_server",
         )
             
-        # Allocate a GPU to the server actor if available, otherwise vLLM will see CUDA but cannot set device
+        # 不要为 Actor 预占 GPU（vLLM 引擎会通过 placement group 按 tp_size 申请 GPU）
             if torch.cuda.is_available():
-                options_kwargs["num_gpus"] = 1
+                options_kwargs["num_gpus"] = 0
+                print(f"DEBUG: Do not reserve GPU for actor; leave GPUs to vLLM placement group")
+            
+            print(f"DEBUG: Creating server with options: {options_kwargs}")
             server = server_class.options(**options_kwargs).remote(server_config, 1, 0, "actor_rollout")
             servers={0:server}
+            print(f"DEBUG: Created server: {server}")
         else:
+            print(f"DEBUG: Creating servers for worker_group case")
             register_center = ray.get_actor(f"{name_prefix}_register_center")
             workers_info = ray.get(register_center.get_worker_info.remote())
             assert len(workers_info) == world_size
@@ -78,17 +99,19 @@ def initialize_llm_servers(worker_group,server_class,server_config):
                 for rollout_dp_rank in unready_dp_ranks
             }
 
-        
-    
-
         for rollout_dp_rank, server in servers.items():
+            print(f"DEBUG: Processing server for rank {rollout_dp_rank}")
             try:
+                print(f"DEBUG: Getting server address for rank {rollout_dp_rank}")
                 address = ray.get(server.get_server_address.remote())
+                print(f"DEBUG: Got address {address} for rank {rollout_dp_rank}")
                 server_addresses[rollout_dp_rank] = address
                 async_llm_servers[rollout_dp_rank] = server
                 unready_dp_ranks.remove(rollout_dp_rank)
+                print(f"DEBUG: Successfully initialized server for rank {rollout_dp_rank}")
             except Exception as e:
                 print(f"Failed to get server address for rank {rollout_dp_rank}: {e}")
+                print(f"DEBUG: Exception details: {type(e).__name__}: {str(e)}")
                 # 清理失败的 server
                 try:
                     ray.kill(server)
@@ -97,11 +120,21 @@ def initialize_llm_servers(worker_group,server_class,server_config):
                 # 重新抛出异常，让外层重试逻辑处理
                 raise e
         
-        ray.get([server.init_engine.remote() for server in async_llm_servers])
-
-          
+    print(f"DEBUG: All servers initialized, starting engine init")
+    # 只有在所有服务器都就绪后才初始化引擎
+    valid_servers = [server for server in async_llm_servers if server is not None]
+    print(f"DEBUG: Found {len(valid_servers)} valid servers")
     
-    return async_llm_servers, server_addresses
+    if valid_servers:
+        print(f"DEBUG: Initializing engines for {len(valid_servers)} servers")
+        ray.get([server.init_engine.remote() for server in valid_servers])
+        print(f"DEBUG: Engine initialization completed")
+    
+    # 返回有效的服务器列表而不是包含 None 的列表
+    valid_addresses = [addr for addr in server_addresses if addr is not None]
+    
+    print(f"DEBUG: Returning {len(valid_servers)} servers and {len(valid_addresses)} addresses")
+    return valid_servers, valid_addresses
 
         # All server instances are ready, init AsyncLLM engine.
         
@@ -124,11 +157,18 @@ class AsyncLLMServerManager:
             max_cache_size (int, optional): max cache size for request_id to server mapping. Defaults to 10000.
         """
         self.config = config
-        self.server_handles = server_handles
+        
+        # 过滤掉 None 的服务器句柄
+        valid_server_handles = [server for server in server_handles if server is not None]
+        
+        if not valid_server_handles:
+            raise ValueError("No valid server handles provided. Please check server initialization.")
+            
+        self.server_handles = valid_server_handles
         random.shuffle(self.server_handles)
 
         # Least requests load balancing
-        self.weighted_serveres = [[0, (hash(server), server)] for server in server_handles]
+        self.weighted_serveres = [[0, (hash(server), server)] for server in self.server_handles]
         heapq.heapify(self.weighted_serveres)
 
         # LRU cache to map request_id to server
@@ -142,6 +182,10 @@ class AsyncLLMServerManager:
         if request_id in self.request_id_to_server:
             return self.request_id_to_server[request_id]
 
+        # 检查是否有可用的服务器
+        if not self.weighted_serveres:
+            raise RuntimeError("No available servers. Please check server initialization.")
+        
         server = self.weighted_serveres[0][1][1]
         self.weighted_serveres[0][0] += 1
         heapq.heapreplace(self.weighted_serveres, self.weighted_serveres[0])

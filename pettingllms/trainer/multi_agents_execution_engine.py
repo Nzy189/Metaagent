@@ -61,11 +61,11 @@ class MultiAgentsExecutionEngine:
         if hasattr(self.config, 'data') and self.config.data is not None:
             self.sample_temperature = getattr(self.config.data, 'sample_temperature', 0.7)
             self.gen_batch_size = getattr(self.config.data, 'gen_batch_size', 64)
-            self.gen_n_samples = getattr(self.config.data, 'gen_n_samples', 8)
+            self.gen_n_samples = getattr(self.config.data, 'gen_n_samples', 1)
         else:
             self.sample_temperature = 0.7
             self.gen_batch_size = 64
-            self.gen_n_samples = 8
+            self.gen_n_samples = 1
             
         # Timeout configuration - direct access with fallbacks
         if hasattr(self.config, 'timeout') and self.config.timeout is not None:
@@ -82,7 +82,7 @@ class MultiAgentsExecutionEngine:
         server_manager_dict=None,
         agent_policy_mapping=None,
         env_args=None,
-        max_workers=64,
+        max_workers=1000,
         **kwargs,
     ):
         
@@ -118,7 +118,16 @@ class MultiAgentsExecutionEngine:
         self.agent_class_list = [AGENT_CLASS_MAPPING[agent_name] for agent_name in self.turn_order]
         self.mode=self.config.mode
         self._init_agents_and_envs()
-        
+        self.agent_config_dict={}
+        for agent_name in self.agent_policy_configs.agent_configs:
+            self.agent_config_dict[agent_name.name]=self.agent_policy_configs.agent_configs[agent_name]
+        self.sample_num=1
+        for agent_name in self.turn_order:
+            if "sample_num" in self.agent_config_dict[agent_name]:
+                self.sample_num*=self.agent_config_dict[agent_name].sample_num
+            else:
+                self.sample_num*=1
+
         #self._init_agents()
 
         #self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers)
@@ -139,13 +148,13 @@ class MultiAgentsExecutionEngine:
         if batched_init == False:
             with multiprocessing.Pool(self.n_cpu // 4) as pool: # Only use 1/4 of the cores to avoid conflicts
                 func=partial(self.__init_one_env_instance, env_args=self.env_args)
-                self.envs = pool.map(func, range(self.gen_batch_size*self.gen_n_samples))
+                self.envs = pool.map(func, range(self.gen_batch_size*self.sample_num))
            
             
         else:
             self.env_batch_class=ENV_BATCH_CLASSES[self.env_name]
-            self.rollout_idx_list=range(self.gen_batch_size*self.gen_n_samples)
-            self.envs_batch=self.env_batch_class(env_idx_list=range(self.gen_batch_size), rollout_idx_list=range(self.gen_batch_size*self.gen_n_samples), samples=self.gen_n_samples, max_turns=self.max_turns, config=self.config, mode=self.mode)
+            self.rollout_idx_list=range(self.gen_batch_size*self.sample_num)
+            self.envs_batch=self.env_batch_class(env_idx_list=range(self.gen_batch_size), rollout_idx_list=range(self.gen_batch_size*self.sample_num), samples=self.sample_num, max_turns=self.max_turns, config=self.config, mode=self.mode)
             self.envs=self.envs_batch.env_list
            
 
@@ -352,7 +361,9 @@ class MultiAgentsExecutionEngine:
                         extra_data={
                             "completed_turn": turn_idx + 1,
                             "completed_agent": agent_name,
-                            "env_state": env.state,
+                            #"env_state": env.state,
+                            "mismatch_cases_count": len(env.state.ground_truth_test_vs_generated_code_mismatch_cases),
+                            "match_cases_count": len(env.state.ground_truth_test_vs_generated_code_match_cases),
                             "reward_history_dict": reward_history_dict
                         }
                     )
@@ -377,9 +388,10 @@ class MultiAgentsExecutionEngine:
             termination_reason="max_turns_reached",
             extra_data={
                 "max_turns": self.max_turns,
-                "env_state": env.state,
                 "final_actions": {agent_name: str(agent_group[agent_idx].current_action) 
                                 for agent_idx, agent_name in enumerate(self.turn_order)},
+                "mismatch_cases_count": len(env.state.ground_truth_test_vs_generated_code_mismatch_cases),
+                "match_cases_count": len(env.state.ground_truth_test_vs_generated_code_match_cases),
                 "reward_history_dict": reward_history_dict
             }
         )
@@ -474,6 +486,7 @@ class MultiAgentsExecutionEngine:
                         {
                             "completed_count": completed_count,
                             "total_tasks": len(tasks),
+                            
                             "progress": f"{completed_count}/{len(tasks)}"
                         }
                     )
@@ -568,7 +581,8 @@ def test_server_manager_simple(trainer_config,config):
     server_list=[]
     print(f"begin to init server list")
     from pettingllms.trainer.utils import initialize_llm_servers
-    server_list,server_addresses=initialize_llm_servers(None,AsyncvLLMServer,trainer_config)    
+    server_list,server_addresses=initialize_llm_servers(None,AsyncvLLMServer,trainer_config)
+    print(f"Initialized {len(server_list)} servers: {[s is not None for s in server_list]}")    
 
     test_multi_logger.log_async_event(
         -1, "server_manager_init_start", 
@@ -645,11 +659,48 @@ def test_server_manager_simple(trainer_config,config):
 
 
 
-def test_rollout_engine_simple():
+import hydra
+from omegaconf import DictConfig
+
+def test_rollout_engine_simple(config_path=None):
     from omegaconf import OmegaConf
+    import sys
+    import argparse
+    
+    if config_path is None:
+        # Parse command line arguments
+        parser = argparse.ArgumentParser(description='Multi-Agent Execution Engine')
+        parser.add_argument('--config', '-c', type=str, 
+                          default="pettingllms/config/code/code_eval.yaml",
+                          help='Path to config file')
+        parser.add_argument('--trainer_config', '-t', type=str,
+                          default="pettingllms/config/code/ppo_trainer/eval.yaml", 
+                          help='Path to trainer config file')
+        args = parser.parse_args()
+        config_path = args.config
+        trainer_config_path = args.trainer_config
+    else:
+        trainer_config_path = "pettingllms/config/code/ppo_trainer/eval.yaml"
+    
+    trainer_config = OmegaConf.load(trainer_config_path)
+    config = OmegaConf.load(config_path)
+    _ = test_server_manager_simple(trainer_config, config)
+
+@hydra.main(config_path="../config/code", config_name="code_eval", version_base=None)
+def run_benchmark_with_hydra(config: DictConfig):
+    """使用 Hydra 运行 benchmark，可以通过命令行覆盖任何配置参数"""
+    from omegaconf import OmegaConf
+    
+    # 加载 trainer 配置
     trainer_config = OmegaConf.load("pettingllms/config/code/ppo_trainer/eval.yaml")
-    config=OmegaConf.load("pettingllms/config/code/code_eval.yaml")
-    _ = test_server_manager_simple(trainer_config,config)
+    
+    print(f"运行 benchmark: {config.env.benchmark}")
+    print(f"实验名称: {config.get('experiment_name', 'code_test')}")
+    print("="*50)
+    
+    # 运行测试
+    _ = test_server_manager_simple(trainer_config, config)
 
 if __name__ == "__main__":
-    test_rollout_engine_simple()
+    # 如果直接运行该文件，使用 Hydra 版本
+    run_benchmark_with_hydra()
