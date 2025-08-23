@@ -28,6 +28,8 @@ from pettingllms.parser.chat_template.parser import ChatTemplateParser
 from pettingllms.trainer.utils import convert_prompt_to_dpr, convert_dpr_to_response
 from pettingllms.utils.logger_config import get_multi_logger
 from threading import Thread
+from pettingllms.trainer.utils import build_reverse_mapping
+from pettingllms.multi_agent_env.code.code_utils import get_ray_docker_worker_cls
 
 
 logger = logging.getLogger(__name__)
@@ -74,6 +76,7 @@ class MultiAgentsExecutionEngine:
         else:
             self.generate_timeout = 120.0  # 60 seconds for generation
             self.step_timeout = 20.0      # 30 seconds for environment step
+        
     def __init__(
         self,
         config,
@@ -94,7 +97,6 @@ class MultiAgentsExecutionEngine:
         self.env_args = env_args or {}
         self.max_workers = max_workers
         
-        # 初始化多日志系统
         self.multi_logger = get_multi_logger()
         
         # Read parameters from config with fallback to defaults
@@ -117,16 +119,38 @@ class MultiAgentsExecutionEngine:
         self.env_class = ENV_CLASS_MAPPING[env_name]
         self.agent_class_list = [AGENT_CLASS_MAPPING[agent_name] for agent_name in self.turn_order]
         self.mode=self.config.mode
-        self._init_agents_and_envs()
-        self.agent_config_dict={}
-        for agent_name in self.agent_policy_configs.agent_configs:
-            self.agent_config_dict[agent_name.name]=self.agent_policy_configs.agent_configs[agent_name]
-        self.sample_num=1
-        for agent_name in self.turn_order:
-            if "sample_num" in self.agent_config_dict[agent_name]:
-                self.sample_num*=self.agent_config_dict[agent_name].sample_num
-            else:
-                self.sample_num*=1
+        
+        
+        # agent_configs is a dict with keys like "agent_0", "agent_1"
+        # Each agent config has a "name" field that corresponds to turn_order
+        self.agent_configs_raw = self.config.agent_policy_configs.agent_configs
+        
+        # Create a mapping from agent name to agent config
+        self.agent_config_dict = {}
+        for agent_key, agent_config in self.agent_configs_raw.items():
+            agent_name = agent_config.name
+            self.agent_config_dict[agent_name] = agent_config
+        self.sample_mode=self.config.sample_mode
+        # Calculate total sample_num and sample_num_list based on turn_order
+        self.sample_num = 1
+        self.sample_num_list = []
+        if self.sample_mode=="env":
+            self.sample_num=self.gen_n_samples
+        else:
+            for agent_name in self.turn_order:
+                if agent_name in self.agent_config_dict and hasattr(self.agent_config_dict[agent_name], 'sample_num'):
+                    agent_sample_num = self.agent_config_dict[agent_name].sample_num
+                    self.sample_num *= agent_sample_num
+                    self.sample_num_list.append(agent_sample_num)
+                else:
+                    self.sample_num *= 1
+                    self.sample_num_list.append(1)
+        print(f"sample_num: {self.sample_num}")
+        print(f"sample_num_list: {self.sample_num_list}")
+        print(f"agent_config_dict keys: {list(self.agent_config_dict.keys())}")
+        #self.env_worker_size=self.gen_batch_size*self.sample_num
+
+        
 
         #self._init_agents()
 
@@ -134,11 +158,12 @@ class MultiAgentsExecutionEngine:
         # rollout_engine_dict is not maintained in this class to avoid referencing a non-existent attribute
         self.server_manager_dict = server_manager_dict or {}
         self.chat_parser_dict={}
+        #self._init_agents_and_envs()
         #for key,value in self.router_dict.items():
         #    self.chat_parser_dict[key]=ChatTemplateParser.get_parser(self.tokenizer_dict[key], disable_thinking=False)
         
 
-    def _init_agents_and_envs(self):
+    def init_agents_and_envs(self):
        
         # Check for batched_init in config.env
         if hasattr(self.config, 'env') and self.config.env is not None:
@@ -152,29 +177,69 @@ class MultiAgentsExecutionEngine:
            
             
         else:
+            self.env_workers = None
+            try:
+                import ray
+                if not ray.is_initialized():
+                    ray.init(ignore_reinit_error=True, include_dashboard=False, logging_level="ERROR")
+                RayDockerWorker = get_ray_docker_worker_cls()
+                if RayDockerWorker is not None:
+                    num_workers = self.gen_batch_size * self.sample_num
+                    self.env_workers = [RayDockerWorker.remote(_) for _ in range(num_workers)]
+                    self.multi_logger.log_rollout_summary(
+                        -1, -1, "env_workers",
+                        f"init {num_workers} env workers"
+                    )
+            except Exception:
+                self.env_workers = None
+
             self.env_batch_class=ENV_BATCH_CLASSES[self.env_name]
             self.rollout_idx_list=range(self.gen_batch_size*self.sample_num)
-            self.envs_batch=self.env_batch_class(env_idx_list=range(self.gen_batch_size), rollout_idx_list=range(self.gen_batch_size*self.sample_num), samples=self.sample_num, max_turns=self.max_turns, config=self.config, mode=self.mode)
+            self.envs_batch=self.env_batch_class(
+                env_idx_list=range(self.gen_batch_size),
+                rollout_idx_list=range(self.gen_batch_size*self.sample_num),
+                samples=self.sample_num,
+                max_turns=self.max_turns,
+                config=self.config,
+                mode=self.mode
+            )
             self.envs=self.envs_batch.env_list
-           
+        
 
+        
+        
         # Initialize the agent group for each rollout
-        self.agent_groups = [
-            [agent_cls(rollout_idx=rollout_idx) for agent_cls in self.agent_class_list]
-            for rollout_idx in range(len(self.envs))
-        ]
+        self.agent_groups_dict = {}
+        self.env_rollout_mapping={}
+        self.agent_rollout_mapping={}
         
-        
-        
-    
+        if self.sample_mode=="env":
+
+            for env_idx in range(self.gen_batch_size):
+                self.env_rollout_mapping[env_idx] = [_ for _ in range(env_idx*self.sample_num, (env_idx+1)*self.sample_num)]
+            for agent_idx, agent_name in enumerate(self.turn_order):
+                agent_class = self.agent_class_list[agent_idx]
+                self.agent_groups_dict[agent_name] = [agent_class(env_idx=rollout_idx//self.sample_num, agent_sample_idx=rollout_idx%self.sample_num) for rollout_idx in range(self.gen_batch_size*self.sample_num)]
+        else:
+            for agent_idx, agent_name in enumerate(self.turn_order):
+                agent_class = self.agent_class_list[agent_idx]
+                # Get sample_num from agent_config_dict
+                if agent_name in self.agent_config_dict and hasattr(self.agent_config_dict[agent_name], 'sample_num'):
+                    agent_sample_num = self.agent_config_dict[agent_name].sample_num
+                else:
+                    agent_sample_num = 1
+                self.agent_groups_dict[agent_name] = [[agent_class(env_idx=env_idx, agent_sample_idx=sample_idx) for sample_idx in range(agent_sample_num)] for env_idx in range(self.gen_batch_size)]
+
+            for env_idx in range(self.gen_batch_size):
+                self.env_rollout_mapping[env_idx] = [_ for _ in range(env_idx*self.sample_num, (env_idx+1)*self.sample_num)]
+            self.agent_rollout_mapping = build_reverse_mapping(self.turn_order, self.sample_num_list, batch_size=self.gen_batch_size)
     def __init_one_env_instance(self, rollout_idx, env_args):
         env = self.env_class( env_idx=rollout_idx % self.gen_batch_size,rollout_idx=rollout_idx,max_turns=self.max_turns, **env_args)
         
         return env
-    
-
-        
-    async def generate_single_rollout(self, rollout_idx, timing_raw, meta_info):
+                   
+            
+    async def generate_single_rollout(self, rollout_idx):
         """
         Generate a single rollout, adapted for multi-agent interaction in the code testing environment.
         
@@ -186,19 +251,19 @@ class MultiAgentsExecutionEngine:
         Returns:
             DataProto: DataProto object containing trajectory data
         """
-        rollout_id = str(uuid.uuid4())
         trajectory_per_task_dict = {}
+        env_idx = rollout_idx// self.sample_num
         for policy_name in self.tokenizer_dict.keys():
             trajectory_per_task_dict[policy_name] = DataProto()
 
 
         env = self.env_list[rollout_idx] if hasattr(self, "env_list") else self.envs[rollout_idx]
-        agent_group = self.agent_groups[rollout_idx]
-        
-        
+        agent_group = []
+        for agent_name in self.turn_order:
+            agent_group.append(self.agent_groups_dict[agent_name][rollout_idx])
 
-        
-        self.multi_logger.log_async_event(
+
+        self.multi_logger.log_async_event(env_idx,
             rollout_idx, "rollout_start", 
             f"Starting multi-turn conversation, max turns: {self.max_turns}",
             {
@@ -207,10 +272,10 @@ class MultiAgentsExecutionEngine:
                 "available_server_managers": list(self.server_manager_dict.keys())
             }
         )
-        reward_history_dict={}
+        
         for turn_idx in range(self.max_turns):
             self.multi_logger.log_async_event(
-                rollout_idx, "turn_start",
+                env_idx, rollout_idx, "turn_start",
                 f"Starting turn {turn_idx + 1}",
                 {"turn_idx": turn_idx + 1}
             )
@@ -227,8 +292,8 @@ class MultiAgentsExecutionEngine:
                 
 
                 # Convert to DataProto format
-                dpr_prompt = convert_prompt_to_dpr(self.tokenizer_dict[policy_name], 
-                        self.processor_dict.get(policy_name) if isinstance(self.processor_dict, dict) else None,
+                dpr_prompt = convert_prompt_to_dpr( self.tokenizer_dict[policy_name], 
+                        self.chat_parser_dict.get(policy_name), 
                         prompt, 
                         self.max_prompt_length,
                        multi_modal=False
@@ -239,68 +304,66 @@ class MultiAgentsExecutionEngine:
                 output_dpr = None
                 response_str = None
                 try:
-                    output_dpr,response_str = await self.server_manager_dict[policy_name].generate(
-                            dpr_prompt, 
-                            application_id=rollout_id,
+                    output_dpr,response_str = await asyncio.wait_for(
+                        self.server_manager_dict[policy_name].generate(
+                            rollout_idx=rollout_idx, 
+                            turn_idx=turn_idx, 
+                            agent_idx=agent_idx,
+                            dpr_prompt=dpr_prompt, 
+                            application_id=str(uuid.uuid4()),
                             tokenizer=self.tokenizer_dict[policy_name],
-                            rollout_idx=rollout_idx,
+                            env_idx=rollout_idx // self.sample_num,
                             policy_name=policy_name,
                             timeout=self.generate_timeout
-                        )
-                      
-                    
+                        ),
+                        timeout=self.generate_timeout
+                    )
                 except asyncio.TimeoutError:
                     self.multi_logger.log_env_agent_info(
-                        rollout_idx, turn_idx + 1, agent_name,
+                        env_idx, rollout_idx, turn_idx + 1, agent_name,
                         f"❌ Generation timed out after {self.generate_timeout}s",
                         {"error": "timeout", "timeout_seconds": self.generate_timeout}
                     )
                     generation_success = False
+                    output_dpr = None
+                    response_str = None
                 except Exception as e:
                     self.multi_logger.log_env_agent_info(
-                        rollout_idx, turn_idx + 1, agent_name,
+                        env_idx, rollout_idx, turn_idx + 1, agent_name,
                         f"Failed to generate response: {e}",
                         {"error": str(e), "traceback": traceback.format_exc()}
                     )
-                    raise
+                    generation_success = False
+                    output_dpr = None
+                    response_str = None
                
                 # Skip processing if generation failed
                 if not generation_success:
                     continue
                 
+                # Only proceed if we have a valid response
+                if response_str is None:
+                    continue
+                    
                 current_agent.update_from_model(response_str)
                 
                 step_success = True
                 try:
                     await asyncio.wait_for(
-                        env.step(agent_name, current_agent.current_action),
+                        current_agent.step(self.envs[rollout_idx],env_worker=self.env_workers[rollout_idx]),
                         timeout=self.step_timeout
                     )
                 except asyncio.TimeoutError:
                     self.multi_logger.log_env_agent_info(
-                        rollout_idx, turn_idx + 1, agent_name,
+                        env_idx, rollout_idx, turn_idx + 1, agent_name,
                         f"❌ Environment step timed out after {self.step_timeout}s",
                         {"error": "timeout", "timeout_seconds": self.step_timeout}
-                    )
-                    step_success = False
-                except Exception as e:
-                    self.multi_logger.log_env_agent_info(
-                        rollout_idx, turn_idx + 1, agent_name,
-                        f"Failed to execute environment step: {e}",
-                        {"error": str(e), "traceback": traceback.format_exc()}
                     )
                     step_success = False
                 
                 # Skip processing if step failed
                 if not step_success:
                     continue
-                
-                current_agent.calculate_reward(env,mode="sum")
-
-                if agent_name not in reward_history_dict:
-                    reward_history_dict[agent_name] = [current_agent.agent_reward]
-                else:
-                    reward_history_dict[agent_name].append(current_agent.agent_reward)
 
                 # Only process trajectory if both generation and step succeeded
                 if output_dpr is not None:
@@ -316,43 +379,343 @@ class MultiAgentsExecutionEngine:
                             trajectory_per_task_dict[policy_name], 
                             output_dpr
                         ])
+                    
                 
-
+         
                 self.multi_logger.log_env_agent_info(
-                    rollout_idx, turn_idx + 1, agent_name,
+                    env_idx, rollout_idx, turn_idx + 1, agent_name,
                     "Trajectory information updated",
                     {
                         "agent_name": agent_name,
-                        #"agent_prompt": prompt,
                         "agent_response": response_str,
-                        "agent_reward": current_agent.agent_reward,
+                        "agent_reward_history": current_agent.reward_history,
                         "agent_action": str(current_agent.current_action),
-                        "reward_history_dict": reward_history_dict
+                       # "env_state": env.state,
+                    
                        
                     }
                 )
                 if agent_name == self.turn_order[-1]:
                     self.multi_logger.log_env_agent_info(
-                        rollout_idx, turn_idx + 1, agent_name,
+                        env_idx, rollout_idx, turn_idx + 1, agent_name,
                         "Trajectory information updated",
                         {
-                            "env_state": env.state,
+                            "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.ground_truth_test_vs_generated_code_match_ratio,
+                          
+                            "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.generated_test_vs_golden_code_match_ratio,
+                       
                         }
                     )
+        
+        
+            finish=True
+            for agent in agent_group:
+                if not agent.done:
+                    finish=False
+                    break
+            if finish:
+                agent_rewards={agent_name: agent.reward_history for agent_name, agent in zip(self.turn_order, agent_group)}
                 
+                self.multi_logger.log_rollout_summary(
+                    env_idx, rollout_idx, "success!!",
+                    f"Rollout {rollout_idx} completed successfully",
+                    extra_data={
+                        "turn_idx": turn_idx,
+                        "agent_rewards": agent_rewards,
+                        "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.ground_truth_test_vs_generated_code_match_ratio,
+                        "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.ground_truth_test_vs_generated_code_match_ratio,
+                    }
+                )
+                
+                break
+        agent_rewards={agent_name: agent.reward_history for agent_name, agent in zip(self.turn_order, agent_group)}
+        self.multi_logger.log_rollout_summary(
+                env_idx, rollout_idx, "rollout_complete",
+                f"Rollout {rollout_idx} completed successfully",
+                extra_data={
+                    "turn_idx": 4,
+                    "agent_rewards": agent_rewards,
+                    "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.ground_truth_test_vs_generated_code_match_ratio,
+                    "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.ground_truth_test_vs_generated_code_match_ratio,
+                }
+            )
+
+
+        
+       
+        #trajectory_per_task_dict = self._assign_consistent_uids(trajectory_per_task_dict)
+        
+        return trajectory_per_task_dict
+
+        
+ 
+    async def generate_env_idx_rollout_agent_flow(self, env_idx, mode="train"):
+        """
+        Generate a single rollout, adapted for multi-agent interaction in the code testing environment.
+        
+        Args:
+            env: Code testing environment instance
+            timing_raw: Timing record dictionary
+            meta_info: Meta information
+            
+        Returns:
+            DataProto: DataProto object containing trajectory data
+        """
+       # init trajectory_per_task_dict
+        trajectory_per_task_dict = {}
+        for policy_name in self.tokenizer_dict.keys():
+            trajectory_per_task_dict[policy_name] = DataProto()
+
+
+        
+        # Get the seed environment for this env_idx
+        
+        
+        
+
+        
+        self.multi_logger.log_async_event(
+            env_idx, self.env_rollout_mapping[env_idx][0], "rollout_start", 
+            f"Starting multi-turn conversation for env {env_idx}, max turns: {self.max_turns}",
+            {
+                "env_idx": env_idx,
+                "turn_order": self.turn_order,
+                "available_tokenizers": list(self.tokenizer_dict.keys()),
+                "available_server_managers": list(self.server_manager_dict.keys())
+            }
+        )
+       
+        for turn_idx in range(self.max_turns):
+            self.multi_logger.log_async_event(
+                env_idx, self.env_rollout_mapping[env_idx][0], "turn_start",
+                f"Starting turn {turn_idx + 1}",
+                {"turn_idx": turn_idx + 1}
+            )
+            
+            # agent upate from envs and generate response
+            for agent_idx, agent_name in enumerate(self.turn_order):
+                if agent_name in self.agent_config_dict and hasattr(self.agent_config_dict[agent_name], 'sample_num') and mode=="train":
+                    agent_sample_num = self.agent_config_dict[agent_name].sample_num  
+                else:
+                    agent_sample_num = 1
+                async def process_single_sample(agent_name,sample_idx,application_id):
+                    current_agent = self.agent_groups_dict[agent_name][env_idx][sample_idx]
+                    current_agent.update_from_env(self.envs[self.agent_rollout_mapping[env_idx][agent_name][sample_idx][0]])
+                    prompt = current_agent.current_prompt
+                
+                    # Select the policy name; if not provided, fall back to any available policy
+                    policy_name = self.agent_policy_mapping.get(agent_name) if self.agent_policy_mapping else None
+                    if policy_name is None:
+                        policy_name = next(iter(self.server_manager_dict.keys())) if self.server_manager_dict else next(iter(self.tokenizer_dict.keys()))
+                
+
+                    # Convert to DataProto format
+                    dpr_prompt = convert_prompt_to_dpr(self.tokenizer_dict[policy_name], 
+                            self.processor_dict.get(policy_name) if isinstance(self.processor_dict, dict) else None,
+                            prompt, 
+                            self.max_prompt_length,
+                        multi_modal=False
+                    )
+
+                    
+
+                    
+                    # Generate responses
+                    generation_success = True
+                    output_dpr = None
+                    response_str = None
+                    self.multi_logger.log_model_interaction(
+                        env_idx, self.agent_rollout_mapping[env_idx][agent_name][sample_idx][0], policy_name,
+                        f"Generating response for agent {agent_name} (sample {sample_idx})",
+                        {
+                            "agent_name": agent_name,
+                            "sample_idx": sample_idx,
+                            "rollout_id_list": self.agent_rollout_mapping[env_idx][agent_name][sample_idx],
+                            "prompt": prompt,
+                            
+                        }
+                    )
+                    
+                    output_dpr,response_str = await self.server_manager_dict[policy_name].generate(
+                                dpr_prompt, 
+                                application_id=application_id,
+                                tokenizer=self.tokenizer_dict[policy_name],
+                                env_idx=env_idx,
+                                rollout_idx=self.agent_rollout_mapping[env_idx][agent_name][sample_idx][0],
+                                policy_name=policy_name,
+                                timeout=self.generate_timeout
+                            )
+                    self.multi_logger.log_model_interaction(
+                        env_idx, self.agent_rollout_mapping[env_idx][agent_name][sample_idx][0], policy_name,
+                        f"Got response for agent {agent_name} (sample {sample_idx})",
+                        {
+                            "agent_name": agent_name,
+                            "sample_idx": sample_idx,
+                            "rollout_id_list": self.agent_rollout_mapping[env_idx][agent_name][sample_idx],
+                            "response_str": response_str,
+                            
+                        }
+                    )
+                    current_agent.update_from_model(response_str)
+                    agent_rollout_list=[]
+                    self.multi_logger.log_model_interaction(
+                        -1, -1, "rollout_start",
+                        f"Starting multi-turn conversation for env {env_idx}, max turns: {self.max_turns}",
+                        {   
+                            "agent_name": agent_name,
+                            "sample_idx": sample_idx,
+                            "rollout_idx": self.agent_rollout_mapping[env_idx][agent_name][sample_idx],
+                        }
+                    )
+                    # env step to combine env groups - run all rollout steps concurrently
+                    step_tasks = []
+                    task_meta = []  # (rollout_idx, env)
+                    for rollout_idx in self.agent_rollout_mapping[env_idx][agent_name][sample_idx]:
+                        env = self.envs[rollout_idx]
+                        agent_rollout_list.append(env)
+                       
+                        step_tasks.append(
+                            asyncio.wait_for(
+                                env.step(agent_name, current_agent.current_action,env_worker=self.env_workers[rollout_idx]),
+                                timeout=self.step_timeout
+                            )
+                        )
+                       
+                        task_meta.append((rollout_idx, env))
+
+
+                    # Await all steps to finish before proceeding
+                    step_results = await asyncio.gather(*step_tasks, return_exceptions=True)
+                
+
+                    # Log failures but do not early-return until all steps are attempted
+                    failure_count = 0
+                    for (rollout_idx, env), result in zip(task_meta, step_results):
+                        if isinstance(result, asyncio.TimeoutError):
+                            self.multi_logger.log_rollout_summary(
+                                env_idx, rollout_idx, turn_idx + 1, agent_name,
+                                f"❌ Environment step timed out after {self.step_timeout}s",
+                                {"error": "timeout", "timeout_seconds": self.step_timeout}
+                            )
+                            failure_count += 1
+                        elif isinstance(result, Exception):
+                            self.multi_logger.log_env_agent_info(
+                                env_idx, rollout_idx, turn_idx + 1, agent_name,
+                                f"Failed to execute environment step: {result}",
+                                {"error": str(result), "traceback": traceback.format_exc()}
+                            )
+                            failure_count += 1
+
+                    # If all steps failed, skip processing for this sample
+                    if failure_count == len(step_results):
+                        return None
+                            
+                    # TODO: calculate reward for test generator
+                    current_agent.calculate_reward(agent_rollout_list)
+                    for rollout_idx in self.agent_rollout_mapping[env_idx][agent_name][sample_idx]:
+                        env=self.envs[rollout_idx]
+                        self.multi_logger.log_env_agent_info(
+                            env_idx, rollout_idx, turn_idx + 1, agent_name,
+                            f"Agent {agent_name} (sample {sample_idx}) completed action",
+                            {
+                                "agent_name": agent_name,
+                                "sample_idx": sample_idx,
+                                "agent_response": response_str[:200] + "..." if len(response_str) > 200 else response_str,  # Truncate long responses
+                                "agent_reward": current_agent.agent_reward,
+                                "agent_action":  str(current_agent.current_action),  # Truncate long actions
+                                "reward_history_dict": current_agent.reward_history,
+                                "env_state": env.state
+                            }
+                        )
+                        # Log environment state only once per turn after all agents have acted
+                        if agent_name == self.turn_order[-1]:
+                            self.multi_logger.log_env_agent_info(
+                                env_idx, rollout_idx, turn_idx + 1, "environment",
+                                "Environment state after all agents acted",
+                                {
+                                    "env_state_summary": {
+                                        "done": getattr(env, 'done', False),
+                                        "state_type": str(type(env.state)),
+                                        "has_mismatch_cases": hasattr(env.state, 'golden_truth_test_vs_generated_code_mismatch_cases'),
+                                        "has_match_cases": hasattr(env.state, 'golden_truth_test_vs_generated_code_match_cases')
+                                    }
+                                }
+                            )
+                    
+                    return {
+                        'sample_idx': sample_idx,
+                        'current_agent': current_agent,
+                        #'env_list': env_list,
+                        'output_dpr': output_dpr,
+                        'response_str': response_str,
+                        'policy_name': policy_name
+                    }
+                
+                
+                
+                # 并行执行所有sample
+                sample_tasks = [
+                    asyncio.create_task(process_single_sample(agent_name,sample_idx,application_id=uuid.uuid4()), name=f"sample_{sample_idx}")
+                    for sample_idx in range(agent_sample_num)
+                ]
+                
+                
+                sample_results = await asyncio.gather(*sample_tasks, return_exceptions=True)
+                
+            
+                for result in sample_results:
+                    if result is None or isinstance(result, Exception):
+                        continue  
+                    
+                    current_agent = result['current_agent']
+                    #env_list = result['env_list']
+                    output_dpr = result['output_dpr']
+                    policy_name = result['policy_name']
+                    # Only process trajectory if both generation and step succeeded
+                    if output_dpr is not None:
+                        output_dpr.non_tensor_batch["reward"] = [current_agent.agent_reward]
+                        output_dpr.non_tensor_batch["agent_name"] = [agent_name]  # Add agent name for metrics tracking
+                    
+                        if trajectory_per_task_dict[policy_name].batch is None:
+                            # If empty, assign directly
+                            trajectory_per_task_dict[policy_name] = output_dpr
+                        else:
+                            # Use concat instead of union, because each response content is different
+                            trajectory_per_task_dict[policy_name] = DataProto.concat([
+                                trajectory_per_task_dict[policy_name], 
+                                output_dpr
+                            ])
+                    
+                
+               
+            env_rollout_list=[]
+            last_agent_name=self.turn_order[-1]
+            current_agent=self.agent_groups_dict[last_agent_name][env_idx][0]
+            for rollout_idx in self.env_rollout_mapping[env_idx]:
+                env_rollout_list.append(self.envs[rollout_idx])
+            new_env_seed_idx=current_agent.select_env(env_rollout_list)
+            if new_env_seed_idx==-1:
+                new_env_seed=None
+                break
+            else:
+                new_env_seed=self.envs[new_env_seed_idx]
+                for rollout_idx in self.env_rollout_mapping[env_idx]:
+                    self.envs[rollout_idx]=new_env_seed
                 # Check if environment is done (e.g., all tests passed)
-                if hasattr(env, 'done') and env.done:
-                    termination_reason = getattr(env, 'termination_reason', 'environment_done')
+                if hasattr(new_env_seed, 'done') and new_env_seed.done:
+                    termination_reason = getattr(new_env_seed, 'termination_reason', 'environment_done')
                     self.multi_logger.log_async_event(
-                        rollout_idx, "early_termination",
+                        env_idx, self.env_rollout_mapping[env_idx][0], "early_termination",
                         f"Environment completed early due to: {termination_reason}",
                         {"termination_reason": termination_reason, "completed_turn": turn_idx + 1, "completed_agent": agent_name}
                     )
                     
-              
+                    # Calculate final rewards for all agents
                     agent_rewards = {}
-                    for agent_idx, agent_name_summary in enumerate(self.turn_order):
-                        agent_rewards[agent_name_summary] = agent_group[agent_idx].agent_reward
+                    for agent_name_final in self.turn_order:
+                        # Get the last sample of each agent for final reward
+                        final_agent = self.agent_groups_dict[agent_name_final][env_idx][-1]
+                        agent_rewards[agent_name_final] = final_agent.agent_reward
                     
                     self.multi_logger.log_rollout_summary(
                         rollout_idx=rollout_idx,
@@ -361,46 +724,33 @@ class MultiAgentsExecutionEngine:
                         extra_data={
                             "completed_turn": turn_idx + 1,
                             "completed_agent": agent_name,
-                            #"env_state": env.state,
-                            "mismatch_cases_count": len(env.state.ground_truth_test_vs_generated_code_mismatch_cases),
-                            "match_cases_count": len(env.state.ground_truth_test_vs_generated_code_match_cases),
-                            "reward_history_dict": reward_history_dict
+                            "env_state": new_env_seed.state,
+                            "mismatch_cases_count": len(new_env_seed.state.golden_truth_test_vs_generated_code_mismatch_cases) if hasattr(new_env_seed.state, 'golden_truth_test_vs_generated_code_mismatch_cases') else 0,
+                            "match_cases_count": len(new_env_seed.state.golden_truth_test_vs_generated_code_match_cases) if hasattr(new_env_seed.state, 'golden_truth_test_vs_generated_code_match_cases') else 0,
+                            "reward_history_dict": current_agent.reward_history
                         }
                     )
-                    
-                    # Break out of both agent loop and turn loop
-                    return trajectory_per_task_dict
-        
-        extra_data={}
-        agent_rewards = {}
-        for agent_idx, agent_name in enumerate(self.turn_order):
-            extra_data[f"{agent_name}_final_result"]={
-                "agent_action": str(agent_group[agent_idx].current_action),
-                "agent_reward": agent_group[agent_idx].agent_reward,
-            }
-            agent_rewards[agent_name] = agent_group[agent_idx].agent_reward
-        extra_data["env_state"]=env.state
-        
 
-        self.multi_logger.log_rollout_summary(
-            rollout_idx=rollout_idx,
-            agent_rewards=agent_rewards,
-            termination_reason="max_turns_reached",
-            extra_data={
-                "max_turns": self.max_turns,
-                "final_actions": {agent_name: str(agent_group[agent_idx].current_action) 
-                                for agent_idx, agent_name in enumerate(self.turn_order)},
-                "mismatch_cases_count": len(env.state.ground_truth_test_vs_generated_code_mismatch_cases),
-                "match_cases_count": len(env.state.ground_truth_test_vs_generated_code_match_cases),
-                "reward_history_dict": reward_history_dict
-            }
-        )
+                    
+                    
+
+                    # For the main agent action log, use one of the rollout_idx from env_rollout_mapping
+                    
+                      
+                
+                
+                
+
+     
         
         self.multi_logger.log_async_event(
-            rollout_idx, "rollout_complete",
-            f"Rollout {rollout_idx} completed successfully",
-            extra_data=extra_data
+            env_idx, self.env_rollout_mapping[env_idx][0], "rollout_complete",
+            f"Environment {env_idx} rollout completed successfully",
+            {}
         )
+        
+        # 为 trajectory_per_task_dict 分配一致的 uid
+        #trajectory_per_task_dict = self._assign_consistent_uids(trajectory_per_task_dict)
         
         return trajectory_per_task_dict
 
@@ -409,44 +759,31 @@ class MultiAgentsExecutionEngine:
         
         semaphore = asyncio.Semaphore(max_concurrent_tasks)
         
-        async def run_single_rollout_with_semaphore(rollout_idx):
-           
-            async with semaphore:
+        async def run_env_rollouts_with_semaphore(rollout_idx):
+            try:
+                result = await self.generate_single_rollout(rollout_idx)
+                return result
+            except Exception as e:
+                # Log the error but don't raise it, let the caller handle it
                 self.multi_logger.log_async_event(
-                    rollout_idx, "rollout_concurrent_start",
-                    f"Starting concurrent rollout {rollout_idx}"
+                    -1, rollout_idx, "rollout_error",
+                    f"Rollout {rollout_idx} failed: {e}",
+                    {"error": str(e), "rollout_idx": rollout_idx}
                 )
-                try:
-                    result = await self.generate_single_rollout(rollout_idx, None, None)
-                    self.multi_logger.log_async_event(
-                        rollout_idx, "rollout_complete",
-                        f"Rollout {rollout_idx} completed successfully"
-                    )
-                    return rollout_idx, result
-                except Exception as e:
-                    self.multi_logger.log_async_event(
-                        rollout_idx, "rollout_error",
-                        f"Rollout {rollout_idx} failed",
-                        {"error": str(e), "traceback": traceback.format_exc()}
-                    )
-                    
-                    raise Exception(f"Rollout {rollout_idx} failed: {e}") from e
+                # Return empty result instead of raising
+                empty_result = {}
+                for policy_name in self.tokenizer_dict.keys():
+                    empty_result[policy_name] = DataProto()
+                return empty_result
         
         tasks = [
             asyncio.create_task(
-                run_single_rollout_with_semaphore(rollout_idx), 
-                name=f"rollout_{rollout_idx}"
+                run_env_rollouts_with_semaphore(rollout_idx), 
+                name=f"env_{rollout_idx}_rollouts"
             )
-            for rollout_idx in rollout_indices
+            for rollout_idx in range(self.gen_batch_size*self.sample_num)
         ]
         
-        self.multi_logger.log_async_event(
-            -1, "concurrent_batch_start", 
-            f"Created {len(tasks)} concurrent tasks",
-            {"task_count": len(tasks), "rollout_indices": list(rollout_indices)}
-        )
-        
-        # 初始化按policy_name分组的结果字典
         aggregated_results = {}
         for policy_name in self.tokenizer_dict.keys():
             aggregated_results[policy_name] = DataProto()
@@ -462,10 +799,10 @@ class MultiAgentsExecutionEngine:
             for completed_task in asyncio.as_completed(tasks):
                 try:
                     
-                    rollout_idx, rollout_result = await completed_task
-                    
+                    rollout_result = await completed_task
         
                     for policy_name, policy_data in rollout_result.items():
+                        print(policy_data)
                         if policy_data.batch is not None:  
                             if aggregated_results[policy_name].batch is None:
                                 aggregated_results[policy_name] = policy_data
@@ -479,65 +816,169 @@ class MultiAgentsExecutionEngine:
                     
                     task_pbar.update(1)
                     task_pbar.set_description(f"Rollouts ({completed_count}/{len(tasks)})")
-                    
-                    self.multi_logger.log_async_event(
-                        rollout_idx, "task_complete",
-                        f"Task {rollout_idx} completed",
-                        {
-                            "completed_count": completed_count,
-                            "total_tasks": len(tasks),
-                            
-                            "progress": f"{completed_count}/{len(tasks)}"
-                        }
-                    )
                 except Exception as e:
                     failed_count += 1
-                    # 更新进度条（失败的任务）
                     task_pbar.update(1)
                     task_pbar.set_description(f"Rollouts ({completed_count}/{len(tasks)}, {failed_count} failed)")
                     
                     self.multi_logger.log_async_event(
-                        -1, "task_error",
+                        -1, -1, "task_error",
                         f"Task failed with error: {e}",
                         {
                             "failed_count": failed_count,
-                            "error": str(e)
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "traceback": traceback.format_exc()
                         }
                     )
                     
                     continue
                     
         except Exception as e:
+            # Log Ray status when encountering errors
+            self.multi_logger.log_ray_status(context="during_error")
+            
             self.multi_logger.log_async_event(
-                -1, "concurrent_batch_error",
+                -1, -1, "concurrent_batch_error",
                 f"Concurrent execution encountered error: {e}",
                 {"error": str(e), "traceback": traceback.format_exc()}
             )
-            # 取消所有未完成的任务
             for task in tasks:
                 if not task.done():
                     task_name = task.get_name()
                     self.multi_logger.log_async_event(
-                        -1, "task_cancel",
+                        -1, -1, "task_cancel",
                         f"Cancelling task {task_name}"
                     )
                     task.cancel()
             raise
-        
-        # 关闭进度条
+
         task_pbar.close()
         
         self.multi_logger.log_async_event(
-            -1, "concurrent_batch_complete",
+            -1, -1, "concurrent_batch_complete",
             "Concurrent execution completed",
             {
                 "successfully_processed": completed_count,
+                "total_env_groups": len(tasks),
                 "total_rollouts": len(rollout_indices),
                 "failed": failed_count,
-                "success_rate": f"{completed_count}/{len(rollout_indices)}",
-                "aggregated_policies": list(aggregated_results.keys())
+                "success_rate": f"{completed_count}/{len(tasks)}",
+                "aggregated_policies": list(aggregated_results.keys()),
             }
         )
+        
+        # Log Ray status after concurrent execution
+        self.multi_logger.log_ray_status(context="after_concurrent_batch")
+        
+        # 为 aggregated_results 分配基于 rollout_idx, turn_idx, agent_idx 的相同 uid
+        aggregated_results = self._assign_consistent_uids(aggregated_results)
+        
+        return aggregated_results
+    
+    def _assign_consistent_uids(self, aggregated_results, filter_ratio=0.0):
+        import uuid
+        import numpy as np
+        from collections import defaultdict
+        
+        uid_mapping = {}
+        all_rewards = []
+        uid_reward_groups = defaultdict(list)  # 用于过滤: uid -> [(sample_index, policy_name, reward_value)]
+        
+        # 分配UID并收集数据
+        for policy_name, data_proto in aggregated_results.items():
+            if data_proto.batch is None or len(data_proto) == 0:
+                continue
+
+            non_tensor_batch = data_proto.non_tensor_batch
+            
+            # 检查必要字段，缺失则跳过
+            if not all(key in non_tensor_batch for key in ["rollout_idx", "turn_idx", "agent_idx"]):
+                data_proto.non_tensor_batch["uid"] = np.array(
+                    [str(uuid.uuid4()) for _ in range(len(data_proto))], dtype=object
+                )
+                continue
+            
+            rollout_indices = non_tensor_batch["rollout_idx"]
+            turn_indices = non_tensor_batch["turn_idx"] 
+            agent_indices = non_tensor_batch["agent_idx"]
+            rewards = non_tensor_batch.get("reward", [])
+            
+            uids = []
+            for i in range(len(data_proto)):
+                # 生成UID key
+                key = (rollout_indices[i]//self.sample_num, (turn_indices[i]>1), agent_indices[i])
+                if key not in uid_mapping:
+                    uid_mapping[key] = str(uuid.uuid4())
+                uid = uid_mapping[key]
+                uids.append(uid)
+                
+                # 收集reward数据
+                if len(rewards) > 0 and filter_ratio > 0:
+                    reward_val = float(rewards[i]) if rewards[i] is not None else 0.0
+                    uid_reward_groups[uid].append((i, policy_name, reward_val))
+                
+                if len(rewards) > 0:
+                    reward_val = float(rewards[i]) if rewards[i] is not None else 0.0
+                    all_rewards.append(reward_val)
+            
+            data_proto.non_tensor_batch["uid"] = np.array(uids, dtype=object)
+        
+        # 执行过滤
+        sample_to_remove = set()
+        if filter_ratio > 0:
+            for uid, samples in uid_reward_groups.items():
+                if len(samples) > 1:
+                    # 计算偏差并排序
+                    rewards_in_group = [s[2] for s in samples]
+                    group_mean = np.mean(rewards_in_group)
+                    samples_with_deviation = [(s[0], s[1], abs(s[2] - group_mean)) for s in samples]
+                    samples_with_deviation.sort(key=lambda x: x[2], reverse=True)
+                    
+                    # 移除偏差最大的部分
+                    num_to_remove = int(len(samples_with_deviation) * filter_ratio)
+                    for i in range(num_to_remove):
+                        sample_idx, policy_name, _ = samples_with_deviation[i]
+                        sample_to_remove.add((policy_name, sample_idx))
+        
+        # 应用过滤
+        if sample_to_remove:
+            for policy_name, data_proto in aggregated_results.items():
+                if data_proto.batch is None:
+                    continue
+                
+                keep_indices = [i for i in range(len(data_proto)) 
+                               if (policy_name, i) not in sample_to_remove]
+                
+                if len(keep_indices) < len(data_proto):
+                    # 过滤batch数据
+                    if data_proto.batch:
+                        for key, value in data_proto.batch.items():
+                            if hasattr(value, '__getitem__'):
+                                data_proto.batch[key] = value[keep_indices]
+                    
+                    # 过滤non_tensor数据
+                    if data_proto.non_tensor_batch:
+                        for key, value in data_proto.non_tensor_batch.items():
+                            if isinstance(value, np.ndarray):
+                                data_proto.non_tensor_batch[key] = value[keep_indices]
+                            elif hasattr(value, '__getitem__'):
+                                data_proto.non_tensor_batch[key] = [value[i] for i in keep_indices]
+        
+        # 记录统计信息
+        if all_rewards:
+            summary = {
+                "total_samples": len(all_rewards),
+                "mean_reward": float(np.mean(all_rewards)),
+                "std_reward": float(np.std(all_rewards)),
+                "filtered_samples": len(sample_to_remove) if filter_ratio > 0 else 0
+            }
+            
+            self.multi_logger.log_async_event(
+                -1, -1, "reward_summary",
+                f"UID assignment and reward statistics complete",
+                summary
+            )
         
         return aggregated_results
         
@@ -566,7 +1007,7 @@ def test_server_manager_simple(trainer_config,config):
     
     test_multi_logger = get_multi_logger()
     test_multi_logger.log_async_event(
-        -1, "test_start",
+        -1, -1, "test_start",
         "Starting test_server_manager_simple",
         {
             "trainer_config_type": str(type(trainer_config)),
@@ -574,18 +1015,70 @@ def test_server_manager_simple(trainer_config,config):
             "model_path": trainer_config.actor_rollout_ref.model.path
         }
     )
+    
+    # Log Ray status before initialization
+    test_multi_logger.log_ray_status(context="before_ray_init")
 
     
     if not ray.is_initialized():
-        ray.init(num_cpus=4)
+        # 先从注册文件读取地址，其次使用 address=auto，最后本地起实例
+        import json
+        registry_path = os.environ.get("VLLM_REGISTRY_PATH", "logs/ray_vllm_registry.json")
+        ray_address = os.environ.get("RAY_ADDRESS", None)
+        ray_namespace = os.environ.get("RAY_NAMESPACE", None)
+        if ray_address is None and os.path.exists(registry_path):
+            try:
+                with open(registry_path, "r") as f:
+                    registry = json.load(f)
+                    ray_address = registry.get("ray_address")
+                    if ray_namespace is None:
+                        ray_namespace = registry.get("namespace")
+                    if ray_address:
+                        print(f"Loaded Ray address from registry: {ray_address} (namespace={ray_namespace})")
+            except Exception as e:
+                print(f"Failed to load registry at {registry_path}: {e}")
+
+        try:
+            if ray_address:
+                ray.init(address=ray_address, namespace=ray_namespace)
+                print(f"Connected to Ray cluster at {ray_address} (namespace={ray_namespace})")
+            else:
+                ray.init(address="auto", namespace=ray_namespace)
+                print(f"Connected to existing Ray cluster via address=auto (namespace={ray_namespace})")
+        except Exception:
+            # Use all available CPUs instead of hardcoded 4
+            import multiprocessing
+            num_cpus = multiprocessing.cpu_count()
+            ray.init(num_cpus=224)
+            print(f"Started a local Ray instance for testing with {num_cpus} CPUs")
+    
+    # Log Ray status after initialization
+    test_multi_logger.log_ray_status(context="after_ray_init")
+    
     server_list=[]
-    print(f"begin to init server list")
-    from pettingllms.trainer.utils import initialize_llm_servers
-    server_list,server_addresses=initialize_llm_servers(None,AsyncvLLMServer,trainer_config)
-    print(f"Initialized {len(server_list)} servers: {[s is not None for s in server_list]}")    
+    print(f"begin to init server list (reuse existing named actor)")
+    # 严格复用：直接查找已存在的命名 actor，避免任何新引擎启动
+    try:
+        server = ray.get_actor("async_llm_server")
+    except Exception as e:
+        raise RuntimeError(
+            "未找到已启动的 vLLM 命名 actor 'async_llm_server'。请先运行启动脚本 "
+            "pettingllms/scripts/launch_vllm_servers.py 并确保与当前连接的 Ray 集群一致。"
+        ) from e
+
+    # 获取地址仅用于日志
+    try:
+        addr = ray.get(server.get_server_address.remote())
+        print(f"Found existing async_llm_server at {addr}")
+    except Exception:
+        addr = None
+
+    server_list = [server]
+    server_addresses = [addr]
+    print(f"Reused {len(server_list)} server(s): {[s is not None for s in server_list]}")    
 
     test_multi_logger.log_async_event(
-        -1, "server_manager_init_start", 
+        -1, -1, "server_manager_init_start", 
         f"Starting to init server manager for server"
     )
     from pettingllms.trainer.utils import AsyncLLMServerManager
@@ -599,23 +1092,12 @@ def test_server_manager_simple(trainer_config,config):
     
     
     tokenizer_dict = {"code_generator": tokenizer_local}
-    
-
-    prompt_text = "Hello"
-    prompt={"text":prompt_text, "image":None}
-    prompt_dpr = convert_prompt_to_dpr(tokenizer_local, processor=None, prompts=prompt, max_prompt_length=trainer_config.actor_rollout_ref.rollout.prompt_length, multi_modal=False)
-    output_server_manager = asyncio.run(server_manager.generate(prompt_dpr, tokenizer=tokenizer_local, application_id="test", sampling_params={}))
-    test_multi_logger.log_async_event(
-        -1, "server_manager_test_complete", 
-        "Server manager test completed",
-        {"output_type": str(type(output_server_manager))}
-    )
     server_manager_dict={}
     server_manager_dict["code_generator"]=server_manager
     
 
     test_multi_logger.log_async_event(
-        -1, "multi_agent_engine_init_start",
+        -1, -1, "multi_agent_engine_init_start",
         "Initializing Multi-Agent Execution Engine",
         {
             "tokenizer_dict_keys": list(tokenizer_dict.keys()),
@@ -629,10 +1111,11 @@ def test_server_manager_simple(trainer_config,config):
         tokenizer_dict=tokenizer_dict, 
         server_manager_dict=server_manager_dict
     )
+    multi_agent_execution_engine.init_agents_and_envs()
     
     test_rollout_indices = range(len(multi_agent_execution_engine.envs))   
     test_multi_logger.log_async_event(
-        -1, "concurrent_test_start",
+        -1, -1, "concurrent_test_start",
         "Testing concurrent rollout execution with class method",
         {"test_rollout_count": len(list(test_rollout_indices))}
     )
@@ -646,7 +1129,7 @@ def test_server_manager_simple(trainer_config,config):
         
     except Exception as e:
         test_multi_logger.log_async_event(
-            -1, "concurrent_test_error",
+            -1, -1, "concurrent_test_error",
             "Class method concurrent execution failed",
             {"error": str(e), "traceback": traceback.format_exc()}
         )

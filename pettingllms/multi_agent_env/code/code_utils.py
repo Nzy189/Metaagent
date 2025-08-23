@@ -18,6 +18,32 @@ import re
 import random
 import asyncio
 import concurrent.futures
+import subprocess
+import tempfile
+import shutil
+import contextlib
+import textwrap
+import traceback as _traceback
+import errno
+import ray
+from typing import Any
+def _stdin_from_input_val_like_inproc(input_val: Any) -> str:
+    """
+    生成与 `_worker_inproc` 近似语义的 stdin：
+    - 若输入为 list/tuple，则按行拼接
+    - 统一换行符为 \n
+    - 确保最后一行以换行结尾，避免 input() 读到 EOF
+    不额外移除代码块/标记（与 inproc 保持一致）。
+    """
+    if isinstance(input_val, (list, tuple)):
+        input_text = "\n".join([str(x).rstrip("\n") for x in input_val])
+    else:
+        input_text = str(input_val)
+    input_text = input_text.replace("\r\n", "\n").replace("\r", "\n")
+    if not input_text.endswith("\n"):
+        input_text = input_text + "\n"
+    return input_text
+
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, List, Union
 from tqdm import tqdm
@@ -64,9 +90,9 @@ except ImportError:
     PANDAS_AVAILABLE = False
 
 
-def load_problem_batch(
-    dataset_name: str,
-    batch_size: int,
+def load_problem_batch( 
+    batch_size: int=10,
+    dataset_name: str="train",
     split: str = "train",
     mode: str = "train"
 ) -> List[Dict[str, Any]]:
@@ -74,199 +100,144 @@ def load_problem_batch(
     Load a batch of programming problems.
     
     Args:
-        dataset_name: Dataset name (e.g., "deepmind/code_contests", "Gen-Verse/CodeContests")
         batch_size: Batch size
+        dataset_name: Dataset name (e.g., "deepmind/code_contests", "Gen-Verse/CodeContests")
         split: Dataset split ("train", "test", etc.)
+        mode: "train" or "validation"
         
     Returns:
-        A list of dicts of length batch_size with keys problem/test_input/test_output
+        A list of dicts with keys question/test_input/test_output/solution
     """
     if not DATASETS_AVAILABLE:
         print("❌ datasets library unavailable")
         return []
-    
-    
-    if dataset_name == "CodeContests_train":
-        default_split = "train"
-    else:
-        default_split = "test"
-    
-  
-    if split == "train":
-        split = default_split
     
     if mode == "validation":
         print(f"🔄 Loading all problems from dataset {dataset_name} (split={split})...")
     else:
         print(f"🔄 Loading {batch_size} problems from dataset {dataset_name}...")
     
-    # 首先尝试从本地 datasets 文件夹加载
-    local_dataset_path = None
-    try:
-        # 检查是否存在本地数据集
-        current_dir = Path(__file__).parent.parent.parent.parent  # 回到 pettingllms 根目录
-        local_datasets_dir = current_dir / "data" / "datasets" / dataset_name.lower().replace("/", "_")
-        
-        # 检查是否存在 parquet 文件
-        parquet_file = local_datasets_dir / f"{split}.parquet"
-        if parquet_file.exists():
-            print(f"📁 Found local dataset at: {local_datasets_dir}")
-            local_dataset_path = str(local_datasets_dir)
-        else:
-            print(f"📁 Local dataset not found at: {local_datasets_dir}")
-    except Exception as e:
-        print(f"⚠️ Error checking local dataset: {e}")
+    # 获取本地数据集路径
+    current_dir = Path(__file__).parent.parent.parent.parent  # 回到 pettingllms 根目录
+    local_datasets_dir = current_dir / "datasets" / dataset_name.lower().replace("/", "_")
+    parquet_file = local_datasets_dir / f"{split}.parquet"
     
-    # 如果本地存在数据集，优先使用本地数据
-    if local_dataset_path:
+    # train mode: 必须从本地加载，没有则报错
+    if mode == "train":
+        if not parquet_file.exists():
+            raise FileNotFoundError(f"❌ Train mode requires local dataset at {parquet_file}, but file not found!")
+        
+        print(f"📁 Loading from local dataset: {local_datasets_dir}")
         try:
-            print(f"🔄 Loading from local dataset: {local_dataset_path}")
-            ds = hf_load_dataset("parquet", data_files=f"{local_dataset_path}/{split}.parquet", split=split)
+            ds = hf_load_dataset("parquet", data_files=str(parquet_file), split=split)
             print(f"✅ Successfully loaded local dataset with {len(ds)} samples")
         except Exception as e:
-            print(f"❌ Error loading local dataset: {e}")
-            local_dataset_path = None
-    
-    # 如果本地加载失败或不存在，则从 Hugging Face 加载
-    if not local_dataset_path:
-        hf_dataset_name = f"Gen-Verse/{dataset_name}"
-        print(f"🌐 Loading from Hugging Face: {hf_dataset_name}")
+            raise Exception(f"❌ Failed to load local dataset: {e}")
         
-        try:
-            # Use streaming=True to avoid downloading the entire dataset
-            ds = hf_load_dataset(hf_dataset_name, split=split, streaming=True)
-        except Exception as e:
-            print(f"❌ Error loading dataset with streaming: {e}")
-            print("💡 Trying fallback method without streaming...")
-            try:
-                # Fallback: load traditional way
-                ds = hf_load_dataset(hf_dataset_name, split=split)
-            except Exception as e2:
-                print(f"❌ Failed to load dataset: {e2}")
-                return []
+        # 随机选择batch_size个样本
+        if len(ds) < batch_size:
+            raise Exception(f"❌ Local dataset only has {len(ds)} samples, but batch_size is {batch_size}")
+        
+        # 随机选择索引
+        indices = random.sample(range(len(ds)), batch_size)
+        batch_results = []
+        
+        for i, idx in enumerate(indices):
+            example = ds[idx]
+            problem_dict = _format_competition_problem(example, idx, mode="train")
+            if problem_dict:
+                batch_results.append(problem_dict)
+                print(f"✅ Loaded train problem {i+1}/{batch_size} (index={idx})")
+        
+        print(f"✅ Successfully loaded {len(batch_results)} train problems")
+        return batch_results
     
-    batch_results = []
-    
-    if mode == "validation":
-        iterator = ds
-       
+    # validation mode: 先尝试本地，没有则下载
     else:
-        try:
-          
-            iterator = ds.take(batch_size * 2)
-        except AttributeError:
-          
-            iterator = itertools.islice(ds, batch_size * 2)
-    
-    for i, example in enumerate(iterator):
-        if mode != "validation":
-            if len(batch_results) >= batch_size:
-                break
+        if parquet_file.exists():
+            print(f"📁 Found local dataset at: {local_datasets_dir}")
+            try:
+                ds = hf_load_dataset("parquet", data_files=str(parquet_file), split=split)
+                print(f"✅ Successfully loaded local dataset with {len(ds)} samples")
+            except Exception as e:
+                print(f"❌ Error loading local dataset: {e}")
+                ds = None
+        else:
+            print(f"📁 Local dataset not found at: {local_datasets_dir}")
+            ds = None
+        
+        # 如果本地没有，则从Hugging Face下载
+        if ds is None:
+            hf_dataset_name = f"Gen-Verse/{dataset_name}"
+            print(f"🌐 Loading from Hugging Face: {hf_dataset_name}")
             
-        problem_dict = _format_competition_problem(example, i)
-        if problem_dict:
-            batch_results.append(problem_dict)
-            print(f"✅ Loaded problem {len(batch_results)} (index={i})")
-    
-    if not batch_results:
-        raise Exception("No valid problems found in streaming mode")
+            try:
+                ds = hf_load_dataset(hf_dataset_name, split=split)
+                print(f"✅ Successfully downloaded dataset with {len(ds)} samples")
+            except Exception as e:
+                raise Exception(f"❌ Failed to load dataset: {e}")
         
-    print(f"✅ Successfully loaded {len(batch_results)} problems")
-    return batch_results
+        # 加载所有验证数据
+        batch_results = []
+        for i, example in enumerate(ds):
+            problem_dict = _format_competition_problem(example, i, mode="validation")
+            if problem_dict:
+                batch_results.append(problem_dict)
+                if i % 100 == 0:  # 每100个打印一次进度
+                    print(f"🔄 Loaded validation problem {i+1}/{len(ds)}")
+        
+        print(f"✅ Successfully loaded {len(batch_results)} validation problems")
+        return batch_results
 
 
 
-def _format_competition_problem(example: Dict, index: int) -> Optional[Dict]:
+def _format_competition_problem(example: Dict, index: int, mode: str = "train") -> Optional[Dict]:
     """
-    Convert raw dataset format and extract problem data in the required format.
+    Format a competition problem example into a standardized dictionary.
     
     Args:
-        example: Raw dataset sample
-        index: Sample index
+        example: Raw example from dataset
+        index: Index of the example
+        mode: "train" or "validation"
         
     Returns:
-        Dict with keys: question, example_input, example_output, test_input, test_output
-        or None if extraction fails
+        Formatted problem dictionary or None if invalid
     """
-    # Check if example is a dictionary
-    if not isinstance(example, dict):
-        raise TypeError(f"Expected dict but got {type(example)} for problem {index}")
-    
-    # First, format the problem
-    question = _extract_problem(example)
-    if not question:
-        raise ValueError(f"Failed to extract problem from example {index}")
-    
-    # Extract example inputs/outputs
-    example_input = example.get("example_input", [])
-    example_output = example.get("example_output", [])
-    
-    # Extract test inputs/outputs
-    original_test_input = example.get("test_input", [])
-    original_test_output = example.get("test_output", [])
-    test_input = example.get("test_input", [])
-    if not test_input:
-        print(f"Warning: No test_input found in example {index}, using empty list")
-        test_input = []
-    test_output = example.get("test_output", [])
-    if not test_output:
-        print(f"Warning: No test_output found in example {index}, using empty list")
-        test_output = []
-    max_test=8
-    ground_truth_test_input=[]
-    ground_truth_test_output=[]
-    total_test_cases = 0
-    for i in range(len(test_input)):
-
-
-        if total_test_cases >= max_test:
-            break
-        ground_truth_test_input.append(test_input[i] )
-        ground_truth_test_output.append(test_output[i])
-        total_test_cases += 1
+    try:
+        # 提取基本字段
+        question = example.get("question", "")
+        test_input = example.get("test_input", "")
+        if len(test_input)>8:
+            test_input=test_input[:8]
+        test_output = example.get("test_output", "")
+        if len(test_output)>8:
+            test_output=test_output[:8]
         
-        if total_test_cases >= max_test:
-            break
-    
-    # Return in the required format
-    return {
-        "question": question,
-        "example_input": example_input,
-        "example_output": example_output,
-        "original_test_input": original_test_input,
-        "original_test_output": original_test_output,
-        "test_input": ground_truth_test_input,
-        "test_output": ground_truth_test_output
-    }
-
-def _extract_problem(example: Dict) -> Optional[str]:
-    """
-    Extract problem from raw dataset example.
-    
-    Args:
-        example: Raw dataset sample
+        # 根据mode处理solution字段
+        if mode == "train":
+            solution = example.get("solution", "")
+        else:  # validation mode
+            solution = ""  # validation数据集没有solution，设为空
         
-    Returns:
-        problem string or None
-    """
-    # Try various field names
-    code_fields = ["problem", "description", "question", "prompt"]
-    
-    for field in code_fields:
-        if field in example and example[field]:
-            code = example[field]
-            if isinstance(code, str):
-                return code
-            elif isinstance(code, list) and len(code) > 0:
-                return code[0] if isinstance(code[0], str) else str(code[0])
-    
-    # If not found, return None
-    return None
-
+        # 验证必要字段
+        if not question or not test_input or not test_output:
+            print(f"⚠️ Skipping example {index}: missing required fields")
+            return None
+        
+        return {
+            "question": question,
+            "test_input": test_input,
+            "test_output": test_output,
+            "solution": solution
+        }
+        
+    except Exception as e:
+        print(f"⚠️ Error formatting example {index}: {e}")
+        return None
 
 # =================== Code execution and validation ===================
 
-async def worker(script, input_val,expected_output, timeout: float = 10.0):
+async def _worker_inproc(script, input_val,expected_output, timeout: float = 10.0):
     """
     Worker function for executing code in a separate process.
     Based on the reference worker function provided.
@@ -326,6 +297,95 @@ async def worker(script, input_val,expected_output, timeout: float = 10.0):
 
 
 
+async def _worker_docker(
+    script: str,
+    input_val: str,
+    expected_output: str,
+    timeout: float = 40.0,
+    image: str = "python:3.11-slim"
+):
+    tmpdir = tempfile.mkdtemp(prefix="pllm_exec_")
+    script_path = os.path.join(tmpdir, "script.py")
+    try:
+        # 写入脚本到临时文件
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(script)
+
+        stdin_text = _stdin_from_input_val_like_inproc(input_val)
+        
+        try:
+            # 直接使用 python 命令执行，不使用 Docker
+            cmd = ["python", script_path]
+            
+            # 使用 subprocess.run 直接执行
+            result = await asyncio.to_thread(
+                subprocess.run,
+                cmd,
+                input=stdin_text,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=tmpdir  # 设置工作目录
+            )
+            
+            if result.returncode == 0:
+                printed_output = result.stdout
+            else:
+                # 归并到 error 输出
+                err_text = result.stderr.strip()
+                out_text = result.stdout.strip()
+                combined = err_text or out_text
+                # 压缩 Traceback：仅取最后一行错误摘要
+                if "Traceback (most recent call last):" in combined:
+                    last_line = combined.strip().splitlines()[-1]
+                    combined = last_line
+                printed_output = f"error: exit {result.returncode}: {combined}"
+                
+        except (asyncio.TimeoutError, subprocess.TimeoutExpired):
+            printed_output = None
+            print(f"printed_output: {printed_output}")
+
+        except FileNotFoundError as e:
+            # python 不存在
+            printed_output = f"error: python not found: {e}"
+        except Exception as e:
+            printed_output = f"error: {e}"
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    if_passed = await test_if_eq(printed_output, str(expected_output)) if printed_output is not None else False
+    
+    result = {
+        "test_input": input_val,
+        "code_execution_output": printed_output,
+        "test_output": expected_output,
+        "passed": if_passed,
+    }
+    return result
+
+
+_RAY_TASK_HANDLE = None  # 缓存 Ray 远程函数句柄
+
+
+async def _await_ray_object_ref(obj_ref, timeout_seconds: float = 10.0):
+    import ray
+    import time
+    
+    start_time = time.time()
+    while True:
+        ready, _ = ray.wait([obj_ref], timeout=0.1)
+        if ready:
+            return ray.get(obj_ref)
+        
+        elapsed = time.time() - start_time
+        if elapsed > timeout_seconds:
+            raise asyncio.TimeoutError(f"Ray task timed out after {timeout_seconds}s")
+        
+
+        await asyncio.sleep(0.01)
+
+
 async def test_if_eq(x, y):
     """
     Test equality of two outputs ignoring whitespace differences.
@@ -341,7 +401,12 @@ async def evaluate_code_against_tests(
     code: str, 
     test_inputs: List[str], 
     test_outputs: List[str],
-    timeout: float = 10.0,
+    timeout: float = 40.0,
+    *,
+    backend: str = "ray_docker",
+    image: str = "python:3.11-slim",
+    ray_actor: Any | None = None,
+    rollout_idx: int | None = None,
 ) -> Tuple[float, List, List]:
     """
     Evaluate code against test cases and return detailed results.
@@ -361,41 +426,309 @@ async def evaluate_code_against_tests(
     
     
     total_tests = len(test_inputs)
-    
-   
-    
-    
-    # Process results
-    passed_tests = 0
-    passed_cases = []
-    failed_cases = []
-    
-    for i,test_input in enumerate(test_inputs):
-        result=await worker(code, test_input,test_outputs[i], timeout)
-        actual_output=result["code_execution_output"]
-        expected_output=result["test_output"]
-        if_passed=result["passed"]
-        test_case_info={"test_input":test_input,"code_execution_output":actual_output,"generated_test_output":expected_output,"passed":if_passed}
+    results: List[Dict[str, Any]] = []
+    if backend == "ray_docker" and _ensure_ray_initialized():
+        try:
+            # 规范化 actor 列表
+            actors = [ray_actor]
+
+            #print(f"rollout_idx: {rollout_idx} the length of actors: {len(actors)}")
+            obj_refs = []
+            # 获取 actor 的 idx（异步调用）
+
+            actor_idx = ray.get(ray_actor.get_idx.remote())
+                #print(f"begin to run code for rollout_idx: {rollout_idx}, the idx of actor: {actor_idx}")
         
-        if actual_output is None: # Check for timeout
+            for i in range(total_tests):
+                # 确保 rollout_idx 不为 None，如果为 None 则使用 0
+                safe_rollout_idx = rollout_idx if rollout_idx is not None else 0
+                actor = actors[safe_rollout_idx % len(actors)]
+                obj_refs.append(
+                    actor.run.remote(code, test_inputs[i], test_outputs[i], timeout, image)
+                )
+            
+            async_tasks = [
+                _await_ray_object_ref(obj_ref, timeout + 5.0)
+                for obj_ref in obj_refs
+            ]
+            
+            
+            results_or_exc = await asyncio.gather(*async_tasks, return_exceptions=True)
+            #print(f"end to run code for rollout_idx: {rollout_idx}")
+
+            processed_results: List[Dict[str, Any]] = []
+            for i, item in enumerate(results_or_exc):
+                if isinstance(item, Exception):
+                    processed_results.append({
+                        "test_input": test_inputs[i],
+                        "code_execution_output": f"error: {item}",
+                        "test_output": test_outputs[i],
+                        "passed": False,
+                    })
+                    print(f"item code_execution_output: {item}")
+                else:
+                    #print(f"item code_execution_output: {item.get('code_execution_output')}")
+                    processed_results.append(item)
+            results = processed_results
+        except Exception as e:
+            print(f"Ray execution failed, falling back to docker: {e}")
+            # 添加更好的错误处理和日志记录
+            try:
+                # 确保所有参数都是有效的
+                if not isinstance(code, str):
+                    print(f"Warning: code parameter is not string: {type(code)}")
+                    code = str(code) if code is not None else ""
+                
+                if not isinstance(test_inputs, list):
+                    print(f"Warning: test_inputs parameter is not list: {type(test_inputs)}")
+                    test_inputs = [test_inputs] if test_inputs is not None else []
+                
+                if not isinstance(test_outputs, list):
+                    print(f"Warning: test_outputs parameter is not list: {type(test_outputs)}")
+                    test_outputs = [test_outputs] if test_outputs is not None else []
+                
+                # 确保列表长度一致
+                total_tests = max(len(test_inputs), len(test_outputs))
+                if len(test_inputs) < total_tests:
+                    test_inputs.extend([""] * (total_tests - len(test_inputs)))
+                if len(test_outputs) < total_tests:
+                    test_outputs.extend([""] * (total_tests - len(test_outputs)))
+                
+                tasks = [
+                    asyncio.create_task(
+                        _worker_docker(code, test_inputs[i], test_outputs[i], timeout, image)
+                    ) for i in range(total_tests)
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # 处理可能的异常结果
+                processed_results = []
+                for i, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        print(f"Docker worker {i} failed: {result}")
+                        processed_results.append({
+                            "test_input": test_inputs[i] if i < len(test_inputs) else "",
+                            "code_execution_output": f"error: {result}",
+                            "test_output": test_outputs[i] if i < len(test_outputs) else "",
+                            "passed": False,
+                        })
+                    else:
+                        processed_results.append(result)
+                
+                results = processed_results
+                
+            except Exception as fallback_error:
+                print(f"Fallback to docker also failed: {fallback_error}")
+                # 最后的fallback：返回错误结果
+                results = [{
+                    "test_input": test_inputs[i] if i < len(test_inputs) else "",
+                    "code_execution_output": f"error: fallback failed - {fallback_error}",
+                    "test_output": test_outputs[i] if i < len(test_outputs) else "",
+                    "passed": False,
+                } for i in range(max(len(test_inputs), len(test_outputs), 1))]
+    else:
+        # 非 ray 分支：根据 backend 选择本地实现
+        if backend == "docker":
+            tasks = [
+                asyncio.create_task(
+                    _worker_docker(code, test_inputs[i], test_outputs[i], timeout, image)
+                ) for i in range(total_tests)
+            ]
+        else:  # 默认走 inproc
+            tasks = [
+                asyncio.create_task(
+                    _worker_inproc(code, test_inputs[i], test_outputs[i], timeout)
+                ) for i in range(total_tests)
+            ]
+        results = await asyncio.gather(*tasks)
+
+  
+    passed_tests = 0
+    passed_cases: List[Dict[str, Any]] = []
+    failed_cases: List[Dict[str, Any]] = []
+
+    for i, result in enumerate(results):
+        actual_output = result.get("code_execution_output")
+        expected_output = result.get("test_output")
+        if_passed = result.get("passed", False)
+        test_case_info = {
+            "test_input": test_inputs[i],
+            "code_execution_output": actual_output,
+            "generated_test_output": expected_output,
+            "passed": if_passed,
+        }
+
+        if actual_output is None:
             if_passed = False
-            error_type = "timeout"
-        elif actual_output.startswith("error:"): # Check for execution errors
+        elif isinstance(actual_output, str) and actual_output.startswith("error:"):
             if_passed = False
-            error_type = actual_output.replace("error: ", "")
         else:
             if_passed = await test_if_eq(actual_output, str(expected_output))
-            error_type = None
-        
+
         if if_passed:
             passed_tests += 1
             passed_cases.append(test_case_info)
         else:
             failed_cases.append(test_case_info)
-        
-        passed_ratio = passed_tests / total_tests
-    
+
+    passed_ratio = passed_tests / total_tests if total_tests > 0 else 0.0
     return passed_ratio, passed_cases, failed_cases
+
+
+
+def _ensure_ray_initialized() -> bool:
+    from pettingllms.utils.logger_config import get_multi_logger
+    multi_logger = get_multi_logger()
+    import ray  
+
+    if not ray.is_initialized():
+        multi_logger.log_ray_status(context="test_ray_log_function ")
+       
+        
+        try:
+            num_cpus_env = os.getenv("RAY_NUM_CPUS")
+            multi_logger.log_ray_status(context="before_code_utils_ray_init")
+            init_kwargs = dict(
+                ignore_reinit_error=True,
+                include_dashboard=False,
+                logging_level="ERROR",
+            )
+            if num_cpus_env:
+                try:
+                    num_cpus = float(num_cpus_env)
+                    if num_cpus > 0:
+                        init_kwargs["num_cpus"] = num_cpus
+                    else:
+                        print(f"Warning: RAY_NUM_CPUS must be positive, got {num_cpus_env}")
+                except (ValueError, TypeError):
+                    print(f"Warning: invalid RAY_NUM_CPUS value: {num_cpus_env}, using default")
+
+            ray.init(**init_kwargs)
+
+            try:
+                cluster = ray.cluster_resources()
+                avail = ray.available_resources()
+                multi_logger.log_ray_status(
+                    context="after_code_utils_ray_init"
+                )
+            except Exception as e:
+                print(f"Warning: failed to get ray cluster info: {e}")
+                pass
+        except Exception as e:
+            print(f"Failed to initialize ray: {e}")
+            multi_logger.log_ray_status(context="code_utils_ray_init_failed")
+            return False
+    else:
+        try:
+            import ray  
+            from pettingllms.utils.logger_config import get_multi_logger
+            multi_logger = get_multi_logger()
+            cluster = ray.cluster_resources()
+            avail = ray.available_resources()
+            
+        except Exception as e:
+            print(f"Warning: failed to get ray cluster info: {e}")
+            pass
+
+    return True
+
+
+
+
+def get_ray_docker_worker_cls():
+    try:
+        import ray  # type: ignore
+    except Exception as e:
+        print(f"Failed to import ray: {e}")
+        return None
+
+    try:
+        _ensure_ray_initialized()
+    except Exception as e:
+        print(f"Failed to ensure ray initialized: {e}")
+        return None
+
+    if hasattr(get_ray_docker_worker_cls, "_cls"):
+        return getattr(get_ray_docker_worker_cls, "_cls")
+
+    try:
+        # 允许通过环境变量覆盖并发：RAY_ACTOR_MAX_CONCURRENCY
+        _max_conc_env = os.getenv("RAY_ACTOR_MAX_CONCURRENCY")
+        try:
+            _max_conc = int(_max_conc_env) if _max_conc_env else 8
+        except (ValueError, TypeError):
+            print(f"Warning: invalid RAY_ACTOR_MAX_CONCURRENCY value: {_max_conc_env}, using default 8")
+            _max_conc = 8
+
+        @ray.remote(num_cpus=0.02, max_concurrency=_max_conc)
+        class _RayDockerWorker:
+            def __init__(self, idx):
+                if not isinstance(idx, (int, float)):
+                    print(f"Warning: idx parameter is not numeric: {type(idx)}, converting to int")
+                    try:
+                        self.idx = int(idx) if idx is not None else 0
+                    except (ValueError, TypeError):
+                        self.idx = 0
+                else:
+                    self.idx = int(idx)
+
+            def get_idx(self):
+                """获取 actor 的索引"""
+                return self.idx
+
+            async def run(
+                self,
+                script: str,
+                input_val: str,
+                expected_output: str,
+                timeout: float = 10.0,
+                image: str = "python:3.11-slim",
+            ) -> Dict[str, Any]:
+                
+                # 添加参数验证
+                if not isinstance(script, str):
+                    script = str(script) if script is not None else ""
+                if not isinstance(input_val, str):
+                    input_val = str(input_val) if input_val is not None else ""
+                if not isinstance(expected_output, str):
+                    expected_output = str(expected_output) if expected_output is not None else ""
+                if not isinstance(timeout, (int, float)):
+                    timeout = 10.0
+                if not isinstance(image, str):
+                    image = "python:3.11-slim"
+                
+                try:
+                    return await _worker_docker(
+                        script=script,
+                        input_val=input_val,
+                        expected_output=expected_output,
+                        timeout=timeout,
+                        image=image,
+                    )
+                except Exception as e:
+                    print(f"RayDockerWorker.run failed: {e}")
+                    return {
+                        "code_execution_output": f"error: {e}",
+                        "passed": False,
+                        "error": str(e)
+                    }
+
+        RayDockerWorker = _RayDockerWorker
+        setattr(get_ray_docker_worker_cls, "_cls", RayDockerWorker)
+        return RayDockerWorker
+        
+    except Exception as e:
+        print(f"Failed to create RayDockerWorker class: {e}")
+        return None
+
+
+
+
+# ============ RayDockerWorker 池管理 ============
+_RAY_DOCKER_ACTOR_POOL: List[Any] | None = None
+
+
+
 
 def modify(c):
     c = c.replace("plaintext\n", "")
@@ -403,41 +736,40 @@ def modify(c):
     if not c.endswith("\n"):
         c += "\n"
     return c
-# =================== Test case parsing ===================
-def extract_test_cases(full_output):
-    # First, try extracting with the updated triple-backtick pattern
-    pattern_input_backticks = r'\*\*Test Input:\*\*\s*```(.*?)```'
-    pattern_output_backticks = r'\*\*Test Output:\*\*\s*```(.*?)```'
-    matches_input = re.findall(pattern_input_backticks, full_output, re.DOTALL)
-    matches_output = re.findall(pattern_output_backticks, full_output, re.DOTALL)
+# ===================TODO: Test case parsing ===================
+def extract_test_cases(text: str):
+    """
+    从包含多组 **Test Input:** / **Test Output:** 代码块的字符串中提取内容。
+    返回形如 {"input": [..], "output": [..]} 的字典。
+    """
+    # 统一换行
+    s = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # For Test Input: either use the updated triple-backtick version or fallback to plain text
-    if matches_input:
-        test_input = [modify(matches_input[-1].lstrip('\n'))]
-    else:
-        # Fallback pattern without backticks: capture until **Test Output:**
-        pattern_input_plain = r'\*\*Test Input:\*\*\s*([\s\S]*?)(?=\*\*Test Output:\*\*)'
-        matches_input_plain = re.findall(pattern_input_plain, full_output, re.DOTALL)
-        if matches_input_plain:
-            test_input = [modify(matches_input_plain[-1].strip())]
-        else:
-            test_input = []
-    
-    # For Test Output: either use the updated triple-backtick version or fallback to plain text
-    if matches_output:
-        test_output = [modify(matches_output[-1].lstrip('\n'))]
-    else:
-        # Fallback: capture until the **Explanation:** marker or end-of-string
-        pattern_output_plain = r'\*\*Test Output:\*\*\s*([\s\S]*?)(?=\*\*Explanation:|\*\*Test Input:|$)'
-        matches_output_plain = re.findall(pattern_output_plain, full_output, re.DOTALL)
-        if matches_output_plain:
-            test_output = [modify(matches_output_plain[-1].strip())]
-        else:
-            test_output = []
-    
-    test_action= {"input": test_input, "output": test_output}
-    
+    # 支持 ``` 或 ```txt / ```python 等形式的代码块
+    input_blocks = re.findall(
+        r"\*\*Test Input:\*\*\s*```(?:[a-zA-Z0-9_+\-]*\n)?(.*?)```",
+        s, flags=re.DOTALL
+    )
+    output_blocks = re.findall(
+        r"\*\*Test Output:\*\*\s*```(?:[a-zA-Z0-9_+\-]*\n)?(.*?)```",
+        s, flags=re.DOTALL
+    )
+
+    # 去掉首尾空白，但保留内容中的换行
+    test_input = [blk.strip() for blk in input_blocks]
+    test_output = [blk.strip() for blk in output_blocks]
+
+    # 对齐长度（防止不等长）
+    n = min(len(test_input), len(test_output))
+    test_input = test_input[:n]
+    test_output = test_output[:n]
+
+    test_action = {"input": test_input, "output": test_output}
     return test_action
+
+
+
+
 def extract_code_from_response(response: str) -> str:
     """
     Extract code from agent response.
@@ -680,67 +1012,19 @@ def print_evaluation_summary(metrics: Dict[str, Any]) -> None:
 
 # =================== Main Evaluation Functions ===================
 
-def evaluate_code_generation_task(
-    code: str,
-    problem: Dict,
-    timeout: float = 1.0
-) -> Dict[str, Any]:
-    """
-    Evaluate single code generation task
-    
-    Args:
-        code: Generated code
-        problem: Problem dictionary with keys: question, example_input, example_output, test_input, test_output
-        timeout: Execution timeout
-        
-    Returns:
-        Evaluation result dictionary
-    """
-    # Get test cases
-    test_inputs = problem.get("test_input", [])
-    test_outputs = problem.get("test_output", [])
-    
-    # If no test cases, use example test cases
-    if not test_inputs or not test_outputs:
-        test_inputs = problem.get("example_input", [])
-        test_outputs = problem.get("example_output", [])
-    
-    if not test_inputs or not test_outputs:
-        return {
-            "success": False,
-            "error": "No available test cases",
-            "pass_rate": 0.0
-        }
-    
-    # Execute evaluation
-    reward, detailed_info = evaluate_code_against_tests(
-        code, test_inputs, test_outputs, timeout
-    )
-    
-    overall_result = detailed_info.get("overall_result", {})
-    
-    return {
-        "success": overall_result.get("all_passed", False),
-        "pass_rate": overall_result.get("pass_rate", 0.0),
-        "passed_tests": overall_result.get("passed_tests", 0),
-        "total_tests": overall_result.get("total_tests", 0),
-        "reward": reward,
-        "detailed_results": detailed_info,
-        "execution_statistics": detailed_info.get("statistics", {})
-    }
 
-
-def test_load_problem(benchmark: str, batch_size: int,split:str):
+def test_load_problem(batch_size: int):
     # Get problems
     results= load_problem_batch(
-        dataset_name=benchmark,
         batch_size=batch_size,
-        split="test"
+
     )
-    print(results)
+    for result in results:
+        print("--------------------------------Here is the solution--------------------------------")
+        print(result["solution"])
        
 
 if __name__ == "__main__":
     for benchmark in ["CodeContests"]:
         print(f"test load {benchmark}")
-        test_load_problem(f"{benchmark}", 5,split="test")
+        test_load_problem(5)

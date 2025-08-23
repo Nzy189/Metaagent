@@ -4,7 +4,10 @@ from typing import Any
 from pettingllms.multi_agent_env.base.agent import Agent, AgentData
 from pettingllms.multi_agent_env.base.env import Env
 from pettingllms.utils.logger_config import get_multi_logger
-
+from typing import List
+from pettingllms.multi_agent_env.code.code_utils import (
+        evaluate_code_against_tests,
+    )
 logger = logging.getLogger(__name__)
 
 
@@ -69,7 +72,7 @@ class CodeGenerationAgent(Agent):
                 f"Problem:\n{question}\n\n"
                 f"Please generate correct, efficient, and readable code that solves the problem and can pass comprehensive tests.\n\n"
                 f"Respond in the format:\n\n"
-                f"```python\n# your code here\n```\n\n"
+                f"**Code:**\n```python\n# your code here\n```\n\n"
                
             )
         else:
@@ -86,7 +89,7 @@ class CodeGenerationAgent(Agent):
                 f"Please first judge the mismatch between the current generated test cases and the current code execution result, if the mismatch is caused by the current code, please refine the code to pass all tests.\n"
                 f"Refine the code to pass all tests.\n\n"
                 f"Respond in the format:\n\n"
-                f"```python\n# corrected code here\n```\n\n"
+                f"**Code:**\n```python\n# corrected code here\n```\n\n"
             )
 
         self.current_prompt = {"text": formatted_prompt, "image": None}
@@ -111,31 +114,72 @@ class CodeGenerationAgent(Agent):
 
         return self.current_action
 
-    def calculate_reward(self, env_data: Env, mode: str = "sum") -> float:
+    async def step(self, env_data: Env, env_worker:Any=None):
+        """
+        the action is the generated code, you should execute the code and get the output, and then update the state
+        """
+        # 1) Parse and update generated code
+        gen_code = self.current_action
+        env_data.state.generated_code = gen_code
+
+        # 2) Evaluate generated test vs generated code (if exists)
+        #    Allow reading from state.current_test_input/current_test_output
+        ground_truth_test_input = env_data.state.ground_truth_test_input or []
+        ground_truth_test_output = env_data.state.ground_truth_test_output or []
+        passed_ratio = 0.0
+        #print(f"env_worker_idx: {env_worker.get_idx.remote()}")
+        if isinstance(ground_truth_test_input, list) and isinstance(ground_truth_test_output, list) and ground_truth_test_input and ground_truth_test_output:
+            try:
+                passed_ratio, passed_cases, failed_cases = await evaluate_code_against_tests(
+                    gen_code, ground_truth_test_input, ground_truth_test_output, timeout=20.0, ray_actor=env_worker,rollout_idx=self.rollout_idx
+                )
+                                
+                env_data.state.ground_truth_test_vs_generated_code_match_cases = passed_cases
+                env_data.state.ground_truth_test_vs_generated_code_mismatch_cases = failed_cases
+                env_data.state.ground_truth_test_vs_generated_code_match_ratio = passed_ratio
+                if passed_ratio >= 1.0 and len(ground_truth_test_input) > 0:
+                    self.done = True
+                    #self.is_pass = True
+                
+        
+            except Exception as e:
+                print(f"Warning: Failed to evaluate code against tests: {e}")
+                passed_ratio, passed_cases, failed_cases = 0.0, [], []
+        if len(self.reward_history)>0:
+            self.agent_reward = passed_ratio-self.reward_history[-1]
+        else:
+            self.agent_reward = passed_ratio
+        self.reward_history.append(passed_ratio)
+
+
+
+    
+    
+    def calculate_reward(self, env_data: List[Env]) -> float:
         """
         Compute reward based on environment state.
         Uses generated_test_vs_generated_code_match_ratio for reward calculation.
         """
-        state = getattr(env_data, "state", None)
-        generated_pass_ratio = 0.0
+        state = getattr(env_data[0], "state", None)
+        pass_ratio = 0.0
 
         if state is not None:
             # Generated tests vs generated code
-            gen_vs_ground_truth = getattr(state, "ground_truth_test_vs_generated_code_match_ratio", None)
-
-            if isinstance(gen_vs_ground_truth, (int, float)):
-                generated_pass_ratio = float(gen_vs_ground_truth)
+            ground_truth_vs_generated = getattr(state, "ground_truth_test_vs_generated_code_match_ratio", None)
+            if isinstance(ground_truth_vs_generated, (int, float)):
+                pass_ratio = float(ground_truth_vs_generated)
+            elif ground_truth_vs_generated is not None:
+                try:
+                    pass_ratio = float(ground_truth_vs_generated)
+                except Exception:
+                    pass
 
         # Record and return
-        self.agent_reward = generated_pass_ratio
-        if self.info is None:
-            self.info = {}
-        self.info.update({
-            "generated_pass_ratio": generated_pass_ratio,
-            "reward_mode": "generated",
-        })
+        self.agent_reward = pass_ratio
+        self.reward_history.append(self.agent_reward)
+
         
-        return generated_pass_ratio
+        return self.agent_reward
 
     
     

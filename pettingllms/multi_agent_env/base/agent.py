@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from pettingllms.multi_agent_env.base.env import Env
 
@@ -15,6 +15,7 @@ class AgentData:
     info: Optional[Dict[str, Any]] = None
     agent_reward: Optional[float] = None
     done: bool = False
+    reward_history: Optional[List[float]] = field(default_factory=list)
 
 class Agent(AgentData):
     def __init__(self):

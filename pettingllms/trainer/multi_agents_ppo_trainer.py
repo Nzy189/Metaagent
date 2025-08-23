@@ -138,7 +138,12 @@ class MultiAgentsPPOTrainer:
                 async_llm_servers, server_addresses = initialize_llm_servers(
                     worker_group=trainer.actor_rollout_wg,
                     server_class=async_servser_class,
-                    server_config=trainer.config
+                    server_config=trainer.config,
+                    reuse_existing=True,
+                    lifetime_detached=False,
+                    actor_name="async_llm_server",
+                    write_registry_path=None,
+                    strict_reuse=False,
                 )
                 colorful_print(f"Successfully initialized {len(async_llm_servers)} LLM servers for model: {model_name}", "green")
                 # 存储 servers 以便后续清理
@@ -480,6 +485,7 @@ class MultiAgentsPPOTrainer:
         epoch_pbar = tqdm(range(self.config.trainer.total_epochs), desc="Epochs", position=0, leave=True)
         
         for epoch in epoch_pbar:
+            self.agent_execution_engine.init_agents_and_envs()
             epoch_pbar.set_description(f"Epoch {epoch} (Step {self.global_steps})")
             pprint(f"epoch {epoch}, step {self.global_steps} started")
             #for batch_dict in self.train_dataloader:

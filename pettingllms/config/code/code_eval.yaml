@@ -1,26 +1,27 @@
 # Configuration for Code multi-agent training with TWO different policies
 # code_generator uses Qwen/Qwen2.5-Coder-3B, test_generator uses DeepSeek-R1-Distill
 mode: "validation"
+sample_mode: "env"
 # Inherit from base configuration
 defaults:
   # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently
-  - ppo_trainer@models.model_0.ppo_trainer_config: base
+  - ppo_trainer@models.model_0.ppo_trainer_config: eval
   - _self_
 
 # dataset config (shared by all agents)
 data:
   #rollout config
   gen_batch_size: 32
-  gen_n_samples: 1
-  sample_temperature: 0
+  gen_n_samples: 4
+  sample_temperature: 0.6
 
   # Batch sizes
   train_batch_size: 16
   val_batch_size: 8
   
   # Sequence lengths
-  max_prompt_length: 512
-  max_response_length: 512
+  max_prompt_length: 1024
+  max_response_length: 8192
 
 resource:
   nnodes: 1
@@ -65,7 +66,10 @@ models:
           temperature: ${data.sample_temperature}
           prompt_length: ${data.max_prompt_length}
           response_length: ${data.max_response_length}
-          tensor_model_parallel_size: 4
+          tensor_model_parallel_size: ${resource.n_gpus_per_node}
+        trainer:
+          n_gpus_per_node: ${resource.n_gpus_per_node}
+          n_training_gpus_per_node: ${resource.n_gpus_per_node}
           
     # ppo_trainer_config is injected via defaults; the above settings override the defaults in base
     
@@ -93,7 +97,7 @@ logger: [ 'console', 'wandb' ]
 
 trainer:
   device: cuda
-  n_gpus_per_node: 4
+  n_gpus_per_node: ${resource.n_gpus_per_node}
   nnodes: 1
   balance_batch: True
   total_epochs: 30
@@ -120,4 +124,4 @@ trainer:
     options: {}
   rejection_sample: False
   rejection_sample_multiplier: 2
-  n_training_gpus_per_node: 4
+  n_training_gpus_per_node: 7

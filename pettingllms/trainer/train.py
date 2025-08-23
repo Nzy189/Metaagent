@@ -20,10 +20,8 @@ from verl.trainer.ppo.reward import load_reward_manager
 
 
 def force_kill_ray_processes():
-    """强制杀死所有 Ray 进程"""
     try:
         print("Force killing Ray processes...")
-        # 杀死所有 Ray 相关进程
         commands = [
             ['pkill', '-9', '-f', 'ray'],
             ['pkill', '-9', '-f', 'raylet'],
@@ -153,7 +151,12 @@ def run_ppo(config):
     try:
         if not ray.is_initialized():
             # this is for local ray cluster
-            ray.init(runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}})
+            import multiprocessing
+            num_cpus = int(os.getenv("RAY_NUM_CPUS", multiprocessing.cpu_count()))
+            ray.init(
+                num_cpus=num_cpus,
+                runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}}
+            )
 
         ray.get(train_multi_agents.remote(config))
     except Exception as e:
@@ -292,3 +295,5 @@ def train_multi_agents(config):
 
 if __name__ == "__main__":
     main()
+
+

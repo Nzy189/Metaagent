@@ -107,9 +107,9 @@ class MultiLoggerConfig:
         logger.propagate = False
         self.loggers[logger_name] = logger
 
-    def _get_or_create_rollout_logger(self, base_name: str, rollout_key) -> logging.Logger:
-        """Create or get a per-rollout logger writing under date/time/rollout_key/{base_name}.log"""
-        logger_key = f"{base_name}:{rollout_key}"
+    def _get_or_create_rollout_logger(self, base_name: str, env_idx: int, rollout_idx: int) -> logging.Logger:
+        """Create or get a per-rollout logger writing under date/time/env_idx/rollout_idx/{base_name}.log"""
+        logger_key = f"{base_name}:{env_idx}:{rollout_idx}"
         if logger_key in self.loggers:
             return self.loggers[logger_key]
 
@@ -118,7 +118,9 @@ class MultiLoggerConfig:
         logger.handlers.clear()
         logger.propagate = False
 
-        rollout_dir = self.log_dir / str(rollout_key)
+        # Create hierarchical directory structure: env_idx/rollout_idx/
+        env_dir = self.log_dir / str(env_idx)
+        rollout_dir = env_dir / str(rollout_idx)
         rollout_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = rollout_dir / f"{base_name}.log"
@@ -127,17 +129,17 @@ class MultiLoggerConfig:
 
         if base_name == "env_agent":
             formatter = logging.Formatter(
-                '[%(asctime)s] [ROLLOUT:%(rollout_idx)s] [TURN:%(turn_idx)s] [AGENT:%(agent_name)s] %(message)s',
+                '[%(asctime)s] [ENV:%(env_idx)s] [ROLLOUT:%(rollout_idx)s] [TURN:%(turn_idx)s] [AGENT:%(agent_name)s] %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S'
             )
         elif base_name == "model":
             formatter = logging.Formatter(
-                '[%(asctime)s] [ROLLOUT:%(rollout_idx)s] [POLICY:%(policy_name)s] %(message)s',
+                '[%(asctime)s] [ENV:%(env_idx)s] [ROLLOUT:%(rollout_idx)s] [POLICY:%(policy_name)s] %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S'
             )
         else:  # async
             formatter = logging.Formatter(
-                '[%(asctime)s] [ROLLOUT:%(rollout_idx)s] %(message)s',
+                '[%(asctime)s] [ENV:%(env_idx)s] [ROLLOUT:%(rollout_idx)s] %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S'
             )
 
@@ -173,19 +175,20 @@ class MultiLoggerConfig:
         logger.addHandler(file_handler)
         self.loggers[logger_name] = logger
     
-    def log_env_agent_info(self, rollout_idx: int, turn_idx: int, agent_name: str, 
+    def log_env_agent_info(self, env_idx: int, rollout_idx: int, turn_idx: int, agent_name: str, 
                           message: str, extra_data: Optional[Dict[str, Any]] = None):
         """
         Log environment and agent related information
         
         Args:
+            env_idx: Environment index
             rollout_idx: Rollout index
             turn_idx: Turn index
             agent_name: Agent name
             message: Log message
             extra_data: Additional structured data
         """
-        logger = self._get_or_create_rollout_logger("env_agent", rollout_idx)
+        logger = self._get_or_create_rollout_logger("env_agent", env_idx, rollout_idx)
 
         # Build log content and safely serialize
         log_content = {
@@ -196,6 +199,7 @@ class MultiLoggerConfig:
         
         # Use extra parameter to pass context information
         extra = {
+            "env_idx": env_idx,
             "rollout_idx": rollout_idx,
             "turn_idx": turn_idx,
             "agent_name": agent_name
@@ -203,20 +207,42 @@ class MultiLoggerConfig:
         
         logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
     
-    def log_model_interaction(self, rollout_idx: int, policy_name: str, 
+    def log_model_interaction(self, env_idx: int, rollout_idx: int, policy_name: str, 
                             prompt: str, response: str, extra_data: Optional[Dict[str, Any]] = None):
         """
         Log model interaction information
         
         Args:
+            env_idx: Environment index
             rollout_idx: Rollout index
             policy_name: Policy name
             prompt: Input prompt
             response: Model response
             extra_data: Additional data
         """
-        rollout_key = rollout_idx if rollout_idx is not None else "no_rollout"
-        logger = self._get_or_create_rollout_logger("model", rollout_key)
+        if rollout_idx is None:
+            # For cases where rollout_idx is None, create special logger in root log dir
+            logger_key = f"model:no_rollout"
+            if logger_key not in self.loggers:
+                logger = logging.getLogger(logger_key)
+                logger.setLevel(logging.INFO)
+                logger.handlers.clear()
+                logger.propagate = False
+                
+                file_path = self.log_dir / "model_no_rollout.log"
+                file_handler = logging.FileHandler(file_path, mode='a', encoding='utf-8')
+                file_handler.setLevel(logging.INFO)
+                
+                formatter = logging.Formatter(
+                    '[%(asctime)s] [POLICY:%(policy_name)s] %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                )
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
+                self.loggers[logger_key] = logger
+            logger = self.loggers[logger_key]
+        else:
+            logger = self._get_or_create_rollout_logger("model", env_idx, rollout_idx)
 
         log_content = {
             "prompt": prompt,
@@ -225,24 +251,37 @@ class MultiLoggerConfig:
             "extra_data": safe_serialize(extra_data or {})
         }
         extra = {
+            "env_idx": env_idx if env_idx is not None else "N/A",
             "rollout_idx": rollout_idx if rollout_idx is not None else "N/A",
             "policy_name": policy_name
         }
         
         logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
     
-    def log_async_event(self, rollout_idx: int, event_type: str, 
+    def log_async_event(self, env_idx: int, rollout_idx: int, event_type: str, 
                        message: str, extra_data: Optional[Dict[str, Any]] = None):
         """
         Log asynchronous execution events
         
         Args:
+            env_idx: Environment index  
             rollout_idx: Rollout index
             event_type: Event type (start, complete, error, etc.)
             message: Event message
             extra_data: Additional data
         """
-        logger = self._get_or_create_rollout_logger("async", rollout_idx)
+        if rollout_idx == -1 or env_idx == -1:
+            # For global events, log to summary
+            logger = self.loggers["summary"]
+            extra = {
+                "rollout_idx": rollout_idx if rollout_idx != -1 else "GLOBAL"
+            }
+        else:
+            logger = self._get_or_create_rollout_logger("async", env_idx, rollout_idx)
+            extra = {
+                "env_idx": env_idx,
+                "rollout_idx": rollout_idx
+            }
 
         log_content = {
             "event_type": event_type,
@@ -251,16 +290,66 @@ class MultiLoggerConfig:
             "extra_data": safe_serialize(extra_data or {})
         }
         
-        extra = {
-            "rollout_idx": rollout_idx
-        }
-        
         logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
     
-    def log_rollout_summary(self, rollout_idx: int, agent_rewards: Dict[str, float], 
+    def _check_ray_status(self) -> Dict[str, Any]:
+        """
+        Check Ray initialization and launch status
+        
+        Returns:
+            Dictionary containing Ray status information
+        """
+        ray_status = {
+            "ray_available": False,
+            "ray_initialized": False,
+            "ray_address": None,
+            "ray_namespace": None,
+            "ray_cluster_resources": None,
+            "ray_nodes": None,
+            "ray_error": None
+        }
+        
+        try:
+            import ray
+            ray_status["ray_available"] = True
+            
+            if ray.is_initialized():
+                ray_status["ray_initialized"] = True
+                
+                try:
+                    # Get cluster information
+                    cluster_resources = ray.cluster_resources()
+                    ray_status["ray_cluster_resources"] = safe_serialize(cluster_resources)
+                    
+                    # Get current address and namespace
+                    context = ray.get_runtime_context()
+                    ray_status["ray_address"] = getattr(context, 'gcs_address', None)
+                    ray_status["ray_namespace"] = getattr(context, 'namespace', None)
+                    
+                    # Get cluster nodes information
+                    try:
+                        nodes = ray.nodes()
+                        ray_status["ray_nodes"] = len(nodes)
+                    except Exception as e:
+                        ray_status["ray_nodes"] = f"Error getting nodes: {str(e)}"
+                        
+                except Exception as e:
+                    ray_status["ray_error"] = f"Error getting cluster info: {str(e)}"
+            else:
+                ray_status["ray_initialized"] = False
+                
+        except ImportError:
+            ray_status["ray_available"] = False
+            ray_status["ray_error"] = "Ray not installed"
+        except Exception as e:
+            ray_status["ray_error"] = f"Error checking Ray status: {str(e)}"
+            
+        return ray_status
+    
+    def log_rollout_summary(self, env_idx: int, rollout_idx: int, agent_rewards: Dict[str, float], 
                            termination_reason: str, extra_data: Optional[Dict[str, Any]] = None):
         """
-        Log rollout summary information
+        Log rollout summary information with Ray status check
         
         Args:
             rollout_idx: Rollout index
@@ -271,6 +360,7 @@ class MultiLoggerConfig:
         logger = self.loggers["summary"]
         
         log_content = {
+            "env_idx": env_idx,
             "rollout_idx": rollout_idx,
             "agent_rewards": agent_rewards,
             "termination_reason": termination_reason,
@@ -283,6 +373,134 @@ class MultiLoggerConfig:
         }
         
         logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+    
+    def log_ray_status(self, rollout_idx: Optional[int] = None, context: str = "general"):
+        """
+        Log detailed Ray status information
+        
+        Args:
+            rollout_idx: Optional rollout index for context
+            context: Context description for the Ray status check
+        """
+        logger = self.loggers["summary"]
+        ray_status = self._check_ray_status()
+        
+        log_content = {
+            "event_type": "ray_status_check",
+            "context": context,
+            "timestamp": datetime.now().isoformat(),
+            "ray_status": ray_status
+        }
+        
+        extra = {
+            "rollout_idx": rollout_idx if rollout_idx is not None else "N/A"
+        }
+        
+        # Log with appropriate level based on Ray status
+        if not ray_status["ray_available"]:
+            logger.warning(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+        elif not ray_status["ray_initialized"]:
+            logger.warning(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+        elif ray_status["ray_error"]:
+            logger.error(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+        else:
+            logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+    
+    def log_error(self, env_idx: Optional[int], rollout_idx: Optional[int], error_source: str, 
+                         error: Exception, context_data: Optional[Dict[str, Any]] = None,
+                         severity: str = "ERROR", additional_info: Optional[Dict[str, Any]] = None):
+        """
+        Log complex error information with detailed context and stack trace
+        
+        Args:
+            env_idx: Environment index (can be None for non-rollout errors)
+            rollout_idx: Rollout index (can be None for non-rollout errors)
+            error_source: Source of the error (e.g., 'env_agent', 'model', 'async', 'system')
+            error: The exception object
+            context_data: Contextual data when the error occurred
+            severity: Error severity level (ERROR, CRITICAL, WARNING)
+            additional_info: Additional information about the error
+        """
+        import traceback
+        import sys
+        
+        # Determine which logger to use based on error source
+        if error_source in ["env_agent", "model", "async"]:
+            if rollout_idx is not None and env_idx is not None:
+                logger = self._get_or_create_rollout_logger(error_source, env_idx, rollout_idx)
+            else:
+                # Use base logger if no rollout context
+                logger = self.loggers.get(error_source, self.loggers["summary"])
+        else:
+            # For system errors or unknown sources, use summary logger
+            logger = self.loggers["summary"]
+        
+        # Get full stack trace
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        stack_trace = traceback.format_exception(exc_type, exc_value, exc_traceback)
+        
+        # Build comprehensive error log content
+        error_content = {
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "error_source": error_source,
+            "severity": severity,
+            "timestamp": datetime.now().isoformat(),
+            "stack_trace": stack_trace,
+            "context_data": safe_serialize(context_data or {}),
+            "additional_info": safe_serialize(additional_info or {}),
+            "python_version": sys.version,
+            "platform_info": {
+                "platform": sys.platform,
+                "implementation": sys.implementation.name if hasattr(sys, 'implementation') else 'unknown'
+            }
+        }
+        
+        # Add rollout context if available
+        if rollout_idx is not None:
+            error_content["rollout_idx"] = rollout_idx
+        if env_idx is not None:
+            error_content["env_idx"] = env_idx
+        
+        # Prepare extra parameters for logging
+        extra = {
+            "env_idx": env_idx if env_idx is not None else "N/A",
+            "rollout_idx": rollout_idx if rollout_idx is not None else "N/A",
+            "error_source": error_source,
+            "severity": severity
+        }
+        
+        # Log with appropriate level
+        if severity == "CRITICAL":
+            logger.critical(json.dumps(error_content, ensure_ascii=False, indent=2), extra=extra)
+        elif severity == "WARNING":
+            logger.warning(json.dumps(error_content, ensure_ascii=False, indent=2), extra=extra)
+        else:
+            logger.error(json.dumps(error_content, ensure_ascii=False, indent=2), extra=extra)
+        
+        # Also log a simplified version to summary logger for overview
+        summary_content = {
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "error_source": error_source,
+            "severity": severity,
+            "timestamp": datetime.now().isoformat(),
+            "env_idx": env_idx if env_idx is not None else "N/A",
+            "rollout_idx": rollout_idx if rollout_idx is not None else "N/A"
+        }
+        
+        summary_logger = self.loggers["summary"]
+        summary_extra = {
+            "env_idx": env_idx if env_idx is not None else "N/A",
+            "rollout_idx": rollout_idx if rollout_idx is not None else "N/A"
+        }
+        
+        if severity == "CRITICAL":
+            summary_logger.critical(json.dumps(summary_content, ensure_ascii=False, indent=2), extra=summary_extra)
+        elif severity == "WARNING":
+            summary_logger.warning(json.dumps(summary_content, ensure_ascii=False, indent=2), extra=summary_extra)
+        else:
+            summary_logger.error(json.dumps(summary_content, ensure_ascii=False, indent=2), extra=summary_extra)
     
     def get_logger(self, logger_name: str) -> Optional[logging.Logger]:
         """Get specified logger"""

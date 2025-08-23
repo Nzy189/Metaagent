@@ -296,7 +296,7 @@ class RayPPOTrainer:
 
     This trainer orchestrates distributed PPO training across multiple nodes and GPUs,
     managing actor rollouts, critic training, and reward computation with Ray backend.
-    Supports various model architectures including FSDP, Megatron, and vLLM integration.
+    Supports various model architectures including FSDP, Megatron, vLLM, and SGLang integration.
     """
 
     # TODO: support each role have individual ray_worker_group_cls,
@@ -343,7 +343,6 @@ class RayPPOTrainer:
         self.config = config
         self.reward_fn = reward_fn
         self.val_reward_fn = val_reward_fn
-        self.global_steps = 0
 
         self.hybrid_engine = config.actor_rollout_ref.hybrid_engine
         assert self.hybrid_engine, "Currently, only support hybrid engine"
@@ -834,16 +833,15 @@ class RayPPOTrainer:
         wg_kwargs = {}  # Setting up kwargs for RayWorkerGroup
         if OmegaConf.select(self.config.trainer, "ray_wait_register_center_timeout") is not None:
             wg_kwargs["ray_wait_register_center_timeout"] = self.config.trainer.ray_wait_register_center_timeout
-        if OmegaConf.select(self.config, "global_profiler.steps") is not None:
-            wg_kwargs["profile_steps"] = OmegaConf.select(self.config, "global_profiler.steps")
-            worker_nsight_options = OmegaConf.select(self.config, "global_profiler.global_tool_config.nsys.worker_nsight_options")
-            if worker_nsight_options is not None:
-                wg_kwargs["worker_nsight_options"] = OmegaConf.to_container(worker_nsight_options)
-            else:
-                # Fallback: try to find nsight options in trainer config
-                trainer_nsight = OmegaConf.select(self.config.trainer, "worker_nsight_options")
-                if trainer_nsight is not None:
-                    wg_kwargs["worker_nsight_options"] = OmegaConf.to_container(trainer_nsight)
+        if OmegaConf.select(self.config.global_profiler, "steps") is not None:
+            wg_kwargs["profile_steps"] = OmegaConf.select(self.config.global_profiler, "steps")
+            assert (
+                OmegaConf.select(self.config.global_profiler.global_tool_config.nsys, "worker_nsight_options")
+                is not None
+            ), "worker_nsight_options must be set when profile_steps is set"
+            wg_kwargs["worker_nsight_options"] = OmegaConf.to_container(
+                OmegaConf.select(self.config.global_profiler.global_tool_config.nsys, "worker_nsight_options")
+            )
         wg_kwargs["device_name"] = self.device_name
 
         for resource_pool, class_dict in self.resource_pool_to_cls.items():
@@ -874,14 +872,14 @@ class RayPPOTrainer:
 
         # create async rollout manager and request scheduler
         self.async_rollout_mode = False
-        #if self.config.actor_rollout_ref.rollout.mode == "async":
-        #    from verl.experimental.agent_loop import AgentLoopManager
+        if self.config.actor_rollout_ref.rollout.mode == "async":
+            from verl.experimental.agent_loop import AgentLoopManager
 
-         #   self.async_rollout_mode = True
-        #    self.async_rollout_manager = AgentLoopManager(
-        #        config=self.config,
-        #        worker_group=self.actor_rollout_wg,
-        #    )
+            self.async_rollout_mode = True
+            self.async_rollout_manager = AgentLoopManager(
+                config=self.config,
+                worker_group=self.actor_rollout_wg,
+            )
 
     def _save_checkpoint(self):
         from verl.utils.fs import local_mkdir_safe
@@ -1083,10 +1081,9 @@ class RayPPOTrainer:
         self.max_steps_duration = 0
 
         prev_step_profile = False
-        global_profiler_steps = OmegaConf.select(self.config, "global_profiler.steps")
         curr_step_profile = (
-            self.global_steps in global_profiler_steps
-            if global_profiler_steps is not None
+            self.global_steps in self.config.global_profiler.steps
+            if self.config.global_profiler.steps is not None
             else False
         )
         next_step_profile = False
@@ -1097,10 +1094,9 @@ class RayPPOTrainer:
                 timing_raw = {}
 
                 with marked_timer("start_profile", timing_raw):
-                    profile_continuous = OmegaConf.select(self.config, "global_profiler.profile_continuous_steps")
                     self._start_profiling(
                         not prev_step_profile and curr_step_profile
-                        if profile_continuous
+                        if self.config.global_profiler.profile_continuous_steps
                         else curr_step_profile
                     )
 
@@ -1344,14 +1340,13 @@ class RayPPOTrainer:
 
                 with marked_timer("stop_profile", timing_raw):
                     next_step_profile = (
-                        self.global_steps + 1 in global_profiler_steps
-                        if global_profiler_steps is not None
+                        self.global_steps + 1 in self.config.global_profiler.steps
+                        if self.config.global_profiler.steps is not None
                         else False
                     )
-                    profile_continuous = OmegaConf.select(self.config, "global_profiler.profile_continuous_steps")
                     self._stop_profiling(
                         curr_step_profile and not next_step_profile
-                        if profile_continuous
+                        if self.config.global_profiler.profile_continuous_steps
                         else curr_step_profile
                     )
                     prev_step_profile = curr_step_profile

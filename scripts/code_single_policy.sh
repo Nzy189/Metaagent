@@ -1,6 +1,6 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -35,5 +35,5 @@ python3 -m pettingllms.data.preprocess.prepare \
     --val_data_size $((val_data_size * 2)) # evaluate 2 × val_data_size tasks during each iteration
 
 
-python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_single_policy \
-    $model_0_USE_GRPO $model_1_USE_GRPO $model_0_resource $model_1_resource $model_0_data $model_1_data
+python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_eval \
+    $model_0_USE_GRPO $model_0_resource $model_0_data

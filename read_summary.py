@@ -43,7 +43,9 @@ def calculate_statistics(rollouts):
     all_tests_passed_count = 0
     termination_reasons = {}
     finally_pass_cases=[]
+    finally_test_passed_cases=[]
     init_pass_cases=[]
+    init_test_passed_cases=[]
     success_generated_code_count=0
     for idx,rollout in enumerate(rollouts):
         reason = rollout.get('termination_reason', 'unknown')
@@ -51,9 +53,12 @@ def calculate_statistics(rollouts):
         if agent_rewards:
             print("extracted agent_rewards")
             code_generator=agent_rewards.get('code_generator', '')
+            test_generator=agent_rewards.get('test_generator', '')
             if code_generator:
                 if code_generator==1:
                     finally_pass_cases.append(rollout)
+                    if test_generator==1:
+                        finally_test_passed_cases.append(rollout)
        
         
         extra_data = rollout.get('extra_data', {})
@@ -69,27 +74,35 @@ def calculate_statistics(rollouts):
             if reward_history_dict:
                 print("extracted reward_history_dict")
                 code_generator=reward_history_dict.get('code_generator', [])
+                test_generator=reward_history_dict.get('test_generator', [])
                 if code_generator!=[]:
                     if code_generator[0]==1:
                         init_pass_cases.append(rollout)
-                       
+                        if test_generator[0]==1:
+                            init_test_passed_cases.append(rollout)
                        
         if reason == 'all_tests_passed':
             all_tests_passed_count += 1
     
     # 计算比例
+    #total_count=508
     all_tests_passed_ratio = all_tests_passed_count / total_count if total_count > 0 else 0
     finally_pass_cases_ratio = len(finally_pass_cases) / total_count if total_count > 0 else 0
     init_pass_cases_ratio = len(init_pass_cases) / total_count if total_count > 0 else 0
-    init_pass_cases_ratio_not_in_finally_pass_cases=0
-    finally_pass_cases_ratio_not_in_init_pass_cases=0
+    init_pass_cases_ratio_not_in_finally_pass_cases=[]
+    finally_pass_cases_ratio_not_in_init_pass_cases=[]
     for a in init_pass_cases:
         if a not in finally_pass_cases:
-            init_pass_cases_ratio_not_in_finally_pass_cases+=1
+            init_pass_cases_ratio_not_in_finally_pass_cases.append(a)
     for a in finally_pass_cases:
         if a not in init_pass_cases:
-            finally_pass_cases_ratio_not_in_init_pass_cases+=1
-
+            finally_pass_cases_ratio_not_in_init_pass_cases.append(a)
+    print("init_pass_cases_ratio_not_in_finally_pass_cases:")
+    for a in init_pass_cases_ratio_not_in_finally_pass_cases:
+        print(a['extra_data']['reward_history_dict'])
+    print("finally_pass_cases_ratio_not_in_init_pass_cases:")
+    for a in finally_pass_cases_ratio_not_in_init_pass_cases:
+        print(a['extra_data']['reward_history_dict'])
     return {
         'total_count': total_count,
         'all_tests_passed_count': all_tests_passed_count,
@@ -98,14 +111,18 @@ def calculate_statistics(rollouts):
         'success_generated_code_count': success_generated_code_count/total_count,
         'finally_pass_cases_ratio': finally_pass_cases_ratio,
         'init_pass_cases_ratio': init_pass_cases_ratio,
-        'init_pass_cases_ratio_not_in_finally_pass_ratio': init_pass_cases_ratio_not_in_finally_pass_cases/total_count,
-        'finally_pass_cases_ratio_not_in_init_pass_ratio': finally_pass_cases_ratio_not_in_init_pass_cases/total_count
+        'init_pass_cases_ratio_not_in_finally_pass_ratio': len(init_pass_cases_ratio_not_in_finally_pass_cases)/total_count,
+        'finally_pass_cases_ratio_not_in_init_pass_ratio': len(finally_pass_cases_ratio_not_in_init_pass_cases)/total_count,
+        'finally_test_passed_cases_ratio': len(finally_test_passed_cases)/total_count,
+        'init_test_passed_cases_ratio': len(init_test_passed_cases)/total_count
     }
 
 def main():
     # 日志文件路径
     #log_file = 'logs/2025-08-18/MBPP/summary.log'
-    log_file = 'logs/2025-08-18/14-05-48/summary.log'
+    #log_file = 'logs/2025-08-18/Live_code_bench/summary.log'
+    #log_file = 'logs/2025-08-18/Livebench/summary.log'
+    log_file = 'logs/2025-08-18/Code_forces/summary.log'
     print("正在处理日志文件...")
     
     # 处理日志文件
@@ -125,6 +142,8 @@ def main():
     print(f"init_pass_cases 比例: {stats['init_pass_cases_ratio']:.4f} ({stats['init_pass_cases_ratio']*100:.2f}%)")
     print(f"对的改错比例: {stats['init_pass_cases_ratio_not_in_finally_pass_ratio']:.4f} ({stats['init_pass_cases_ratio_not_in_finally_pass_ratio']*100:.2f}%)")
     print(f"错的改对比例: {stats['finally_pass_cases_ratio_not_in_init_pass_ratio']:.4f} ({stats['finally_pass_cases_ratio_not_in_init_pass_ratio']*100:.2f}%)")
+    print(f"finally_test_passed_cases 比例: {stats['finally_test_passed_cases_ratio']:.4f} ({stats['finally_test_passed_cases_ratio']*100:.2f}%)")
+    print(f"init_test_passed_cases 比例: {stats['init_test_passed_cases_ratio']:.4f} ({stats['init_test_passed_cases_ratio']*100:.2f}%)")
     #print(f"success_generated_code_count 比例: {stats['success_generated_code_count']:.4f} ({stats['success_generated_code_count']*100:.2f}%)")
     
   
