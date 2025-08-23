@@ -219,6 +219,8 @@ Desktop.ini
 *.temp
 *.bak
 *.backup
+test.txt
+training.txt
 
 # Ignore verl script outputs.
 **/outputs/
