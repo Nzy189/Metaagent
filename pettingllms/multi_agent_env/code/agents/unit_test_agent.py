@@ -179,10 +179,10 @@ class UnitTestGenerationAgent(Agent):
 
         if len(self.reward_history)>0:
             self.agent_reward = passed_ratio-self.reward_history[-1]
-            self.reward_history.append(passed_ratio)
+            
         else:
             self.agent_reward = passed_ratio
-            self.reward_history.append(passed_ratio)
+        self.reward_history.append(passed_ratio)
                 
 
     

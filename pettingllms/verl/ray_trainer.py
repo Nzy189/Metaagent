@@ -380,7 +380,7 @@ class RayPPOTrainer:
                 stacklevel=2,
             )
             self.use_critic = False
-
+        self.global_steps = 0
         self._validate_config()
         self._create_dataloader(train_dataset, val_dataset, collate_fn, train_sampler)
 

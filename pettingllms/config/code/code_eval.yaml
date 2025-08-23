@@ -10,7 +10,7 @@ defaults:
 
 # dataset config (shared by all agents)
 data:
-  #rollout config
+  filter_ratio: 0.5
   gen_batch_size: 32
   gen_n_samples: 4
   sample_temperature: 0.6
@@ -124,4 +124,4 @@ trainer:
     options: {}
   rejection_sample: False
   rejection_sample_multiplier: 2
-  n_training_gpus_per_node: 7
+  n_training_gpus_per_node: ${resource.n_gpus_per_node}

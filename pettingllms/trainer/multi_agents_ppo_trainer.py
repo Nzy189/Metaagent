@@ -105,6 +105,7 @@ class MultiAgentsPPOTrainer:
                         ray_worker_group_cls=ray_worker_group_cls,
                         
                     )
+                    ppo_trainer.global_steps = 0
                     self.ppo_trainer_dict[model_name] = ppo_trainer
                     self.tokenizer_dict[model_name] = model_tokenizer
                     colorful_print(f"PPO trainer created for model: {model_name}", "green")
@@ -113,7 +114,7 @@ class MultiAgentsPPOTrainer:
         colorful_print(f"Number of PPO trainers: {len(self.ppo_trainer_dict)}", "cyan")
         colorful_print(f"Number of agent mappings: {len(self.agent_policy_mapping)}", "cyan")
         
-        # 存储 LLM servers 以便清理
+        
         self.llm_servers = []
 
 

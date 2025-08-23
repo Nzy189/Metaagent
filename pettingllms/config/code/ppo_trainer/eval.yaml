@@ -1,7 +1,7 @@
 data:
   tokenizer: null
   use_shm: False
-  train_batch_size: 128  # 增加训练批次大小
+  train_batch_size: 256  # 增加训练批次大小
   val_batch_size: 256  # 增加验证批次大小
   prompt_key: prompt
   reward_fn_key: data_source
@@ -126,7 +126,7 @@ actor_rollout_ref:
     response_length: ${data.max_response_length}
     # for vllm rollout
     dtype: bfloat16 # should align with FSDP
-    gpu_memory_utilization: 0.9  
+    gpu_memory_utilization: 0.8  
     ignore_eos: False
     enforce_eager: True  
     free_cache_engine: False

@@ -1,0 +1,1384 @@
++ export CUDA_VISIBLE_DEVICES=4,5,6,7
++ CUDA_VISIBLE_DEVICES=4,5,6,7
++ export VLLM_ATTENTION_BACKEND=FLASH_ATTN
++ VLLM_ATTENTION_BACKEND=FLASH_ATTN
++ export VLLM_USE_FLASHINFER_SAMPLER=0
++ VLLM_USE_FLASHINFER_SAMPLER=0
++ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
++ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
++ export VLLM_USE_V1=1
++ VLLM_USE_V1=1
++ export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
++ VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
++ export VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
++ VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
++ export HYDRA_FULL_ERROR=1
++ HYDRA_FULL_ERROR=1
++ export CUDA_HOME=/usr/local/cuda
++ CUDA_HOME=/usr/local/cuda
++ export LD_LIBRARY_PATH=/usr/local/cuda/targets/x86_64-linux/lib:
++ LD_LIBRARY_PATH=/usr/local/cuda/targets/x86_64-linux/lib:
++ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib:
++ LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib:
++ model_0_config_path=models.model_0.ppo_trainer_config
++ train_data_size=256
++ val_data_size=128
++ model_0_data_dir=/home/lah003/data/code/model_0
++ model_0_USE_GRPO='models.model_0.ppo_trainer_config.algorithm.adv_estimator=grpo models.model_0.ppo_trainer_config.actor_rollout_ref.actor.use_kl_loss=True'
++ model_0_resource='models.model_0.ppo_trainer_config.trainer.n_gpus_per_node=1 models.model_0.ppo_trainer_config.trainer.nnodes=1'
++ model_0_data='+models.model_0.ppo_trainer_config.data.train_files=/home/lah003/data/code/model_0/text/train.parquet +models.model_0.ppo_trainer_config.data.val_files=/home/lah003/data/code/model_0/text/test.parquet'
++ python3 -m pettingllms.data.preprocess.prepare --mode text --train_data_size 256 --local_dir /home/lah003/data/code/model_0 --val_data_size 256
+processing data for mode: text
+Creating parquet from Arrow format:   0%|          | 0/1 [00:00<?, ?ba/s]Creating parquet from Arrow format: 100%|██████████| 1/1 [00:00<00:00, 473.67ba/s]
+Creating parquet from Arrow format:   0%|          | 0/1 [00:00<?, ?ba/s]Creating parquet from Arrow format: 100%|██████████| 1/1 [00:00<00:00, 953.03ba/s]
++ python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_eval models.model_0.ppo_trainer_config.algorithm.adv_estimator=grpo models.model_0.ppo_trainer_config.actor_rollout_ref.actor.use_kl_loss=True models.model_0.ppo_trainer_config.trainer.n_gpus_per_node=1 models.model_0.ppo_trainer_config.trainer.nnodes=1 +models.model_0.ppo_trainer_config.data.train_files=/home/lah003/data/code/model_0/text/train.parquet +models.model_0.ppo_trainer_config.data.val_files=/home/lah003/data/code/model_0/text/test.parquet
+2025-08-23 12:35:49,550	INFO worker.py:1927 -- Started a local Ray instance.
+[36m(train_multi_agents pid=1130391)[0m {'agent_policy_configs': {'agent_configs': {'agent_0': {'name': 'code_generator',
+[36m(train_multi_agents pid=1130391)[0m                                                         'policy_name': 'code_generator_model',
+[36m(train_multi_agents pid=1130391)[0m                                                         'sample_num': 4},
+[36m(train_multi_agents pid=1130391)[0m                                             'agent_1': {'name': 'test_generator',
+[36m(train_multi_agents pid=1130391)[0m                                                         'policy_name': 'code_generator_model',
+[36m(train_multi_agents pid=1130391)[0m                                                         'sample_num': 4}},
+[36m(train_multi_agents pid=1130391)[0m                           'num_agents': 2,
+[36m(train_multi_agents pid=1130391)[0m                           'policy_list': ['code_generator', 'test_generator']},
+[36m(train_multi_agents pid=1130391)[0m  'data': {'gen_batch_size': 32,
+[36m(train_multi_agents pid=1130391)[0m           'gen_n_samples': 4,
+[36m(train_multi_agents pid=1130391)[0m           'max_prompt_length': 1024,
+[36m(train_multi_agents pid=1130391)[0m           'max_response_length': 8192,
+[36m(train_multi_agents pid=1130391)[0m           'sample_temperature': 0.6,
+[36m(train_multi_agents pid=1130391)[0m           'train_batch_size': 16,
+[36m(train_multi_agents pid=1130391)[0m           'val_batch_size': 8},
+[36m(train_multi_agents pid=1130391)[0m  'env': {'batched_init': True,
+[36m(train_multi_agents pid=1130391)[0m          'benchmark': 'CodeForces',
+[36m(train_multi_agents pid=1130391)[0m          'max_turns': 4,
+[36m(train_multi_agents pid=1130391)[0m          'multi_modal': False,
+[36m(train_multi_agents pid=1130391)[0m          'name': 'code_env',
+[36m(train_multi_agents pid=1130391)[0m          'resolve': False},
+[36m(train_multi_agents pid=1130391)[0m  'experiment_name': 'code_test',
+[36m(train_multi_agents pid=1130391)[0m  'logger': ['console', 'wandb'],
+[36m(train_multi_agents pid=1130391)[0m  'mode': 'validation',
+[36m(train_multi_agents pid=1130391)[0m  'models': {'model_0': {'name': 'code_generator_model',
+[36m(train_multi_agents pid=1130391)[0m                         'path': 'Qwen/Qwen3-4B',
+[36m(train_multi_agents pid=1130391)[0m                         'ppo_trainer_config': {'actor_rollout_ref': {'actor': {'_target_': 'verl.workers.config.FSDPActorConfig',
+[36m(train_multi_agents pid=1130391)[0m                                                                                'checkpoint': {'contents': ['model',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                            'optimizer',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                            'extra']},
+[36m(train_multi_agents pid=1130391)[0m                                                                                'clip_ratio': 0.2,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'clip_ratio_c': 3.0,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'clip_ratio_high': 0.2,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'clip_ratio_low': 0.2,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'entropy_coeff': 0,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                'fsdp_size': 8,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                'offload_policy': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                'optimizer_offload': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                'param_offload': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                'reshard_after_forward': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                'wrap_policy': {'min_num_params': 0}},
+[36m(train_multi_agents pid=1130391)[0m                                                                                'grad_clip': 1.0,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'kl_loss_coef': 0.001,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'kl_loss_type': 'low_var_kl',
+[36m(train_multi_agents pid=1130391)[0m                                                                                'loss_agg_mode': 'token-mean',
+[36m(train_multi_agents pid=1130391)[0m                                                                                'optim': {'lr': 1e-06,
+[36m(train_multi_agents pid=1130391)[0m                                                                                          'lr_warmup_steps': -1,
+[36m(train_multi_agents pid=1130391)[0m                                                                                          'lr_warmup_steps_ratio': 0.0,
+[36m(train_multi_agents pid=1130391)[0m                                                                                          'min_lr_ratio': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                          'num_cycles': 0.5,
+[36m(train_multi_agents pid=1130391)[0m                                                                                          'total_training_steps': -1,
+[36m(train_multi_agents pid=1130391)[0m                                                                                          'warmup_style': 'constant',
+[36m(train_multi_agents pid=1130391)[0m                                                                                          'weight_decay': 0.01},
+[36m(train_multi_agents pid=1130391)[0m                                                                                'ppo_epochs': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'ppo_max_token_len_per_gpu': 8192,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'ppo_micro_batch_size': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'ppo_micro_batch_size_per_gpu': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'ppo_mini_batch_size': 512,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'shuffle': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'strategy': 'fsdp',
+[36m(train_multi_agents pid=1130391)[0m                                                                                'ulysses_sequence_parallel_size': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'use_dynamic_bsz': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'use_kl_loss': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'use_torch_compile': True},
+[36m(train_multi_agents pid=1130391)[0m                                                                      'hybrid_engine': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                      'model': {'enable_activation_offload': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'enable_gradient_checkpointing': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'external_lib': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'lora_alpha': 16,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'lora_rank': 0,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'override_config': {},
+[36m(train_multi_agents pid=1130391)[0m                                                                                'path': 'Qwen/Qwen3-4B',
+[36m(train_multi_agents pid=1130391)[0m                                                                                'target_modules': 'all-linear',
+[36m(train_multi_agents pid=1130391)[0m                                                                                'trust_remote_code': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'use_fused_kernels': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'use_liger': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'use_remove_padding': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                'use_shm': False},
+[36m(train_multi_agents pid=1130391)[0m                                                                      'ref': {'entropy_from_logits_with_chunking': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                              'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig',
+[36m(train_multi_agents pid=1130391)[0m                                                                                              'param_offload': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                              'reshard_after_forward': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                              'wrap_policy': {'min_num_params': 0}},
+[36m(train_multi_agents pid=1130391)[0m                                                                              'log_prob_max_token_len_per_gpu': 16384,
+[36m(train_multi_agents pid=1130391)[0m                                                                              'log_prob_micro_batch_size': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                                              'log_prob_micro_batch_size_per_gpu': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                              'log_prob_use_dynamic_bsz': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                              'ppo_micro_batch_size': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                                              'ppo_micro_batch_size_per_gpu': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                              'strategy': 'fsdp',
+[36m(train_multi_agents pid=1130391)[0m                                                                              'ulysses_sequence_parallel_size': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                                              'use_torch_compile': True},
+[36m(train_multi_agents pid=1130391)[0m                                                                      'rollout': {'agent': {'agent_loop_config_path': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                            'custom_async_server': {'name': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                                    'path': None},
+[36m(train_multi_agents pid=1130391)[0m                                                                                            'num_workers': 512},
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'chat_scheduler': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'chat_template': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'disable_log_stats': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'disable_logging': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'do_sample': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'dtype': 'bfloat16',
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'enable_chunked_prefill': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'enforce_eager': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'engine_kwargs': {'sglang': {'attention_backend': None},
+[36m(train_multi_agents pid=1130391)[0m                                                                                                    'vllm': {'swap_space': None}},
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'entropy_from_logits_with_chunking': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'free_cache_engine': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'gpu_memory_utilization': 0.9,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'ignore_eos': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'layered_summon': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'load_format': 'auto',
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'log_prob_max_token_len_per_gpu': 16384,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'log_prob_micro_batch_size': 32,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'log_prob_micro_batch_size_per_gpu': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'log_prob_use_dynamic_bsz': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'max_model_len': 8192,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'max_num_batched_tokens': 1048576,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'max_num_seqs': 512,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'mode': 'async',
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'multi_turn': {'enable': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                 'format': 'chatml',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                 'max_turns': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                 'tool_config_path': None},
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'n': 4,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'name': 'vllm',
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'prompt_length': 1024,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'response_length': 8192,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'temperature': 0.6,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'tensor_model_parallel_size': 4,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'top_k': -1,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'top_p': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'use_fire_sampling': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'val_kwargs': {'do_sample': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                 'n': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                 'temperature': 0,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                 'top_k': -1,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                 'top_p': 1.0}},
+[36m(train_multi_agents pid=1130391)[0m                                                                      'trainer': {'n_gpus_per_node': 4,
+[36m(train_multi_agents pid=1130391)[0m                                                                                  'n_training_gpus_per_node': 4}},
+[36m(train_multi_agents pid=1130391)[0m                                                'algorithm': {'adv_estimator': 'grpo',
+[36m(train_multi_agents pid=1130391)[0m                                                              'clip_advantages': False,
+[36m(train_multi_agents pid=1130391)[0m                                                              'gamma': 1.0,
+[36m(train_multi_agents pid=1130391)[0m                                                              'kl_ctrl': {'horizon': 10000,
+[36m(train_multi_agents pid=1130391)[0m                                                                          'kl_coef': 0.001,
+[36m(train_multi_agents pid=1130391)[0m                                                                          'target_kl': 0.1,
+[36m(train_multi_agents pid=1130391)[0m                                                                          'type': 'fixed'},
+[36m(train_multi_agents pid=1130391)[0m                                                              'kl_penalty': 'kl',
+[36m(train_multi_agents pid=1130391)[0m                                                              'lam': 1.0,
+[36m(train_multi_agents pid=1130391)[0m                                                              'mask_truncated_samples': False,
+[36m(train_multi_agents pid=1130391)[0m                                                              'norm_adv_by_std_in_grpo': True,
+[36m(train_multi_agents pid=1130391)[0m                                                              'pf_ppo': {'reweight_method': 'pow',
+[36m(train_multi_agents pid=1130391)[0m                                                                         'weight_pow': 2.0},
+[36m(train_multi_agents pid=1130391)[0m                                                              'use_kl_in_reward': False,
+[36m(train_multi_agents pid=1130391)[0m                                                              'use_pf_ppo': False},
+[36m(train_multi_agents pid=1130391)[0m                                                'critic': {'_target_': 'verl.workers.config.FSDPCriticConfig',
+[36m(train_multi_agents pid=1130391)[0m                                                           'enable': None,
+[36m(train_multi_agents pid=1130391)[0m                                                           'forward_micro_batch_size': None,
+[36m(train_multi_agents pid=1130391)[0m                                                           'forward_micro_batch_size_per_gpu': None,
+[36m(train_multi_agents pid=1130391)[0m                                                           'grad_clip': 1.0,
+[36m(train_multi_agents pid=1130391)[0m                                                           'model': {'_target_': 'verl.workers.config.FSDPCriticModelCfg',
+[36m(train_multi_agents pid=1130391)[0m                                                                     'enable_activation_offload': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'enable_gradient_checkpointing': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'external_lib': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig',
+[36m(train_multi_agents pid=1130391)[0m                                                                                     'forward_prefetch': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                     'fsdp_size': 8,
+[36m(train_multi_agents pid=1130391)[0m                                                                                     'offload_policy': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                     'optimizer_offload': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                     'param_offload': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                     'reshard_after_forward': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                     'wrap_policy': {'min_num_params': 0}},
+[36m(train_multi_agents pid=1130391)[0m                                                                     'lora_alpha': 16,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'lora_rank': 0,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'override_config': {},
+[36m(train_multi_agents pid=1130391)[0m                                                                     'path': '~/models/deepseek-llm-7b-chat',
+[36m(train_multi_agents pid=1130391)[0m                                                                     'target_modules': 'all-linear',
+[36m(train_multi_agents pid=1130391)[0m                                                                     'tokenizer_path': '~/models/deepseek-llm-7b-chat',
+[36m(train_multi_agents pid=1130391)[0m                                                                     'trust_remote_code': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'use_remove_padding': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'use_shm': False},
+[36m(train_multi_agents pid=1130391)[0m                                                           'optim': {'_target_': 'verl.workers.config.FSDPOptimizerConfig',
+[36m(train_multi_agents pid=1130391)[0m                                                                     'lr': 1e-05,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'lr_warmup_steps': -1,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'lr_warmup_steps_ratio': 0.0,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'min_lr_ratio': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'total_training_steps': -1,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'warmup_style': 'constant',
+[36m(train_multi_agents pid=1130391)[0m                                                                     'weight_decay': 0.01},
+[36m(train_multi_agents pid=1130391)[0m                                                           'strategy': 'fsdp',
+[36m(train_multi_agents pid=1130391)[0m                                                           'ulysses_sequence_parallel_size': 1},
+[36m(train_multi_agents pid=1130391)[0m                                                'custom_reward_function': {'name': 'compute_score',
+[36m(train_multi_agents pid=1130391)[0m                                                                           'path': None},
+[36m(train_multi_agents pid=1130391)[0m                                                'data': {'class_name': None,
+[36m(train_multi_agents pid=1130391)[0m                                                         'class_path': None,
+[36m(train_multi_agents pid=1130391)[0m                                                         'custom_cls': {'name': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                        'path': None},
+[36m(train_multi_agents pid=1130391)[0m                                                         'dataloader_num_workers': 0,
+[36m(train_multi_agents pid=1130391)[0m                                                         'filter_overlong_prompts': False,
+[36m(train_multi_agents pid=1130391)[0m                                                         'filter_overlong_prompts_workers': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                         'image_key': 'images',
+[36m(train_multi_agents pid=1130391)[0m                                                         'max_prompt_length': 1024,
+[36m(train_multi_agents pid=1130391)[0m                                                         'max_response_length': 8192,
+[36m(train_multi_agents pid=1130391)[0m                                                         'prompt_key': 'prompt',
+[36m(train_multi_agents pid=1130391)[0m                                                         'return_full_prompt': False,
+[36m(train_multi_agents pid=1130391)[0m                                                         'return_raw_chat': False,
+[36m(train_multi_agents pid=1130391)[0m                                                         'return_raw_input_ids': False,
+[36m(train_multi_agents pid=1130391)[0m                                                         'reward_fn_key': 'data_source',
+[36m(train_multi_agents pid=1130391)[0m                                                         'sampler': {'class_name': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                     'class_path': None},
+[36m(train_multi_agents pid=1130391)[0m                                                         'shuffle': True,
+[36m(train_multi_agents pid=1130391)[0m                                                         'tokenizer': None,
+[36m(train_multi_agents pid=1130391)[0m                                                         'train_batch_size': 128,
+[36m(train_multi_agents pid=1130391)[0m                                                         'train_files': '/home/lah003/data/code/model_0/text/train.parquet',
+[36m(train_multi_agents pid=1130391)[0m                                                         'truncation': 'error',
+[36m(train_multi_agents pid=1130391)[0m                                                         'trust_remote_code': False,
+[36m(train_multi_agents pid=1130391)[0m                                                         'use_shm': False,
+[36m(train_multi_agents pid=1130391)[0m                                                         'val_batch_size': 256,
+[36m(train_multi_agents pid=1130391)[0m                                                         'val_files': '/home/lah003/data/code/model_0/text/test.parquet',
+[36m(train_multi_agents pid=1130391)[0m                                                         'video_key': 'videos'},
+[36m(train_multi_agents pid=1130391)[0m                                                'global_profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+[36m(train_multi_agents pid=1130391)[0m                                                                    'global_tool_config': {'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                    'controller_nsight_options': {'cuda-graph-trace': 'graph',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                                                  'cuda-memory-usage': 'true',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                                                  'trace': 'cuda,nvtx,cublas,ucx'},
+[36m(train_multi_agents pid=1130391)[0m                                                                                                    'discrete': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                    'worker_nsight_options': {'capture-range': 'cudaProfilerApi',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                                              'capture-range-end': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                                                                              'cuda-graph-trace': 'graph',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                                              'cuda-memory-usage': 'true',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                                              'kill': 'none',
+[36m(train_multi_agents pid=1130391)[0m                                                                                                                              'trace': 'cuda,nvtx,cublas,ucx'}}},
+[36m(train_multi_agents pid=1130391)[0m                                                                    'profile_continuous_steps': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                    'save_path': 'outputs/profile',
+[36m(train_multi_agents pid=1130391)[0m                                                                    'steps': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                    'tool': None},
+[36m(train_multi_agents pid=1130391)[0m                                                'ray_kwargs': {'ray_init': {'num_cpus': None},
+[36m(train_multi_agents pid=1130391)[0m                                                               'timeline_json_file': None},
+[36m(train_multi_agents pid=1130391)[0m                                                'reward_model': {'enable': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                 'forward_max_token_len_per_gpu': 32768,
+[36m(train_multi_agents pid=1130391)[0m                                                                 'launch_reward_fn_async': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                 'max_length': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                 'micro_batch_size': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                 'micro_batch_size_per_gpu': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                 'model': {'external_lib': None,
+[36m(train_multi_agents pid=1130391)[0m                                                                           'fsdp_config': {'fsdp_size': 8,
+[36m(train_multi_agents pid=1130391)[0m                                                                                           'param_offload': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                                           'reshard_after_forward': True,
+[36m(train_multi_agents pid=1130391)[0m                                                                                           'wrap_policy': {'min_num_params': 0}},
+[36m(train_multi_agents pid=1130391)[0m                                                                           'input_tokenizer': '~/models/deepseek-llm-7b-chat',
+[36m(train_multi_agents pid=1130391)[0m                                                                           'path': '~/models/FsfairX-LLaMA3-RM-v0.1',
+[36m(train_multi_agents pid=1130391)[0m                                                                           'trust_remote_code': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                           'use_fused_kernels': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                           'use_remove_padding': False,
+[36m(train_multi_agents pid=1130391)[0m                                                                           'use_shm': False},
+[36m(train_multi_agents pid=1130391)[0m                                                                 'reward_manager': 'naive',
+[36m(train_multi_agents pid=1130391)[0m                                                                 'sandbox_fusion': {'max_concurrent': 64,
+[36m(train_multi_agents pid=1130391)[0m                                                                                    'url': None},
+[36m(train_multi_agents pid=1130391)[0m                                                                 'strategy': 'fsdp',
+[36m(train_multi_agents pid=1130391)[0m                                                                 'ulysses_sequence_parallel_size': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                                 'use_dynamic_bsz': False},
+[36m(train_multi_agents pid=1130391)[0m                                                'trainer': {'balance_batch': True,
+[36m(train_multi_agents pid=1130391)[0m                                                            'critic_warmup': 0,
+[36m(train_multi_agents pid=1130391)[0m                                                            'default_hdfs_dir': None,
+[36m(train_multi_agents pid=1130391)[0m                                                            'default_local_dir': 'checkpoints/verl_examples/gsm8k',
+[36m(train_multi_agents pid=1130391)[0m                                                            'del_local_ckpt_after_load': False,
+[36m(train_multi_agents pid=1130391)[0m                                                            'device': 'cuda',
+[36m(train_multi_agents pid=1130391)[0m                                                            'experiment_name': 'gsm8k',
+[36m(train_multi_agents pid=1130391)[0m                                                            'log_val_generations': 0,
+[36m(train_multi_agents pid=1130391)[0m                                                            'logger': ['console',
+[36m(train_multi_agents pid=1130391)[0m                                                                       'wandb'],
+[36m(train_multi_agents pid=1130391)[0m                                                            'max_actor_ckpt_to_keep': None,
+[36m(train_multi_agents pid=1130391)[0m                                                            'max_critic_ckpt_to_keep': None,
+[36m(train_multi_agents pid=1130391)[0m                                                            'n_gpus_per_node': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                            'n_training_gpus_per_node': 4,
+[36m(train_multi_agents pid=1130391)[0m                                                            'nnodes': 1,
+[36m(train_multi_agents pid=1130391)[0m                                                            'npu_profile': {'options': {}},
+[36m(train_multi_agents pid=1130391)[0m                                                            'project_name': 'verl_examples',
+[36m(train_multi_agents pid=1130391)[0m                                                            'ray_wait_register_center_timeout': 300,
+[36m(train_multi_agents pid=1130391)[0m                                                            'rejection_sample': False,
+[36m(train_multi_agents pid=1130391)[0m                                                            'rejection_sample_multiplier': 2,
+[36m(train_multi_agents pid=1130391)[0m                                                            'resume_from_path': None,
+[36m(train_multi_agents pid=1130391)[0m                                                            'resume_mode': 'auto',
+[36m(train_multi_agents pid=1130391)[0m                                                            'rollout_data_dir': None,
+[36m(train_multi_agents pid=1130391)[0m                                                            'save_freq': -1,
+[36m(train_multi_agents pid=1130391)[0m                                                            'test_freq': -1,
+[36m(train_multi_agents pid=1130391)[0m                                                            'total_epochs': 30,
+[36m(train_multi_agents pid=1130391)[0m                                                            'total_training_steps': None,
+[36m(train_multi_agents pid=1130391)[0m                                                            'val_before_train': True,
+[36m(train_multi_agents pid=1130391)[0m                                                            'validation_data_dir': None}}}},
+[36m(train_multi_agents pid=1130391)[0m  'multi_agent_interaction': {'num_interacting_agents': 2,
+[36m(train_multi_agents pid=1130391)[0m                              'shared_observation': True,
+[36m(train_multi_agents pid=1130391)[0m                              'turn_order': ['code_generator',
+[36m(train_multi_agents pid=1130391)[0m                                             'test_generator']},
+[36m(train_multi_agents pid=1130391)[0m  'project_name': 'pettingllms',
+[36m(train_multi_agents pid=1130391)[0m  'resource': {'n_gpus_per_node': 4, 'nnodes': 1, 'trust_remote_code': True},
+[36m(train_multi_agents pid=1130391)[0m  'sample_mode': 'env',
+[36m(train_multi_agents pid=1130391)[0m  'trainer': {'balance_batch': True,
+[36m(train_multi_agents pid=1130391)[0m              'critic_warmup': 0,
+[36m(train_multi_agents pid=1130391)[0m              'default_hdfs_dir': None,
+[36m(train_multi_agents pid=1130391)[0m              'default_local_dir': 'checkpoints/pettingllms/code_eval',
+[36m(train_multi_agents pid=1130391)[0m              'del_local_ckpt_after_load': False,
+[36m(train_multi_agents pid=1130391)[0m              'device': 'cuda',
+[36m(train_multi_agents pid=1130391)[0m              'experiment_name': 'code_eval',
+[36m(train_multi_agents pid=1130391)[0m              'log_val_generations': 0,
+[36m(train_multi_agents pid=1130391)[0m              'logger': ['console', 'wandb'],
+[36m(train_multi_agents pid=1130391)[0m              'max_actor_ckpt_to_keep': None,
+[36m(train_multi_agents pid=1130391)[0m              'max_critic_ckpt_to_keep': None,
+[36m(train_multi_agents pid=1130391)[0m              'n_gpus_per_node': 4,
+[36m(train_multi_agents pid=1130391)[0m              'n_training_gpus_per_node': 7,
+[36m(train_multi_agents pid=1130391)[0m              'nnodes': 1,
+[36m(train_multi_agents pid=1130391)[0m              'npu_profile': {'options': {}},
+[36m(train_multi_agents pid=1130391)[0m              'project_name': 'pettingllms',
+[36m(train_multi_agents pid=1130391)[0m              'ray_wait_register_center_timeout': 300,
+[36m(train_multi_agents pid=1130391)[0m              'rejection_sample': False,
+[36m(train_multi_agents pid=1130391)[0m              'rejection_sample_multiplier': 2,
+[36m(train_multi_agents pid=1130391)[0m              'resume_from_path': None,
+[36m(train_multi_agents pid=1130391)[0m              'resume_mode': 'auto',
+[36m(train_multi_agents pid=1130391)[0m              'rollout_data_dir': None,
+[36m(train_multi_agents pid=1130391)[0m              'save_freq': -1,
+[36m(train_multi_agents pid=1130391)[0m              'test_freq': -1,
+[36m(train_multi_agents pid=1130391)[0m              'total_epochs': 30,
+[36m(train_multi_agents pid=1130391)[0m              'total_training_steps': None,
+[36m(train_multi_agents pid=1130391)[0m              'val_before_train': True,
+[36m(train_multi_agents pid=1130391)[0m              'validation_data_dir': None}}
+[36m(train_multi_agents pid=1130391)[0m Multi-model training mode detected
+[36m(train_multi_agents pid=1130391)[0m Processing model: code_generator_model at path: Qwen/Qwen3-4B
+[36m(train_multi_agents pid=1130391)[0m [92mAgent mapping: code_generator -> code_generator_model[0m
+[36m(train_multi_agents pid=1130391)[0m [92mAgent mapping: test_generator -> code_generator_model[0m
+[36m(train_multi_agents pid=1130391)[0m model_config: {'ppo_trainer_config': {'data': {'tokenizer': None, 'use_shm': False, 'train_batch_size': 128, 'val_batch_size': 256, 'prompt_key': 'prompt', 'reward_fn_key': 'data_source', 'max_prompt_length': 1024, 'max_response_length': 8192, 'dataloader_num_workers': 0, 'return_raw_input_ids': False, 'return_raw_chat': False, 'return_full_prompt': False, 'shuffle': True, 'filter_overlong_prompts': False, 'filter_overlong_prompts_workers': 1, 'truncation': 'error', 'image_key': 'images', 'video_key': 'videos', 'trust_remote_code': False, 'custom_cls': {'path': None, 'name': None}, 'sampler': {'class_path': None, 'class_name': None}, 'class_path': None, 'class_name': None, 'train_files': '/home/lah003/data/code/model_0/text/train.parquet', 'val_files': '/home/lah003/data/code/model_0/text/test.parquet'}, 'actor_rollout_ref': {'hybrid_engine': True, 'model': {'path': 'Qwen/Qwen3-4B', 'use_shm': False, 'external_lib': None, 'override_config': {}, 'enable_gradient_checkpointing': True, 'enable_activation_offload': False, 'use_remove_padding': False, 'lora_rank': 0, 'lora_alpha': 16, 'target_modules': 'all-linear', 'use_liger': False, 'use_fused_kernels': False, 'trust_remote_code': False}, 'actor': {'_target_': 'verl.workers.config.FSDPActorConfig', 'strategy': 'fsdp', 'ppo_mini_batch_size': 512, 'use_dynamic_bsz': True, 'ppo_micro_batch_size': None, 'ppo_micro_batch_size_per_gpu': None, 'ppo_max_token_len_per_gpu': 8192, 'grad_clip': 1.0, 'clip_ratio': 0.2, 'clip_ratio_low': 0.2, 'clip_ratio_high': 0.2, 'clip_ratio_c': 3.0, 'loss_agg_mode': 'token-mean', 'entropy_coeff': 0, 'use_kl_loss': True, 'use_torch_compile': True, 'kl_loss_coef': 0.001, 'kl_loss_type': 'low_var_kl', 'ppo_epochs': 1, 'shuffle': False, 'ulysses_sequence_parallel_size': 1, 'checkpoint': {'contents': ['model', 'optimizer', 'extra']}, 'optim': {'lr': 1e-06, 'lr_warmup_steps': -1, 'lr_warmup_steps_ratio': 0.0, 'min_lr_ratio': None, 'num_cycles': 0.5, 'warmup_style': 'constant', 'total_training_steps': -1, 'weight_decay': 0.01}, 'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'wrap_policy': {'min_num_params': 0}, 'param_offload': False, 'optimizer_offload': False, 'offload_policy': False, 'reshard_after_forward': True, 'fsdp_size': 8}}, 'ref': {'strategy': 'fsdp', 'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'param_offload': False, 'reshard_after_forward': True, 'wrap_policy': {'min_num_params': 0}}, 'use_torch_compile': True, 'log_prob_micro_batch_size': 1, 'log_prob_micro_batch_size_per_gpu': None, 'log_prob_use_dynamic_bsz': False, 'ppo_micro_batch_size': 1, 'ppo_micro_batch_size_per_gpu': None, 'log_prob_max_token_len_per_gpu': 16384, 'ulysses_sequence_parallel_size': 1, 'entropy_from_logits_with_chunking': False}, 'rollout': {'name': 'vllm', 'mode': 'async', 'chat_scheduler': None, 'chat_template': None, 'temperature': 0.6, 'top_k': -1, 'top_p': 1, 'use_fire_sampling': False, 'prompt_length': 1024, 'response_length': 8192, 'dtype': 'bfloat16', 'gpu_memory_utilization': 0.9, 'ignore_eos': False, 'enforce_eager': True, 'free_cache_engine': False, 'load_format': 'auto', 'layered_summon': False, 'tensor_model_parallel_size': 4, 'max_num_batched_tokens': 1048576, 'max_model_len': 8192, 'max_num_seqs': 512, 'log_prob_micro_batch_size': 32, 'log_prob_micro_batch_size_per_gpu': None, 'log_prob_use_dynamic_bsz': False, 'log_prob_max_token_len_per_gpu': 16384, 'disable_log_stats': True, 'enable_chunked_prefill': True, 'do_sample': True, 'n': 4, 'engine_kwargs': {'vllm': {'swap_space': None}, 'sglang': {'attention_backend': None}}, 'val_kwargs': {'top_k': -1, 'top_p': 1.0, 'temperature': 0, 'n': 1, 'do_sample': False}, 'multi_turn': {'enable': False, 'max_turns': None, 'tool_config_path': None, 'format': 'chatml'}, 'disable_logging': True, 'entropy_from_logits_with_chunking': False, 'agent': {'num_workers': 512, 'agent_loop_config_path': None, 'custom_async_server': {'path': None, 'name': None}}}, 'trainer': {'n_gpus_per_node': 4, 'n_training_gpus_per_node': 4}}, 'critic': {'_target_': 'verl.workers.config.FSDPCriticConfig', 'enable': None, 'strategy': 'fsdp', 'optim': {'_target_': 'verl.workers.config.FSDPOptimizerConfig', 'lr': 1e-05, 'lr_warmup_steps_ratio': 0.0, 'total_training_steps': -1, 'weight_decay': 0.01, 'lr_warmup_steps': -1, 'min_lr_ratio': None, 'warmup_style': 'constant'}, 'model': {'_target_': 'verl.workers.config.FSDPCriticModelCfg', 'path': '~/models/deepseek-llm-7b-chat', 'tokenizer_path': '~/models/deepseek-llm-7b-chat', 'override_config': {}, 'external_lib': None, 'trust_remote_code': False, 'use_shm': False, 'enable_gradient_checkpointing': True, 'enable_activation_offload': False, 'use_remove_padding': False, 'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'param_offload': False, 'optimizer_offload': False, 'offload_policy': False, 'reshard_after_forward': True, 'wrap_policy': {'min_num_params': 0}, 'fsdp_size': 8, 'forward_prefetch': False}, 'lora_rank': 0, 'lora_alpha': 16, 'target_modules': 'all-linear'}, 'forward_micro_batch_size': None, 'forward_micro_batch_size_per_gpu': None, 'ulysses_sequence_parallel_size': 1, 'grad_clip': 1.0}, 'reward_model': {'enable': False, 'strategy': 'fsdp', 'model': {'input_tokenizer': '~/models/deepseek-llm-7b-chat', 'path': '~/models/FsfairX-LLaMA3-RM-v0.1', 'use_shm': False, 'external_lib': None, 'use_remove_padding': False, 'use_fused_kernels': False, 'trust_remote_code': False, 'fsdp_config': {'wrap_policy': {'min_num_params': 0}, 'param_offload': False, 'reshard_after_forward': True, 'fsdp_size': 8}}, 'micro_batch_size': None, 'micro_batch_size_per_gpu': None, 'max_length': None, 'ulysses_sequence_parallel_size': 1, 'use_dynamic_bsz': False, 'forward_max_token_len_per_gpu': 32768, 'reward_manager': 'naive', 'launch_reward_fn_async': False, 'sandbox_fusion': {'url': None, 'max_concurrent': 64}}, 'custom_reward_function': {'path': None, 'name': 'compute_score'}, 'algorithm': {'adv_estimator': 'grpo', 'gamma': 1.0, 'lam': 1.0, 'norm_adv_by_std_in_grpo': True, 'use_kl_in_reward': False, 'kl_penalty': 'kl', 'kl_ctrl': {'type': 'fixed', 'kl_coef': 0.001, 'horizon': 10000, 'target_kl': 0.1}, 'use_pf_ppo': False, 'pf_ppo': {'reweight_method': 'pow', 'weight_pow': 2.0}, 'mask_truncated_samples': False, 'clip_advantages': False}, 'trainer': {'device': 'cuda', 'n_gpus_per_node': 1, 'nnodes': 1, 'balance_batch': True, 'total_epochs': 30, 'total_training_steps': None, 'project_name': 'verl_examples', 'experiment_name': 'gsm8k', 'logger': ['console', 'wandb'], 'log_val_generations': 0, 'rollout_data_dir': None, 'validation_data_dir': None, 'save_freq': -1, 'resume_mode': 'auto', 'resume_from_path': None, 'val_before_train': True, 'test_freq': -1, 'critic_warmup': 0, 'default_hdfs_dir': None, 'del_local_ckpt_after_load': False, 'default_local_dir': 'checkpoints/verl_examples/gsm8k', 'max_actor_ckpt_to_keep': None, 'max_critic_ckpt_to_keep': None, 'ray_wait_register_center_timeout': 300, 'npu_profile': {'options': {}}, 'rejection_sample': False, 'rejection_sample_multiplier': 2, 'n_training_gpus_per_node': 4}, 'global_profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig', 'tool': None, 'steps': None, 'profile_continuous_steps': False, 'save_path': 'outputs/profile', 'global_tool_config': {'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig', 'discrete': False, 'controller_nsight_options': {'trace': 'cuda,nvtx,cublas,ucx', 'cuda-memory-usage': 'true', 'cuda-graph-trace': 'graph'}, 'worker_nsight_options': {'trace': 'cuda,nvtx,cublas,ucx', 'cuda-memory-usage': 'true', 'cuda-graph-trace': 'graph', 'capture-range': 'cudaProfilerApi', 'capture-range-end': None, 'kill': 'none'}}}}, 'ray_kwargs': {'ray_init': {'num_cpus': None}, 'timeline_json_file': None}}, 'path': 'Qwen/Qwen3-4B', 'name': 'code_generator_model'}
+[36m(train_multi_agents pid=1130391)[0m ppo_config: {'data': {'tokenizer': None, 'use_shm': False, 'train_batch_size': 16, 'val_batch_size': 8, 'prompt_key': 'prompt', 'reward_fn_key': 'data_source', 'max_prompt_length': 1024, 'max_response_length': 8192, 'dataloader_num_workers': 0, 'return_raw_input_ids': False, 'return_raw_chat': False, 'return_full_prompt': False, 'shuffle': True, 'filter_overlong_prompts': False, 'filter_overlong_prompts_workers': 1, 'truncation': 'error', 'image_key': 'images', 'video_key': 'videos', 'trust_remote_code': False, 'custom_cls': {'path': None, 'name': None}, 'sampler': {'class_path': None, 'class_name': None}, 'class_path': None, 'class_name': None, 'train_files': '/home/lah003/data/code/model_0/text/train.parquet', 'val_files': '/home/lah003/data/code/model_0/text/test.parquet'}, 'actor_rollout_ref': {'hybrid_engine': True, 'model': {'path': 'Qwen/Qwen3-4B', 'use_shm': False, 'external_lib': None, 'override_config': {}, 'enable_gradient_checkpointing': True, 'enable_activation_offload': False, 'use_remove_padding': False, 'lora_rank': 0, 'lora_alpha': 16, 'target_modules': 'all-linear', 'use_liger': False, 'use_fused_kernels': False, 'trust_remote_code': False}, 'actor': {'_target_': 'verl.workers.config.FSDPActorConfig', 'strategy': 'fsdp', 'ppo_mini_batch_size': 512, 'use_dynamic_bsz': True, 'ppo_micro_batch_size': None, 'ppo_micro_batch_size_per_gpu': None, 'ppo_max_token_len_per_gpu': 8192, 'grad_clip': 1.0, 'clip_ratio': 0.2, 'clip_ratio_low': 0.2, 'clip_ratio_high': 0.2, 'clip_ratio_c': 3.0, 'loss_agg_mode': 'token-mean', 'entropy_coeff': 0, 'use_kl_loss': True, 'use_torch_compile': True, 'kl_loss_coef': 0.001, 'kl_loss_type': 'low_var_kl', 'ppo_epochs': 1, 'shuffle': False, 'ulysses_sequence_parallel_size': 1, 'checkpoint': {'contents': ['model', 'optimizer', 'extra']}, 'optim': {'lr': 1e-06, 'lr_warmup_steps': -1, 'lr_warmup_steps_ratio': 0.0, 'min_lr_ratio': None, 'num_cycles': 0.5, 'warmup_style': 'constant', 'total_training_steps': -1, 'weight_decay': 0.01}, 'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'wrap_policy': {'min_num_params': 0}, 'param_offload': False, 'optimizer_offload': False, 'offload_policy': False, 'reshard_after_forward': True, 'fsdp_size': 8}}, 'ref': {'strategy': 'fsdp', 'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'param_offload': False, 'reshard_after_forward': True, 'wrap_policy': {'min_num_params': 0}}, 'use_torch_compile': True, 'log_prob_micro_batch_size': 1, 'log_prob_micro_batch_size_per_gpu': None, 'log_prob_use_dynamic_bsz': False, 'ppo_micro_batch_size': 1, 'ppo_micro_batch_size_per_gpu': None, 'log_prob_max_token_len_per_gpu': 16384, 'ulysses_sequence_parallel_size': 1, 'entropy_from_logits_with_chunking': False}, 'rollout': {'name': 'vllm', 'mode': 'async', 'chat_scheduler': None, 'chat_template': None, 'temperature': 0.6, 'top_k': -1, 'top_p': 1, 'use_fire_sampling': False, 'prompt_length': 1024, 'response_length': 8192, 'dtype': 'bfloat16', 'gpu_memory_utilization': 0.9, 'ignore_eos': False, 'enforce_eager': True, 'free_cache_engine': False, 'load_format': 'auto', 'layered_summon': False, 'tensor_model_parallel_size': 4, 'max_num_batched_tokens': 1048576, 'max_model_len': 8192, 'max_num_seqs': 512, 'log_prob_micro_batch_size': 32, 'log_prob_micro_batch_size_per_gpu': None, 'log_prob_use_dynamic_bsz': False, 'log_prob_max_token_len_per_gpu': 16384, 'disable_log_stats': True, 'enable_chunked_prefill': True, 'do_sample': True, 'n': 4, 'engine_kwargs': {'vllm': {'swap_space': None}, 'sglang': {'attention_backend': None}}, 'val_kwargs': {'top_k': -1, 'top_p': 1.0, 'temperature': 0, 'n': 1, 'do_sample': False}, 'multi_turn': {'enable': False, 'max_turns': None, 'tool_config_path': None, 'format': 'chatml'}, 'disable_logging': True, 'entropy_from_logits_with_chunking': False, 'agent': {'num_workers': 512, 'agent_loop_config_path': None, 'custom_async_server': {'path': None, 'name': None}}}, 'trainer': {'n_gpus_per_node': 4, 'n_training_gpus_per_node': 4}}, 'critic': {'_target_': 'verl.workers.config.FSDPCriticConfig', 'enable': None, 'strategy': 'fsdp', 'optim': {'_target_': 'verl.workers.config.FSDPOptimizerConfig', 'lr': 1e-05, 'lr_warmup_steps_ratio': 0.0, 'total_training_steps': -1, 'weight_decay': 0.01, 'lr_warmup_steps': -1, 'min_lr_ratio': None, 'warmup_style': 'constant'}, 'model': {'_target_': 'verl.workers.config.FSDPCriticModelCfg', 'path': '~/models/deepseek-llm-7b-chat', 'tokenizer_path': '~/models/deepseek-llm-7b-chat', 'override_config': {}, 'external_lib': None, 'trust_remote_code': False, 'use_shm': False, 'enable_gradient_checkpointing': True, 'enable_activation_offload': False, 'use_remove_padding': False, 'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'param_offload': False, 'optimizer_offload': False, 'offload_policy': False, 'reshard_after_forward': True, 'wrap_policy': {'min_num_params': 0}, 'fsdp_size': 8, 'forward_prefetch': False}, 'lora_rank': 0, 'lora_alpha': 16, 'target_modules': 'all-linear'}, 'forward_micro_batch_size': None, 'forward_micro_batch_size_per_gpu': None, 'ulysses_sequence_parallel_size': 1, 'grad_clip': 1.0}, 'reward_model': {'enable': False, 'strategy': 'fsdp', 'model': {'input_tokenizer': '~/models/deepseek-llm-7b-chat', 'path': '~/models/FsfairX-LLaMA3-RM-v0.1', 'use_shm': False, 'external_lib': None, 'use_remove_padding': False, 'use_fused_kernels': False, 'trust_remote_code': False, 'fsdp_config': {'wrap_policy': {'min_num_params': 0}, 'param_offload': False, 'reshard_after_forward': True, 'fsdp_size': 8}}, 'micro_batch_size': None, 'micro_batch_size_per_gpu': None, 'max_length': None, 'ulysses_sequence_parallel_size': 1, 'use_dynamic_bsz': False, 'forward_max_token_len_per_gpu': 32768, 'reward_manager': 'naive', 'launch_reward_fn_async': False, 'sandbox_fusion': {'url': None, 'max_concurrent': 64}}, 'custom_reward_function': {'path': None, 'name': 'compute_score'}, 'algorithm': {'adv_estimator': 'grpo', 'gamma': 1.0, 'lam': 1.0, 'norm_adv_by_std_in_grpo': True, 'use_kl_in_reward': False, 'kl_penalty': 'kl', 'kl_ctrl': {'type': 'fixed', 'kl_coef': 0.001, 'horizon': 10000, 'target_kl': 0.1}, 'use_pf_ppo': False, 'pf_ppo': {'reweight_method': 'pow', 'weight_pow': 2.0}, 'mask_truncated_samples': False, 'clip_advantages': False}, 'trainer': {'device': 'cuda', 'n_gpus_per_node': 1, 'nnodes': 1, 'balance_batch': True, 'total_epochs': 30, 'total_training_steps': None, 'project_name': 'verl_examples', 'experiment_name': 'gsm8k', 'logger': ['console', 'wandb'], 'log_val_generations': 0, 'rollout_data_dir': None, 'validation_data_dir': None, 'save_freq': -1, 'resume_mode': 'auto', 'resume_from_path': None, 'val_before_train': True, 'test_freq': -1, 'critic_warmup': 0, 'default_hdfs_dir': None, 'del_local_ckpt_after_load': False, 'default_local_dir': 'checkpoints/verl_examples/gsm8k', 'max_actor_ckpt_to_keep': None, 'max_critic_ckpt_to_keep': None, 'ray_wait_register_center_timeout': 300, 'npu_profile': {'options': {}}, 'rejection_sample': False, 'rejection_sample_multiplier': 2, 'n_training_gpus_per_node': 4}, 'global_profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig', 'tool': None, 'steps': None, 'profile_continuous_steps': False, 'save_path': 'outputs/profile', 'global_tool_config': {'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig', 'discrete': False, 'controller_nsight_options': {'trace': 'cuda,nvtx,cublas,ucx', 'cuda-memory-usage': 'true', 'cuda-graph-trace': 'graph'}, 'worker_nsight_options': {'trace': 'cuda,nvtx,cublas,ucx', 'cuda-memory-usage': 'true', 'cuda-graph-trace': 'graph', 'capture-range': 'cudaProfilerApi', 'capture-range-end': None, 'kill': 'none'}}}}, 'ray_kwargs': {'ray_init': {'num_cpus': None}, 'timeline_json_file': None}}
+[36m(train_multi_agents pid=1130391)[0m /home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_ppo_trainer.py:100: UserWarning: Disabled critic as algorithm.adv_estimator != gae. If it is not intended, please set critic.enable=True
+[36m(train_multi_agents pid=1130391)[0m   ppo_trainer = RayPPOTrainer(
+[36m(train_multi_agents pid=1130391)[0m Generating train split: 0 examples [00:00, ? examples/s]
+[36m(train_multi_agents pid=1130391)[0m Generating train split: 256 examples [00:00, 36001.40 examples/s]
+[36m(train_multi_agents pid=1130391)[0m ppo_config (partial): {'data': {'tokenizer': None, 'use_shm': False, 'train_batch_size': 16, 'val_batch_size': 8, 'prompt_key': 'prompt', 'reward_fn_key': 'data_source', 'max_prompt_length': 1024, 'max_response_length': 8192, 'dataloader_num_workers': 0, 'return_raw_input_ids': False, 'return_raw_chat': False, 'return_full_prompt': False, 'shuffle': True, 'filter_overlong_prompts': False, 'filter_overlong_prompts_workers': 1, 'truncation': 'error', 'image_key': 'images', 'video_key': 'videos', 'trust_remote_code': False, 'custom_cls': {'path': None, 'name': None}, 'sampler': {'class_path': None, 'class_name': None}, 'class_path': None, 'class_name': None, 'train_files': '/home/lah003/data/code/model_0/text/train.parquet', 'val_files': '/home/lah003/data/code/model_0/text/test.parquet'}, 'actor_rollout_ref': {'hybrid_engine': True, 'model': {'path': 'Qwen/Qwen3-4B', 'use_shm': False, 'external_lib': None, 'override_config': {}, 'enable_gradient_checkpointing': True, 'enable_activation_offload': False, 'use_remove_padding': False, 'lora_rank': 0, 'lora_alpha': 16, 'target_modules': 'all-linear', 'use_liger': False, 'use_fused_kernels': False, 'trust_remote_code': False}, 'actor': {'_target_': 'verl.workers.config.FSDPActorConfig', 'strategy': 'fsdp', 'ppo_mini_batch_size': 512, 'use_dynamic_bsz': True, 'ppo_micro_batch_size': None, 'ppo_micro_batch_size_per_gpu': None, 'ppo_max_token_len_per_gpu': 8192, 'grad_clip': 1.0, 'clip_ratio': 0.2, 'clip_ratio_low': 0.2, 'clip_ratio_high': 0.2, 'clip_ratio_c': 3.0, 'loss_agg_mode': 'token-mean', 'entropy_coeff': 0, 'use_kl_loss': True, 'use_torch_compile': True, 'kl_loss_coef': 0.001, 'kl_loss_type': 'low_var_kl', 'ppo_epochs': 1, 'shuffle': False, 'ulysses_sequence_parallel_size': 1, 'checkpoint': {'contents': ['model', 'optimizer', 'extra']}, 'optim': {'lr': 1e-06, 'lr_warmup_steps': -1, 'lr_warmup_steps_ratio': 0.0, 'min_lr_ratio': None, 'num_cycles': 0.5, 'warmup_style': 'constant', 'total_training_steps': -1, 'weight_decay': 0.01}, 'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'wrap_policy': {'min_num_params': 0}, 'param_offload': False, 'optimizer_offload': False, 'offload_policy': False, 'reshard_after_forward': True, 'fsdp_size': 8}}, 'ref': {'strategy': 'fsdp', 'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'param_offload': False, 'reshard_after_forward': True, 'wrap_policy': {'min_num_params': 0}}, 'use_torch_compile': True, 'log_prob_micro_batch_size': 1, 'log_prob_micro_batch_size_per_gpu': None, 'log_prob_use_dynamic_bsz': False, 'ppo_micro_batch_size': 1, 'ppo_micro_batch_size_per_gpu': None, 'log_prob_max_token_len_per_gpu': 16384, 'ulysses_sequence_parallel_size': 1, 'entropy_from_logits_with_chunking': False}, 'rollout': {'name': 'vllm', 'mode': 'async', 'chat_scheduler': None, 'chat_template': None, 'temperature': 0.6, 'top_k': -1, 'top_p': 1, 'use_fire_sampling': False, 'prompt_length': 1024, 'response_length': 8192, 'dtype': 'bfloat16', 'gpu_memory_utilization': 0.9, 'ignore_eos': False, 'enforce_eager': True, 'free_cache_engine': False, 'load_format': 'auto', 'layered_summon': False, 'tensor_model_parallel_size': 4, 'max_num_batched_tokens': 1048576, 'max_model_len': 8192, 'max_num_seqs': 512, 'log_prob_micro_batch_size': 32, 'log_prob_micro_batch_size_per_gpu': None, 'log_prob_use_dynamic_bsz': False, 'log_prob_max_token_len_per_gpu': 16384, 'disable_log_stats': True, 'enable_chunked_prefill': True, 'do_sample': True, 'n': 4, 'engine_kwargs': {'vllm': {'swap_space': None}, 'sglang': {'attention_backend': None}}, 'val_kwargs': {'top_k': -1, 'top_p': 1.0, 'temperature': 0, 'n': 1, 'do_sample': False}, 'multi_turn': {'enable': False, 'max_turns': None, 'tool_config_path': None, 'format': 'chatml'}, 'disable_logging': True, 'entropy_from_logits_with_chunking': False, 'agent': {'num_workers': 512, 'agent_loop_config_path': None, 'custom_async_server': {'path': None, 'name': None}}}, 'trainer': {'n_gpus_per_node': 4, 'n_training_gpus_per_node': 4}}, 'critic': {'_target_': 'verl.workers.config.FSDPCriticConfig', 'enable': None, 'strategy': 'fsdp', 'optim': {'_target_': 'verl.workers.config.FSDPOptimizerConfig', 'lr': 1e-05, 'lr_warmup_steps_ratio': 0.0, 'total_training_steps': -1, 'weight_decay': 0.01, 'lr_warmup_steps': -1, 'min_lr_ratio': None, 'warmup_style': 'constant'}, 'model': {'_target_': 'verl.workers.config.FSDPCriticModelCfg', 'path': '~/models/deepseek-llm-7b-chat', 'tokenizer_path': '~/models/deepseek-llm-7b-chat', 'override_config': {}, 'external_lib': None, 'trust_remote_code': False, 'use_shm': False, 'enable_gradient_checkpointing': True, 'enable_activation_offload': False, 'use_remove_padding': False, 'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig', 'param_offload': False, 'optimizer_offload': False, 'offload_policy': False, 'reshard_after_forward': True, 'wrap_policy': {'min_num_params': 0}, 'fsdp_size': 8, 'forward_prefetch': False}, 'lora_rank': 0, 'lora_alpha': 16, 'target_modules': 'all-linear'}, 'forward_micro_batch_size': None, 'forward_micro_batch_size_per_gpu': None, 'ulysses_sequence_parallel_size': 1, 'grad_clip': 1.0}, 'reward_model': {'enable': False, 'strategy': 'fsdp', 'model': {'input_tokenizer': '~/models/deepseek-llm-7b-chat', 'path': '~/models/FsfairX-LLaMA3-RM-v0.1', 'use_shm': False, 'external_lib': None, 'use_remove_padding': False, 'use_fused_kernels': False, 'trust_remote_code': False, 'fsdp_config': {'wrap_policy': {'min_num_params': 0}, 'param_offload': False, 'reshard_after_forward': True, 'fsdp_size': 8}}, 'micro_batch_size': None, 'micro_batch_size_per_gpu': None, 'max_length': None, 'ulysses_sequence_parallel_size': 1, 'use_dynamic_bsz': False, 'forward_max_token_len_per_gpu': 32768, 'reward_manager': 'naive', 'launch_reward_fn_async': False, 'sandbox_fusion': {'url': None, 'max_concurrent': 64}}, 'custom_reward_function': {'path': None, 'name': 'compute_score'}, 'algorithm': {'adv_estimator': 'grpo', 'gamma': 1.0, 'lam': 1.0, 'norm_adv_by_std_in_grpo': True, 'use_kl_in_reward': False, 'kl_penalty': 'kl', 'kl_ctrl': {'type': 'fixed', 'kl_coef': 0.001, 'horizon': 10000, 'target_kl': 0.1}, 'use_pf_ppo': False, 'pf_ppo': {'reweight_method': 'pow', 'weight_pow': 2.0}, 'mask_truncated_samples': False, 'clip_advantages': False}, 'trainer': {'device': 'cuda', 'n_gpus_per_node': 1, 'nnodes': 1, 'balance_batch': True, 'total_epochs': 30, 'total_training_steps': None, 'project_name': 'verl_examples', 'experiment_name': 'gsm8k', 'logger': ['console', 'wandb'], 'log_val_generations': 0, 'rollout_data_dir': None, 'validation_data_dir': None, 'save_freq': -1, 'resume_mode': 'auto', 'resume_from_path': None, 'val_before_train': True, 'test_freq': -1, 'critic_warmup': 0, 'default_hdfs_dir': None, 'del_local_ckpt_after_load': False, 'default_local_dir': 'checkpoints/verl_examples/gsm8k', 'max_actor_ckpt_to_keep': None, 'max_critic_ckpt_to_keep': None, 'ray_wait_register_center_timeout': 300, 'npu_profile': {'options': {}}, 'rejection_sample': False, 'rejection_sample_multiplier': 2, 'n_training_gpus_per_node': 4}, 'global_profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig', 'tool': None, 'steps': None, 'profile_continuous_steps': False, 'save_path': 'outputs/profile', 'global_tool_config': {'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig', 'discrete': False, 'controller_nsight_options': {'trace': 'cuda,nvtx,cublas,ucx', 'cuda-memory-usage': 'true', 'cuda-graph-trace': 'graph'}, 'worker_nsight_options': {'trace': 'cuda,nvtx,cublas,ucx', 'cuda-memory-usage': 'true', 'cuda-graph-trace': 'graph', 'capture-range': 'cudaProfilerApi', 'capture-range-end': None, 'kill': 'none'}}}}, 'ray_kwargs': {'ray_init': {'num_cpus': None}, 'timeline_json_file': None}}
+[36m(train_multi_agents pid=1130391)[0m WARNING: val_batch_size is deprecated. Validation datasets are sent to inference engines as a whole batch, which will schedule the memory themselves.
+[36m(train_multi_agents pid=1130391)[0m [validate_config] All configuration checks passed successfully!
+[36m(train_multi_agents pid=1130391)[0m Using dataset class: RLHFDataset
+[36m(train_multi_agents pid=1130391)[0m Generating train split: 0 examples [00:00, ? examples/s]Generating train split: 256 examples [00:00, 69255.79 examples/s]
+[36m(train_multi_agents pid=1130391)[0m DeprecationWarning: `ray.state.available_resources_per_node` is a private attribute and access will be removed in a future Ray version.
+[36m(train_multi_agents pid=1130391)[0m WARNING:2025-08-23 12:36:06,992:Waiting for register center actor osEuKW_register_center to be ready. Elapsed time: 0 seconds out of 300 seconds.
+[36m(pid=1143417)[0m Using blocking ray.get inside async actor. This blocks the event loop. Please use `await` on object ref with asyncio.gather if you want to yield execution to the event loop instead.
+[36m(pid=1143873)[0m Using blocking ray.get inside async actor. This blocks the event loop. Please use `await` on object ref with asyncio.gather if you want to yield execution to the event loop instead.
+[36m(pid=1143872)[0m Using blocking ray.get inside async actor. This blocks the event loop. Please use `await` on object ref with asyncio.gather if you want to yield execution to the event loop instead.
+[36m(WorkerDict pid=1143873)[0m Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `torch_dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", torch_dtype=torch.float16)`
+[36m(WorkerDict pid=1143873)[0m Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `torch_dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", torch_dtype=torch.float16)`
+[36m(WorkerDict pid=1143871)[0m Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]
+[36m(WorkerDict pid=1143873)[0m Loading checkpoint shards:  33%|███▎      | 1/3 [00:06<00:13,  6.69s/it]
+[36m(pid=1143871)[0m Using blocking ray.get inside async actor. This blocks the event loop. Please use `await` on object ref with asyncio.gather if you want to yield execution to the event loop instead.
+[36m(WorkerDict pid=1143417)[0m Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `torch_dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", torch_dtype=torch.float16)`[32m [repeated 6x across cluster] (Ray deduplicates logs by default. Set RAY_DEDUP_LOGS=0 to disable log deduplication, or see https://docs.ray.io/en/master/ray-observability/user-guides/configure-logging.html#log-deduplication for more options.)[0m
+[36m(WorkerDict pid=1143417)[0m Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s][32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143873)[0m Loading checkpoint shards:  67%|██████▋   | 2/3 [00:13<00:06,  6.80s/it][32m [repeated 4x across cluster][0m
+[36m(WorkerDict pid=1143873)[0m Loading checkpoint shards: 100%|██████████| 3/3 [00:13<00:00,  3.77s/it]Loading checkpoint shards: 100%|██████████| 3/3 [00:13<00:00,  4.58s/it]
+[36m(WorkerDict pid=1143871)[0m libibverbs: Warning: couldn't load driver 'libvmw_pvrdma-rdmav34.so': libvmw_pvrdma-rdmav34.so: cannot open shared object file: No such file or directory
+[36m(WorkerDict pid=1143417)[0m Loading checkpoint shards:  67%|██████▋   | 2/3 [00:14<00:06,  6.99s/it][32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143417)[0m Loading checkpoint shards: 100%|██████████| 3/3 [00:14<00:00,  3.87s/it]Loading checkpoint shards: 100%|██████████| 3/3 [00:14<00:00,  4.73s/it][32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143872)[0m Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]
+[36m(WorkerDict pid=1143873)[0m libibverbs: Warning: couldn't load driver 'libvmw_pvrdma-rdmav34.so': libvmw_pvrdma-rdmav34.so: cannot open shared object file: No such file or directory[32m [repeated 3x across cluster][0m
+[36m(train_multi_agents pid=1130391)[0m dataset len: 256
+[36m(train_multi_agents pid=1130391)[0m Using dataset class: RLHFDataset
+[36m(train_multi_agents pid=1130391)[0m dataset len: 256
+[36m(train_multi_agents pid=1130391)[0m Size of train dataloader: 16, Size of val dataloader: 32
+[36m(train_multi_agents pid=1130391)[0m Total training steps: 480
+[36m(train_multi_agents pid=1130391)[0m [92mPPO trainer created for model: code_generator_model[0m
+[36m(train_multi_agents pid=1130391)[0m [92mthe number of ppo_trainer_dict: 1[0m
+[36m(train_multi_agents pid=1130391)[0m [96mNumber of PPO trainers: 1[0m
+[36m(train_multi_agents pid=1130391)[0m [96mNumber of agent mappings: 2[0m
+[36m(train_multi_agents pid=1130391)[0m [96mInitializing workers for all PPO trainers...[0m
+[36m(train_multi_agents pid=1130391)[0m [92mInitializing workers for trainer: code_generator_model[0m
+[36m(train_multi_agents pid=1130391)[0m colocated worker base class <class 'verl.single_controller.base.worker.Worker'>
+[36m(train_multi_agents pid=1130391)[0m bind role actor_rollout method chat_completion to class <class 'verl.single_controller.ray.base.create_colocated_worker_cls.<locals>.WorkerDict'>
+[36m(train_multi_agents pid=1130391)[0m bind role actor_rollout method execute_method to class <class 'verl.single_controller.ray.base.create_colocated_worker_cls.<locals>.WorkerDict'>
+[36m(train_multi_agents pid=1130391)[0m bind role actor_rollout method generate to class <class 'verl.single_controller.ray.base.create_colocated_worker_cls.<locals>.WorkerDict'>
+[36m(train_multi_agents pid=1130391)[0m bind role actor_rollout method get_zeromq_address to class <class 'verl.single_controller.ray.base.create_colocated_worker_cls.<locals>.WorkerDict'>
+[36m(train_multi_agents pid=1130391)[0m bind role actor_rollout method sleep to class <class 'verl.single_controller.ray.base.create_colocated_worker_cls.<locals>.WorkerDict'>
+[36m(train_multi_agents pid=1130391)[0m bind role actor_rollout method wake_up to class <class 'verl.single_controller.ray.base.create_colocated_worker_cls.<locals>.WorkerDict'>
+[36m(WorkerDict pid=1143417)[0m Model config after override: Qwen3Config {
+[36m(WorkerDict pid=1143417)[0m   "architectures": [
+[36m(WorkerDict pid=1143417)[0m     "Qwen3ForCausalLM"
+[36m(WorkerDict pid=1143417)[0m   ],
+[36m(WorkerDict pid=1143417)[0m   "attention_bias": false,
+[36m(WorkerDict pid=1143417)[0m   "attention_dropout": 0.0,
+[36m(WorkerDict pid=1143417)[0m   "eos_token_id": 151645,
+[36m(WorkerDict pid=1143417)[0m   "head_dim": 128,
+[36m(WorkerDict pid=1143417)[0m   "hidden_act": "silu",
+[36m(WorkerDict pid=1143417)[0m   "hidden_size": 2560,
+[36m(WorkerDict pid=1143417)[0m   "initializer_range": 0.02,
+[36m(WorkerDict pid=1143417)[0m   "intermediate_size": 9728,
+[36m(WorkerDict pid=1143417)[0m   "layer_types": [
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention"
+[36m(WorkerDict pid=1143417)[0m   ],
+[36m(WorkerDict pid=1143417)[0m   "max_position_embeddings": 40960,
+[36m(WorkerDict pid=1143417)[0m   "max_window_layers": 36,
+[36m(WorkerDict pid=1143417)[0m   "model_type": "qwen3",
+[36m(WorkerDict pid=1143417)[0m   "num_attention_heads": 32,
+[36m(WorkerDict pid=1143417)[0m   "num_hidden_layers": 36,
+[36m(WorkerDict pid=1143417)[0m   "num_key_value_heads": 8,
+[36m(WorkerDict pid=1143417)[0m   "pad_token_id": 151643,
+[36m(WorkerDict pid=1143417)[0m   "rms_norm_eps": 1e-06,
+[36m(WorkerDict pid=1143417)[0m   "rope_scaling": null,
+[36m(WorkerDict pid=1143417)[0m   "rope_theta": 1000000,
+[36m(WorkerDict pid=1143417)[0m   "sliding_window": null,
+[36m(WorkerDict pid=1143417)[0m   "tie_word_embeddings": true,
+[36m(WorkerDict pid=1143417)[0m   "torch_dtype": "bfloat16",
+[36m(WorkerDict pid=1143417)[0m   "transformers_version": "4.55.2",
+[36m(WorkerDict pid=1143417)[0m   "use_cache": true,
+[36m(WorkerDict pid=1143417)[0m   "use_sliding_window": false,
+[36m(WorkerDict pid=1143417)[0m   "vocab_size": 151936
+[36m(WorkerDict pid=1143417)[0m }
+[36m(WorkerDict pid=1143417)[0m 
+[36m(WorkerDict pid=1143873)[0m Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is None
+[36m(WorkerDict pid=1143417)[0m Qwen3ForCausalLM contains 4.02B parameters
+[36m(WorkerDict pid=1143417)[0m wrap_policy: functools.partial(<function _or_policy at 0x7830f8c5e660>, policies=[functools.partial(<function transformer_auto_wrap_policy at 0x7830f8c5e520>, transformer_layer_cls={<class 'transformers.models.qwen3.modeling_qwen3.Qwen3DecoderLayer'>})])
+[36m(WorkerDict pid=1143417)[0m Ref use_remove_padding=False
+[36m(WorkerDict pid=1143417)[0m Ref use_fused_kernels=False
+[36m(WorkerDict pid=1143417)[0m Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is None[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143417)[0m Model config after override: Qwen3Config {
+[36m(WorkerDict pid=1143417)[0m   "architectures": [
+[36m(WorkerDict pid=1143417)[0m     "Qwen3ForCausalLM"
+[36m(WorkerDict pid=1143417)[0m   ],
+[36m(WorkerDict pid=1143417)[0m   "attention_bias": false,
+[36m(WorkerDict pid=1143417)[0m   "attention_dropout": 0.0,
+[36m(WorkerDict pid=1143417)[0m   "eos_token_id": 151645,
+[36m(WorkerDict pid=1143417)[0m   "head_dim": 128,
+[36m(WorkerDict pid=1143417)[0m   "hidden_act": "silu",
+[36m(WorkerDict pid=1143417)[0m   "hidden_size": 2560,
+[36m(WorkerDict pid=1143417)[0m   "initializer_range": 0.02,
+[36m(WorkerDict pid=1143417)[0m   "intermediate_size": 9728,
+[36m(WorkerDict pid=1143417)[0m   "layer_types": [
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143873)[0m Loading checkpoint shards:  33%|███▎      | 1/3 [00:07<00:14,  7.37s/it]
+[36m(WorkerDict pid=1143871)[0m Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s][32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143871)[0m Loading checkpoint shards:  67%|██████▋   | 2/3 [00:14<00:07,  7.08s/it][32m [repeated 4x across cluster][0m
+[36m(WorkerDict pid=1143871)[0m Loading checkpoint shards: 100%|██████████| 3/3 [00:14<00:00,  3.91s/it]Loading checkpoint shards: 100%|██████████| 3/3 [00:14<00:00,  4.77s/it]
+[36m(WorkerDict pid=1143871)[0m /home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:680: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+[36m(WorkerDict pid=1143871)[0m   warnings.warn(
+[36m(WorkerDict pid=1143417)[0m Loading checkpoint shards:  67%|██████▋   | 2/3 [00:15<00:07,  7.50s/it][32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143417)[0m Loading checkpoint shards: 100%|██████████| 3/3 [00:15<00:00,  4.15s/it]Loading checkpoint shards: 100%|██████████| 3/3 [00:15<00:00,  5.06s/it][32m [repeated 3x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m Using blocking ray.get inside async actor. This blocks the event loop. Please use `await` on object ref with asyncio.gather if you want to yield execution to the event loop instead.
+[36m(WorkerDict pid=1143872)[0m /home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:680: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143872)[0m   warnings.warn([32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention",
+[36m(WorkerDict pid=1143417)[0m     "full_attention"
+[36m(WorkerDict pid=1143417)[0m   ],
+[36m(WorkerDict pid=1143417)[0m   "max_position_embeddings": 40960,
+[36m(WorkerDict pid=1143417)[0m   "max_window_layers": 36,
+[36m(WorkerDict pid=1143417)[0m   "model_type": "qwen3",
+[36m(WorkerDict pid=1143417)[0m   "num_attention_heads": 32,
+[36m(WorkerDict pid=1143417)[0m   "num_hidden_layers": 36,
+[36m(WorkerDict pid=1143417)[0m   "num_key_value_heads": 8,
+[36m(WorkerDict pid=1143417)[0m   "pad_token_id": 151643,
+[36m(WorkerDict pid=1143417)[0m   "rms_norm_eps": 1e-06,
+[36m(WorkerDict pid=1143417)[0m   "rope_scaling": null,
+[36m(WorkerDict pid=1143417)[0m   "rope_theta": 1000000,
+[36m(WorkerDict pid=1143417)[0m   "sliding_window": null,
+[36m(WorkerDict pid=1143417)[0m   "tie_word_embeddings": true,
+[36m(WorkerDict pid=1143417)[0m   "torch_dtype": "bfloat16",
+[36m(WorkerDict pid=1143417)[0m   "transformers_version": "4.55.2",
+[36m(WorkerDict pid=1143417)[0m   "use_cache": true,
+[36m(WorkerDict pid=1143417)[0m   "use_sliding_window": false,
+[36m(WorkerDict pid=1143417)[0m   "vocab_size": 151936
+[36m(WorkerDict pid=1143417)[0m }
+[36m(WorkerDict pid=1143417)[0m 
+[36m(WorkerDict pid=1143871)[0m Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is None
+[36m(WorkerDict pid=1143873)[0m Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is None
+[36m(WorkerDict pid=1143417)[0m Qwen3ForCausalLM contains 4.02B parameters
+[36m(WorkerDict pid=1143417)[0m wrap_policy: functools.partial(<function _or_policy at 0x7830f8c5e660>, policies=[functools.partial(<function transformer_auto_wrap_policy at 0x7830f8c5e520>, transformer_layer_cls={<class 'transformers.models.qwen3.modeling_qwen3.Qwen3DecoderLayer'>})])
+[36m(WorkerDict pid=1143417)[0m Total steps: 480, num_warmup_steps: 0
+[36m(WorkerDict pid=1143417)[0m Actor use_remove_padding=False
+[36m(WorkerDict pid=1143417)[0m Actor use_fused_kernels=False
+[36m(WorkerDict pid=1143417)[0m Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is None[32m [repeated 2x across cluster][0m
+[36m(WorkerDict pid=1143417)[0m INFO 08-23 12:40:52 [__init__.py:235] Automatically detected platform cuda.
+[36m(pid=1149347)[0m INFO 08-23 12:41:05 [__init__.py:235] Automatically detected platform cuda.[32m [repeated 5x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m FastAPI listen on 169.228.33.163:48235
+[36m(AsyncvLLMServer pid=1149347)[0m override_generation_config: {'n': 4, 'logprobs': 0, 'repetition_penalty': 1.0, 'max_new_tokens': 8192, 'temperature': 0.6, 'top_k': -1, 'top_p': 1, 'ignore_eos': False}
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:41:17 [config.py:1604] Using max model len 8192
+[36m(AsyncvLLMServer pid=1149347)[0m WARNING 08-23 12:41:17 [arg_utils.py:1695] Detected VLLM_USE_V1=1 with Engine in background thread. Usage should be considered experimental. Please report any issues on Github.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:41:17 [config.py:2434] Chunked prefill is enabled with max_num_batched_tokens=1048576.
+[36m(AsyncvLLMServer pid=1149347)[0m instance_id: e07fa0c7-b2a6-4aa4-a9cf-0bfb5790e674:osEuKW:1:0 initializes with external actors: ['osEuKWWorkerDict_0:0', 'osEuKWWorkerDict_0:1', 'osEuKWWorkerDict_0:2', 'osEuKWWorkerDict_0:3']
+[36m(AsyncvLLMServer pid=1149347)[0m VERL_VLLM_ZMQ_ADDRESSES: ['ipc:///tmp/verl_vllm_zmq_1143417.ipc', 'ipc:///tmp/verl_vllm_zmq_1143871.ipc', 'ipc:///tmp/verl_vllm_zmq_1143872.ipc', 'ipc:///tmp/verl_vllm_zmq_1143873.ipc']
+[36m(AsyncvLLMServer pid=1149347)[0m WARNING 08-23 12:41:19 [__init__.py:2899] We must use the `spawn` multiprocessing start method. Overriding VLLM_WORKER_MULTIPROC_METHOD to 'spawn'. See https://docs.vllm.ai/en/latest/usage/troubleshooting.html#python-multiprocessing for more information. Reason: In a Ray actor and can only be spawned
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:41:26 [__init__.py:235] Automatically detected platform cuda.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:41:28 [core.py:572] Waiting for init message from front-end.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:41:28 [core.py:71] Initializing a V1 LLM engine (v0.10.0) with config: model='Qwen/Qwen3-4B', speculative_config=None, tokenizer='Qwen/Qwen3-4B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, override_neuron_config={}, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=8192, download_dir=None, load_format=LoadFormat.AUTO, tensor_parallel_size=4, pipeline_parallel_size=1, disable_custom_all_reduce=True, quantization=None, enforce_eager=True, kv_cache_dtype=auto,  device_config=cuda, decoding_config=DecodingConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_backend=''), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None), seed=0, served_model_name=Qwen/Qwen3-4B, num_scheduler_steps=1, multi_step_stream_outputs=True, enable_prefix_caching=True, chunked_prefill_enabled=True, use_async_output_proc=True, pooler_config=None, compilation_config={"level":0,"debug_dump_path":"","cache_dir":"","backend":"","custom_ops":[],"splitting_ops":[],"use_inductor":true,"compile_sizes":[],"inductor_compile_config":{"enable_auto_functionalized_v2":false},"inductor_passes":{},"use_cudagraph":true,"cudagraph_num_of_warmups":0,"cudagraph_capture_sizes":[],"cudagraph_copy_inputs":false,"full_cuda_graph":false,"max_capture_size":0,"local_cache_dir":null}
+[36m(WorkerDict pid=1143417)[0m INFO 08-23 12:41:29 [__init__.py:1375] Found nccl from library libnccl.so.2
+[36m(WorkerDict pid=1143417)[0m INFO 08-23 12:41:29 [pynccl.py:70] vLLM is using nccl==2.26.2
+[36m(WorkerDict pid=1143417)[0m INFO 08-23 12:43:39 [shm_broadcast.py:289] vLLM message queue communication handle: Handle(local_reader_ranks=[1, 2, 3], buffer_handle=(3, 4194304, 6, 'psm_af0495bd'), local_subscribe_addr='ipc:///tmp/565d5428-818c-4623-9a2b-02ec35c8c41a', remote_subscribe_addr=None, remote_addr_ipv6=False)
+[36m(WorkerDict pid=1143872)[0m INFO 08-23 12:41:29 [__init__.py:1375] Found nccl from library libnccl.so.2[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143872)[0m INFO 08-23 12:41:29 [pynccl.py:70] vLLM is using nccl==2.26.2[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143417)[0m INFO 08-23 12:43:39 [parallel_state.py:1102] rank 0 in world size 4 is assigned as DP rank 0, PP rank 0, TP rank 0, EP rank 0
+[36m(WorkerDict pid=1143417)[0m Loading safetensors checkpoint shards:   0% Completed | 0/3 [00:00<?, ?it/s]
+[36m(WorkerDict pid=1143417)[0m Loading safetensors checkpoint shards:  67% Completed | 2/3 [00:00<00:00,  3.54it/s]
+[36m(WorkerDict pid=1143417)[0m Loading safetensors checkpoint shards: 100% Completed | 3/3 [00:01<00:00,  2.36it/s]
+[36m(WorkerDict pid=1143417)[0m Loading safetensors checkpoint shards: 100% Completed | 3/3 [00:01<00:00,  2.53it/s]
+[36m(WorkerDict pid=1143417)[0m 
+[36m(train_multi_agents pid=1130391)[0m wandb: Currently logged in as: yuz285 (yuz285-uc-san-diego) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+[36m(train_multi_agents pid=1130391)[0m wandb: creating run
+[36m(train_multi_agents pid=1130391)[0m wandb: Tracking run with wandb version 0.21.1
+[36m(train_multi_agents pid=1130391)[0m wandb: Run data is saved locally in /home/lah003/workspace/PettingLLMs/wandb/run-20250823_124614-qh221htq
+[36m(train_multi_agents pid=1130391)[0m wandb: Run `wandb offline` to turn off syncing.
+[36m(train_multi_agents pid=1130391)[0m wandb: Syncing run code_test
+[36m(train_multi_agents pid=1130391)[0m wandb: ⭐️ View project at https://wandb.ai/yuz285-uc-san-diego/pettingllms
+[36m(train_multi_agents pid=1130391)[0m wandb: 🚀 View run at https://wandb.ai/yuz285-uc-san-diego/pettingllms/runs/qh221htq
+[36m(train_multi_agents pid=1130391)[0m Training Progress:   0%|          | 0/480 [00:00<?, ?it/s]Epochs:   0%|          | 0/30 [00:00<?, ?it/s]
+[36m(train_multi_agents pid=1130391)[0m INFO:2025-08-23 12:46:20,791:{
+[36m(train_multi_agents pid=1130391)[0m   "env_idx": -1,
+[36m(train_multi_agents pid=1130391)[0m   "rollout_idx": -1,
+[36m(train_multi_agents pid=1130391)[0m   "agent_rewards": "env_workers",
+[36m(train_multi_agents pid=1130391)[0m   "termination_reason": "init 128 env workers",
+[36m(train_multi_agents pid=1130391)[0m   "timestamp": "2025-08-23T12:46:20.790936",
+[36m(train_multi_agents pid=1130391)[0m   "extra_data": {}
+[36m(train_multi_agents pid=1130391)[0m }
+[36m(WorkerDict pid=1143417)[0m WARNING 08-23 12:43:39 [topk_topp_sampler.py:59] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.
+[36m(WorkerDict pid=1143417)[0m INFO 08-23 12:43:39 [gpu_model_runner.py:1843] Starting to load model Qwen/Qwen3-4B...
+[36m(WorkerDict pid=1143871)[0m INFO 08-23 12:43:39 [gpu_model_runner.py:1875] Loading model from scratch...
+[36m(WorkerDict pid=1143871)[0m INFO 08-23 12:43:39 [cuda.py:259] Using Flash Attention backend on V1 engine.
+[36m(WorkerDict pid=1143871)[0m INFO 08-23 12:43:39 [weight_utils.py:296] Using model weights format ['*.safetensors']
+[36m(WorkerDict pid=1143871)[0m INFO 08-23 12:43:41 [default_loader.py:262] Loading weights took 1.38 seconds
+[36m(WorkerDict pid=1143872)[0m INFO 08-23 12:43:42 [gpu_model_runner.py:1892] Model loading took 1.8873 GiB and 1.974948 seconds
+[36m(WorkerDict pid=1143873)[0m INFO 08-23 12:45:56 [gpu_worker.py:255] Available KV cache memory: 118.05 GiB
+[36m(WorkerDict pid=1143872)[0m INFO 08-23 12:43:39 [parallel_state.py:1102] rank 2 in world size 4 is assigned as DP rank 0, PP rank 0, TP rank 2, EP rank 2[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143872)[0m WARNING 08-23 12:43:39 [topk_topp_sampler.py:59] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143872)[0m INFO 08-23 12:43:39 [gpu_model_runner.py:1843] Starting to load model Qwen/Qwen3-4B...[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143873)[0m INFO 08-23 12:43:39 [gpu_model_runner.py:1875] Loading model from scratch...[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143873)[0m INFO 08-23 12:43:39 [cuda.py:259] Using Flash Attention backend on V1 engine.[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143873)[0m INFO 08-23 12:43:40 [weight_utils.py:296] Using model weights format ['*.safetensors'][32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143417)[0m INFO 08-23 12:43:42 [default_loader.py:262] Loading weights took 1.33 seconds[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=1143417)[0m INFO 08-23 12:43:43 [gpu_model_runner.py:1892] Model loading took 1.8939 GiB and 2.301733 seconds[32m [repeated 3x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:57 [kv_cache_utils.py:833] GPU KV cache size: 3,438,256 tokens
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:57 [kv_cache_utils.py:837] Maximum concurrency for 8,192 tokens per request: 419.71x
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:57 [kv_cache_utils.py:833] GPU KV cache size: 3,438,448 tokens
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:57 [kv_cache_utils.py:837] Maximum concurrency for 8,192 tokens per request: 419.73x
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:57 [kv_cache_utils.py:833] GPU KV cache size: 3,438,448 tokens
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:57 [kv_cache_utils.py:837] Maximum concurrency for 8,192 tokens per request: 419.73x
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:57 [kv_cache_utils.py:833] GPU KV cache size: 3,438,448 tokens
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:57 [kv_cache_utils.py:837] Maximum concurrency for 8,192 tokens per request: 419.73x
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:57 [core.py:193] init engine (profile, create kv cache, warmup model) took 134.31 seconds
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:59 [loggers.py:141] Engine 000: vllm cache_config_info with initialization after num_gpu_blocks is: 214891
+[36m(AsyncvLLMServer pid=1149347)[0m WARNING 08-23 12:45:59 [config.py:1528] Default sampling parameters have been overridden by the model's Hugging Face generation config recommended from the model creator. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:45:59 [serving_chat.py:122] Using default chat sampling params from model: {'repetition_penalty': 1.0, 'temperature': 0.6, 'top_k': -1, 'top_p': 1, 'max_tokens': 8192}
+[36m(train_multi_agents pid=1130391)[0m [92mAll workers initialized successfully[0m
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Starting initialize_llm_servers, worker_group=<verl.single_controller.ray.base.RayWorkerGroup object at 0x798c0b0d5b20>
+[36m(train_multi_agents pid=1130391)[0m DEBUG: world_size=4, name_prefix=osEuKW
+[36m(train_multi_agents pid=1130391)[0m DEBUG: rollout_tp_size=4, rollout_dp_size=1
+[36m(train_multi_agents pid=1130391)[0m DEBUG: unready_dp_ranks={0}
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Processing unready_dp_ranks: {0}
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Creating servers for worker_group case
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Trying to reuse existing async_llm_server_{rank} actors
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Reused existing server actor 'async_llm_server_0': Actor(AsyncvLLMServer, e04df170ca3171e2f592788801000000)
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Processing server for rank 0
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Getting server address for rank 0
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Got address 169.228.33.163:48235 for rank 0
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Successfully initialized server for rank 0
+[36m(train_multi_agents pid=1130391)[0m DEBUG: All servers initialized, starting engine init
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Found 1 valid servers
+[36m(train_multi_agents pid=1130391)[0m DEBUG: Returning 1 servers and 1 addresses
+[36m(train_multi_agents pid=1130391)[0m [92mSuccessfully initialized 1 LLM servers for model: code_generator_model[0m
+[36m(train_multi_agents pid=1130391)[0m env_name: code_env
+[36m(train_multi_agents pid=1130391)[0m sample_num: 4
+[36m(train_multi_agents pid=1130391)[0m sample_num_list: []
+[36m(train_multi_agents pid=1130391)[0m agent_config_dict keys: ['code_generator', 'test_generator']
+[36m(WorkerDict pid=1143417)[0m INFO 08-23 12:45:57 [gpu_worker.py:255] Available KV cache memory: 118.04 GiB[32m [repeated 3x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:12 [block_pool.py:321] Successfully reset prefix cache
+[36m(train_multi_agents pid=1130391)[0m [96mLoading checkpoint for trainer code_generator_model[0m
+[36m(train_multi_agents pid=1130391)[0m Checkpoint tracker file does not exist: /home/lah003/workspace/PettingLLMs/checkpoints/verl_examples/gsm8k/latest_checkpointed_iteration.txt
+[36m(train_multi_agents pid=1130391)[0m Training from scratch
+[36m(train_multi_agents pid=1130391)[0m Time taken to validate agent_code_generator_model: 1.1444091796875e-05
+[36m(train_multi_agents pid=1130391)[0m 🔄 Loading 32 problems from dataset train...
+[36m(train_multi_agents pid=1130391)[0m 📁 Loading from local dataset: /home/lah003/workspace/PettingLLMs/datasets/train
+[36m(train_multi_agents pid=1130391)[0m ✅ Successfully loaded local dataset with 4096 samples
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 1/32 (index=3871)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 2/32 (index=3418)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 3/32 (index=3966)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 4/32 (index=738)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 5/32 (index=975)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 6/32 (index=743)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 7/32 (index=4076)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 8/32 (index=1348)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 9/32 (index=2980)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 10/32 (index=4045)
+[36m(train_multi_agents pid=1130391)[0m Epoch 0 (Step 1):   0%|          | 0/30 [00:00<?, ?it/s]
+[36m(train_multi_agents pid=1130391)[0m 
+[36m(train_multi_agents pid=1130391)[0m Rollouts:   0%|          | 0/128 [00:00<?, ?it/s][A
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 11/32 (index=4001)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 12/32 (index=1614)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 13/32 (index=298)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 14/32 (index=2475)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 15/32 (index=2465)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 16/32 (index=1126)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 17/32 (index=541)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 18/32 (index=259)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 19/32 (index=2121)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 20/32 (index=3145)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 21/32 (index=1166)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 22/32 (index=1487)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 23/32 (index=924)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 24/32 (index=3467)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 25/32 (index=1515)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 26/32 (index=1442)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 27/32 (index=3895)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 28/32 (index=1140)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 29/32 (index=3965)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 30/32 (index=3023)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 31/32 (index=2120)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 32/32 (index=2516)
+[36m(train_multi_agents pid=1130391)[0m ✅ Successfully loaded 32 train problems
+[36m(train_multi_agents pid=1130391)[0m 🔄 Loading 32 problems from dataset train...
+[36m(train_multi_agents pid=1130391)[0m 📁 Loading from local dataset: /home/lah003/workspace/PettingLLMs/datasets/train
+[36m(train_multi_agents pid=1130391)[0m ✅ Successfully loaded local dataset with 4096 samples
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 1/32 (index=2354)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 2/32 (index=2845)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 3/32 (index=3134)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 4/32 (index=1159)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 5/32 (index=687)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 6/32 (index=3065)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 7/32 (index=3428)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 8/32 (index=3718)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 9/32 (index=804)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 10/32 (index=2324)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 11/32 (index=3607)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 12/32 (index=3077)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 13/32 (index=3136)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 14/32 (index=691)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 15/32 (index=1680)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 16/32 (index=2895)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 17/32 (index=1576)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 18/32 (index=1095)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 19/32 (index=4094)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 20/32 (index=2433)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 21/32 (index=3643)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 22/32 (index=28)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 23/32 (index=3902)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 24/32 (index=83)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 25/32 (index=223)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 26/32 (index=2984)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 27/32 (index=557)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 28/32 (index=2914)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 29/32 (index=3293)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 30/32 (index=3702)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 31/32 (index=3930)
+[36m(train_multi_agents pid=1130391)[0m ✅ Loaded train problem 32/32 (index=2159)
+[36m(train_multi_agents pid=1130391)[0m ✅ Successfully loaded 32 train problems
+[36m(train_multi_agents pid=1130391)[0m 'epoch 0, step 1 started'
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:21 [async_llm.py:269] Added request 0bff796b-3a9c-44ca-a6d9-1c394d23b0f1_c83fd74d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:21 [async_llm.py:269] Added request c73f9a26-0250-498c-a8e4-bf743b3ed951_61319c49.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:21 [async_llm.py:269] Added request 432495c7-e8a8-46b3-a7e5-e7145a58f44f_9f39aa3d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:21 [async_llm.py:269] Added request 8ade32b3-4cbe-4a09-bbe4-50f6e1e2e34f_c334443f.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:21 [async_llm.py:269] Added request 487a0477-dba0-46fd-9bd6-e7e03dd91641_2a5d0f98.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:21 [async_llm.py:269] Added request 39794560-8b41-4951-b3bc-cb8855fb2720_8a56f14a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:21 [async_llm.py:269] Added request 91e8ccdd-a779-4212-896b-1397ca2199ad_25408ca7.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 631272bd-ab1c-4f21-82e6-01adbfbd47de_e2740d97.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 0972fa2d-5e75-4ce8-907f-1483e0cb11b2_8105dc14.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 5766ed12-6103-4370-afce-afd5d88ec049_699f39b2.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 4e07779a-71c6-441b-a445-e423b6f2242f_6939bff3.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request bb05a847-61de-467c-bb76-0a483481a7df_55c022bb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 73e8c73a-6f75-4590-b4a5-f55fc7325fb4_ebae0b7a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 1da4a075-ea60-4202-a362-47f8b39b2e52_b8342de8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 95f390aa-37e8-4a56-9cde-07a8197eb3a7_c31b94d9.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 0b45ef89-9c78-4056-8fa3-f7fb4f603944_823dcf5e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 6df6d846-c2e1-4fd1-a664-08caa54f5f10_d52f62d0.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 202d9e52-d163-4e4b-a244-6691a46ec3cf_389ed08a.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 20
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request c1e7ace4-e751-45b1-b799-354788e61b1b_0cf5aa57.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 42953b3e-b76f-4a48-96fe-82117a949bc9_bbc0cf93.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 2229c5c7-cde6-4983-9e02-bc8bc649e603_1e97ef89.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request c68bd26c-5493-4c9b-af2f-f753b98c5e6f_177ed735.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 09dacfc9-1214-404d-8181-36b26ecd1668_34c1ec92.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 8cb1fa9c-dac1-4434-b953-d7a884402ed0_0ed86383.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 1f57bbbb-8b2d-44f7-8efb-434257a63baf_a47ad102.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 7c5a323f-d45b-49bc-8c8e-c2b65a55c521_d3acaafb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request fc3503e2-fe97-4574-9580-78be9e03977c_4b100a38.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 7ee658f4-a509-4ef2-8468-814c4c7d6705_f031b609.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 4602a1d0-d6ce-4d9a-b36a-5de1a9c2863a_8781dbd9.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 81083db5-768b-49eb-9265-7f207f8464f0_869a232d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 61557b3f-610e-4c0d-852e-1bb82923a622_e9e1f81c.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request cdbd8446-4480-4a28-b524-7dba9ff2bfee_ebcd1884.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 6e35459f-1aea-47b5-bdc8-c9edce042e80_0aed50db.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 0f2ab1d6-d501-41c0-a96c-047d19386a5a_c84bf829.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 775a31c2-f552-4543-a2cc-9624f87ddd0e_1887d7b6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 690dcaf7-adce-4a22-8d04-61c906c466a4_b7a8b509.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 5d93eb3a-4323-4a08-909b-6973ff58fa77_e8015e47.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request b84e89e7-3651-4f5d-b483-a19685ce9870_46b4036d.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 40
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 252d80e9-34f1-4e77-9673-f94a018a20bf_b17dde28.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 0f901365-c247-401c-816c-00bd6ba18e7f_70bf2a18.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request fa0bbf21-4aaa-430a-82d0-3890b8de085c_ca63a9a6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 5cdbc6fa-a369-476b-9766-bd008141fb6d_9d89c283.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 06fb56ea-f703-49ea-9d35-918ea2683486_9b64a3eb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 6276a111-e2b0-4c51-82d5-843c6fd412a7_fe6c03ac.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 66fe9e30-1157-4cd5-8e5a-b123daab82d2_20182653.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request b91b2111-c8bc-477f-8a46-b2fe944c0b14_0542c660.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request e80fce12-e1d2-4052-810f-937946677664_61c6e70a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 93fd85e2-cdf5-4984-bf4f-86756d85060a_37bb0e46.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 5d9a2735-b8aa-4132-9a09-f817f4c5b5aa_8b463107.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 50598cc7-dc1b-4161-b27e-9d29e757199f_4cfb9014.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request e7e25268-9ad2-4980-bfe8-067dd06d6885_58df7a25.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 5d9dc5fa-9fec-4057-8837-5979d78a7343_5fe45bde.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request f136814a-027a-4c12-b160-7f01e127d659_b79153a2.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request c9363cf0-d529-4ba5-8997-888912e8cae2_34bc1609.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request f40fe36a-dfcf-4791-9336-fdf93753744c_a51e3e36.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request e0cff366-0cb5-4872-a006-e29736ce05ba_4f123090.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request ecde59b3-566e-4f69-8fcb-bfe39a0414de_9716ae42.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 701e2ad8-fdaa-4649-8953-6170f743a017_04f1f479.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 3874ba29-8f59-41a0-a21b-08c8a6b5f2c6_44c88e89.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 60
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request bafe4867-cc59-48a5-97ea-82a24dc1b791_30e32bf8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 693dec95-cd25-410a-987a-526a4a0aa2a5_01352e63.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 2792174e-73c2-429c-8664-a21775658b81_caeaed3d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request de36ff8b-483c-4d42-b4ac-3d7f0a3b2199_a051841d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 128bfe98-91f6-472f-9ea1-fb61563effe8_4986c57f.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 93d55921-0c9e-480b-adcd-5decbffd475f_1ae500d7.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request a01d91cd-6b57-4fff-b775-c4ed4d8edc4c_cc47c8eb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 69f70d9d-14cd-4b4f-8d6b-7c394bc1a743_ff581535.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request ec14f928-0787-4d6a-a143-60bc3bdc6d57_82ddfa38.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 22676fe7-ebf0-4658-9f03-bb80017738f8_25604570.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request edcfd2ed-1cbf-42ea-b097-d03febc1ffed_2009450a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 3c848437-afe2-4671-b6f2-69eee90c7c13_ba74f8de.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request af9cc4e3-3495-491a-a73b-f0ebffb0da96_836c3876.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 6bff2bc1-e689-47c4-b63f-ad51e9f40be3_90e8732a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request ee2cebf6-e86f-493a-89d9-82afa16a3b82_6d2fc37b.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 6d3d21ad-b0e0-42dd-bf33-ac538506fcd7_d52dfdbb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request daaecb40-1d1c-4886-bbea-e97959a7156d_ee884456.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 80
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 0a0c3ff0-3fc9-45c4-b4a4-221b5dacb4fd_af0f82ac.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 2a09ae9b-09a4-4c95-afb4-100413ad3d26_1dfde020.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request fafae310-2a94-4fca-b3a7-43faf40a4bdf_38604d23.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request ee891e42-7f8a-4048-a1a8-4d72389e7ad3_4fdf3b91.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 42335fbd-4a37-43e1-a994-9a094f41da90_d7c75179.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 083ff422-2ae0-45b4-b37c-6eb4e9d3ced3_104b8a96.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 32d5e15d-67d8-47ae-9a9d-497c6b902ac8_a7cf4a2d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 68f9d718-d433-4c2e-bfcd-695b543ada0a_c32a7f4a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request db5c5f50-0707-4cda-9433-16756d2f3f65_446aeac0.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 41947d85-38bd-464f-b77c-f42f70c8d2de_07c374d3.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request b922ee34-db94-434d-8d09-5925b55be647_a46f9f0d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 0c7ea644-0a2f-424e-8643-be974c1d574d_0a65bdd6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request a6a2ab8c-19eb-413c-b8b4-7948811efa75_8c0245b4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request a0b5dbb8-1302-40b7-b109-4744294748fc_d655293d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 02cdf789-43e8-41b6-93cb-de9e5ae65c53_b7ef0f15.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 7464b409-a00f-4d86-8046-71d313fc34b7_b08de509.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request c964cad1-4781-471c-8f36-177ed569ecd8_7cdaab0e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 5d465430-5b77-4cc4-b89a-c1c234921b5f_9035c8ff.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 8fbcc09b-b8ac-4292-897c-921311ec7534_22c96c17.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request ed83dbd2-f23d-4448-806c-b7cf22210429_6acae646.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 0c062636-b00e-4bc7-9f02-40fe62feb396_4d4d87d9.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 100
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request f80ddc3d-0499-481e-a210-80209ceb7c7f_506b19f0.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 5df06b6a-6a12-40ff-8e01-512307bacc68_5d18d4bf.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request f56a687c-9df0-459e-bf25-a386c4efd1c3_f05c4434.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request a9a5f745-88b3-4ece-948c-ce6ed88671d3_fb4c2208.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 1f92d9bd-0351-43fb-88c4-0ea7e7eedadb_00c44a96.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 84242657-4d90-4553-bf04-8e8d79b4ded7_6f0ec32e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 8cc3cf04-02c4-4278-bb96-b66d568b88e9_8a9015c8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:22 [async_llm.py:269] Added request 0c16f28b-adb4-4263-881a-052d15e86eda_e8b63428.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 6b5744e2-9d65-4512-9ed3-fcfcb3f88d96_8d0d8406.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 4b029bdc-48af-405d-a53f-302d974249d7_8323ef21.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request a1d00ac4-6999-404c-a576-8a6798ae5270_4ceea132.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request febbe8db-d405-4833-8af8-3f0c9dcfe84e_8d6f8721.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 6ad6b5fe-0a2b-4da3-b460-224fe222af52_363841af.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request e99ae0e7-d218-426b-8eb4-120b3f6b38d6_0b711a05.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request f75bfcc3-3731-4728-930d-3ca537de6930_4b5c8758.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 27b95d46-0e15-4a1d-9808-2fe71bf16c81_bbabe1aa.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request d3c049a4-1044-4387-aecc-7436a664935d_5b3c18b7.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 5f831066-b6a8-49db-9a93-05a3389c6378_37958fec.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 25b85489-599d-47f1-9085-52e3641f0dd3_8d39204e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 4fab0e3b-f821-48e4-ba46-b54165612383_2ed3f484.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 120
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request bee2b6c7-b816-4e4f-b698-ff7ae1503a6d_2608ca6f.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 5d62a67b-342b-4142-97f2-7249f728ab57_7f903509.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 0ce96b67-a851-44db-aacf-7b2fcd8abed2_3c189600.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request ce6dcf0f-c6e8-45ed-99e4-74eeeb0fd8bf_35646346.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 841d032d-a35b-4d0c-85c7-71d52e84ae45_8dcde0c7.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request d5d3b2ca-0596-411f-8c28-a59e03c74338_264f8b2d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request c240007a-f09e-45f7-9265-97e3dbe22c6b_f4bcf502.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 64c1e793-def9-49df-9237-f3332d7786de_75eebdc6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 3e41d53a-c070-4212-a8d9-479cdfa0fa33_f50bebbd.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request 6ffd2919-9a3c-431b-b38c-86aa83713d3a_a8604582.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:23 [async_llm.py:269] Added request ad1d24e2-8b7f-4a65-adc6-164aa7445177_7d2130f3.
+[36m(AgentLoopWorker pid=1154514)[0m INFO 08-23 12:46:25 [__init__.py:235] Automatically detected platform cuda.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:32 [async_llm.py:269] Added request ef55fe79-ac20-4cb5-a70a-2cc0c4bf71b7_689f2dbd.
+[36m(AgentLoopWorker pid=1162282)[0m INFO 08-23 12:46:33 [__init__.py:235] Automatically detected platform cuda.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:33 [async_llm.py:269] Added request 7df60294-84e7-4f60-b166-ddc1a541d067_b52df523.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:33 [async_llm.py:269] Added request c2ace4a9-3254-4b47-9b74-a2b5e243ec70_2f7df0ae.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:33 [async_llm.py:269] Added request d0637d03-df70-4d03-94a6-adadaf99fba0_819b3480.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:33 [async_llm.py:269] Added request bc706df6-5f26-4536-ac6a-478b3d4cc9f8_cf2e0f1e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:34 [async_llm.py:269] Added request 2beec9e1-b0f2-49b1-b01a-b2a69c39711a_d592d9a7.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:34 [async_llm.py:269] Added request e3973d54-5abb-47a0-92c9-29bb0fe122cc_823165bc.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:34 [async_llm.py:269] Added request 90be709b-0893-4a2a-bdde-dda1445b5ee3_7f42baca.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:34 [async_llm.py:269] Added request 619200f1-1f9a-44c2-8645-3faca187a069_7e1321cf.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:34 [async_llm.py:269] Added request 3cc3d8d8-5c24-470e-9352-22ab5470c1e6_292b47fb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:34 [async_llm.py:269] Added request 65babd47-2d58-4650-ac11-555632550e2f_ffc720c9.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 20 | 当前平均 prompt 长度=398.47, answer 长度=114.58 (基于 19 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:36 [async_llm.py:269] Added request f72d5907-c28c-43d4-8b5a-cbf35a564fd2_a4780c87.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:36 [async_llm.py:269] Added request e05cc216-5577-4d83-93f9-fa76bcb8dad3_3642e4f8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:36 [async_llm.py:269] Added request ccc6d30e-ec76-407f-8527-80146cf6e6b4_7723ad7d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:36 [async_llm.py:269] Added request df06d799-d33f-4d26-a6be-ad7b968d0d25_a75a7a21.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 140
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:36 [async_llm.py:269] Added request aaa33165-011b-4ee6-bad3-3b27cefa6fae_76b48400.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:37 [async_llm.py:269] Added request b23b7b2f-d73d-49c1-924a-8e3d86339913_f3d1860f.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:37 [async_llm.py:269] Added request 45ae8389-a44a-4e63-968f-030d8d1d9bba_337d9980.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:37 [async_llm.py:269] Added request b98961c3-7eb4-4992-8b98-dd2f9e6ff5eb_5d7233e4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:37 [async_llm.py:269] Added request 58e3994f-1991-4999-9f73-90d11734c510_6186e646.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:38 [async_llm.py:269] Added request 926b3783-7c67-430b-b402-ea4b1e481a34_db2df836.
+[36m(AgentLoopWorker pid=1154651)[0m INFO 08-23 12:46:37 [__init__.py:235] Automatically detected platform cuda.[32m [repeated 6x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:38 [async_llm.py:269] Added request aa062305-cf8f-4382-8281-d48301231e8a_e2f070f4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:38 [async_llm.py:269] Added request c2cb5790-6595-4f22-9041-a2dd30d31544_1dbcb1b8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:38 [async_llm.py:269] Added request 7d29abfb-e3b2-4b87-81e4-c70b061e965d_a8df15b2.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:38 [async_llm.py:269] Added request f1d4cc6b-1bd3-4d97-9a7f-14b69624f081_837e70c8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:39 [async_llm.py:269] Added request efeaa914-4b34-4348-9fd3-d6bc59fb49dd_c26bbc7a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:39 [async_llm.py:269] Added request fa2eb425-793d-4cf6-a7b3-ffdc34b0869d_691956cd.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:39 [async_llm.py:269] Added request eb619875-ea0f-4023-8b69-96aeaea6a1a0_6ed17c8b.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 40 | 当前平均 prompt 长度=450.41, answer 长度=156.38 (基于 39 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:40 [async_llm.py:269] Added request 0233974a-eca4-4916-b85d-59ff3c371e16_fc270dc7.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:40 [async_llm.py:269] Added request 9b699877-4913-4deb-af4e-1090f7375c3e_1a649a32.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:40 [async_llm.py:269] Added request 62d7e49b-d31b-446d-9d4b-e5b497f42718_c053b840.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request 61718274-d83a-49ab-ae23-892bee8c14c5_ef638594.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request 11a7835a-bbc0-4697-808b-a20105dced1b_85c5fe72.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request 6260084c-9bfa-4e1e-8c04-2d9ebb1dec16_f9a90eb0.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 160
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request 270ddb75-353e-4434-9f8c-cb5f60118ed3_12827252.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request 2865c6a1-b7d8-4921-b3e3-8190decfb99b_eb4a8f5b.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request da34d009-d571-46d5-9a62-014d30048384_fe009af5.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request bfc4797a-51d1-4d77-bdf0-e746ab19f63a_869b2a32.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request 815b80d1-2855-40d2-ad7f-c96aa81d8fbd_52619c5a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request 59008d36-7102-4046-98e6-f4c9e9be2693_dbcc077b.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:41 [async_llm.py:269] Added request 6b68b1d6-2a0e-43ee-811d-1ff4e526941c_eda76e45.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:42 [async_llm.py:269] Added request 50e4ca09-3fdf-4f37-aba7-0bafd007e0a7_c0e21815.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:42 [async_llm.py:269] Added request f62ea49e-8d33-4e34-9488-ce67ac44138d_7f8acdd9.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:42 [async_llm.py:269] Added request fbb505fc-3dec-494b-bfaf-a72264c4d6b2_9a67ee2d.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 60 | 当前平均 prompt 长度=492.66, answer 长度=193.15 (基于 59 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:43 [async_llm.py:269] Added request 58294730-f69e-4e03-bef3-4759cc434e6e_95762229.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:43 [async_llm.py:269] Added request 0e6245d3-a5c1-4a3f-9dfc-426ff3930fce_7a83968c.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:43 [async_llm.py:269] Added request cdaaec81-aea2-4183-9669-32341b560ea5_5b7067f1.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:43 [async_llm.py:269] Added request 794bcbe5-2ad4-46d7-85c8-df623f015b2d_171456fd.
+[36m(AgentLoopWorker pid=1159021)[0m INFO 08-23 12:46:41 [__init__.py:235] Automatically detected platform cuda.[32m [repeated 4x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:44 [async_llm.py:269] Added request 643fe45d-7452-4a24-91eb-4eccb306ecd7_81e7cc83.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:44 [async_llm.py:269] Added request 5fab1383-6d0b-4650-854a-96b177a914e6_5b492bde.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:45 [async_llm.py:269] Added request 4f087110-2d91-4abb-b031-5af1497eb3be_4f6f9a6e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:45 [async_llm.py:269] Added request 32e7bf30-9795-4e86-bd49-0784b30c165c_fe6a13d3.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:45 [async_llm.py:269] Added request d1b4c0ab-9f2c-407b-bb38-c975b8f0e9c6_e4b28d35.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:45 [async_llm.py:269] Added request af0c91f9-8c54-4baa-8d7d-5cc314ec8d11_6649d6d8.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 180
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:46 [async_llm.py:269] Added request 199dac4b-dd77-40ec-81de-dd234d3b9d36_00bed504.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:46 [async_llm.py:269] Added request 8283db93-2cd6-41f9-a9a6-ff0500159d92_dc0b5d6d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:46 [async_llm.py:269] Added request 5dd5d19a-c6d3-49cf-8648-9a906542a644_fef93131.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:46 [async_llm.py:269] Added request ef9e7ac7-4e20-4c98-b0b9-cd8fcd1e26ab_cbedb751.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:49 [async_llm.py:269] Added request bdd484b2-413b-47b1-8689-84bf5aa8f381_192631b0.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:49 [async_llm.py:269] Added request b079fe76-64e0-44fd-8451-ed9289b51346_33508592.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:49 [async_llm.py:269] Added request 20deeea5-f887-4f2d-aed6-9c9cf7b1e89a_79660f03.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:49 [async_llm.py:269] Added request 9c7b8c2b-3db9-4e67-bb54-eb6de81a8a37_95ca5415.
+[36m(AgentLoopWorker pid=1158198)[0m INFO 08-23 12:46:46 [__init__.py:235] Automatically detected platform cuda.[32m [repeated 3x across cluster][0m
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 80 | 当前平均 prompt 长度=534.84, answer 长度=220.48 (基于 79 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:50 [async_llm.py:269] Added request 572332ae-b001-4e54-b7e5-cd7615318824_75c7e6c5.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:50 [async_llm.py:269] Added request 6af9a072-c6e6-42c6-ac17-5c1896972b61_371da104.
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:50 [async_llm.py:269] Added request 308658ca-fb91-4583-a56a-5e5953de9532_82ba33f6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:52 [async_llm.py:269] Added request 213e1b93-bd37-42c4-aeb7-4961295a2114_888078c9.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:52 [async_llm.py:269] Added request 261ee5df-37e1-4c46-9b0c-0b5e06630f47_4658e13c.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:52 [async_llm.py:269] Added request 2d217429-ee47-4433-8825-a7faeca71b43_38bacb78.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:52 [async_llm.py:269] Added request 07760993-a31d-4c2e-9b8c-a63ed06b0357_8367477e.
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:52 [async_llm.py:269] Added request 44e72e12-f1a2-4fa3-8e55-57e8f7a9778a_c5117567.
+[36m(_RayDockerWorker pid=1170035)[0m printed_output: None (timeout)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:54 [async_llm.py:269] Added request dd1ae412-8ea2-457e-a4f3-b09cf51897c8_e7d51bd3.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:54 [async_llm.py:269] Added request 5a47a79b-f142-49ef-bc29-3026816341ef_252b5447.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:54 [async_llm.py:269] Added request 77c49177-3152-4e37-8b21-7ad0239ced04_92dbd7c9.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 200
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:56 [async_llm.py:269] Added request 46a4786b-9554-4c91-9b97-1bb3916ec2c1_4fc45578.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:56 [async_llm.py:269] Added request e8c05d8b-74a4-429c-aa8f-5b98a82f736b_688948dc.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:56 [async_llm.py:269] Added request dbb9d3fa-d9d8-401b-b13e-89264b7e93f1_8152c033.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:56 [async_llm.py:269] Added request 667fc028-4a59-482b-920d-2230bceb1be4_ec3a2017.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:56 [async_llm.py:269] Added request 5878fb3c-f08e-40c8-8e4a-153ea8e14612_fe8ebf97.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:56 [async_llm.py:269] Added request 56dbb4f2-547f-4b7b-95d6-9975babd05eb_5364d0b6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:56 [async_llm.py:269] Added request 714080a8-b471-4af2-b205-adac49211e5d_94670fc8.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 100 | 当前平均 prompt 长度=570.81, answer 长度=254.73 (基于 99 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:57 [async_llm.py:269] Added request 02af3b73-52af-4c9c-a81b-a2644da8bfdc_ae82dc59.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:58 [async_llm.py:269] Added request 641b39a1-2fe8-4b2d-93b2-189896a37c0d_2ddc1856.
+[36m(_RayDockerWorker pid=1170037)[0m printed_output: None (timeout)[32m [repeated 3x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:58 [async_llm.py:269] Added request db816c6e-3aeb-48ce-a0ea-1bf975c6066c_4a326111.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:58 [async_llm.py:269] Added request f0ac9b57-bd0c-469e-b920-555507611678_ae5e8673.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:59 [async_llm.py:269] Added request 85eff626-36f1-4eea-95bc-0df8b468f852_69982d56.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:59 [async_llm.py:269] Added request f3b6646c-d8af-4d0e-8b07-dbe3c62c2b33_548bccab.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:59 [async_llm.py:269] Added request 3666a9f6-ace0-44f8-8f01-271c5528631d_e3b52cf5.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:59 [async_llm.py:269] Added request 67360ba9-92f4-4134-ae0d-b5bce6cfdf2b_d1152063.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:59 [async_llm.py:269] Added request 24df7f96-70a6-40c6-8af7-96739aab35f9_e22e9afa.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:46:59 [async_llm.py:269] Added request cd7b6314-a6e8-4015-bab3-983a93b88c5b_cf7e5385.
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:00 [async_llm.py:269] Added request 07e561ea-a245-4288-8e04-d94364072102_d50d1269.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:00 [async_llm.py:269] Added request 5903a2b9-770b-4fe8-834c-ca9fa5d29b35_93d56edd.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:00 [async_llm.py:269] Added request 0612eb46-46fc-4e61-9be6-6e4b2e15df5f_ccdf2aeb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:00 [async_llm.py:269] Added request 4333204b-682d-4ea5-bcc5-6d1fd41fda28_f55c8b20.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 220
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:01 [async_llm.py:269] Added request e1325672-9bb5-4245-a231-7d80f210078a_fc9007c3.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:01 [async_llm.py:269] Added request 6aec8c88-c8d0-499f-97e1-a26cd4af8cd1_afc8cfad.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:01 [async_llm.py:269] Added request 59ad1a0a-1b6c-4744-85a7-f926012a57cb_b78e7c21.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:01 [async_llm.py:269] Added request d12983bc-7e0b-478d-b8b1-f458bd8c6431_ee5bd159.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:01 [async_llm.py:269] Added request 8ee308a6-9cfc-4caf-9cb7-fff40d7cb917_30427043.
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m INFO:2025-08-23 12:47:04,585:{
+[36m(train_multi_agents pid=1130391)[0m   "env_idx": 4,
+[36m(train_multi_agents pid=1130391)[0m   "rollout_idx": 17,
+[36m(train_multi_agents pid=1130391)[0m   "agent_rewards": "success!!",
+[36m(train_multi_agents pid=1130391)[0m   "termination_reason": "Rollout 17 completed successfully",
+[36m(train_multi_agents pid=1130391)[0m   "timestamp": "2025-08-23T12:47:04.585139",
+[36m(train_multi_agents pid=1130391)[0m   "extra_data": {
+[36m(train_multi_agents pid=1130391)[0m     "turn_idx": 0,
+[36m(train_multi_agents pid=1130391)[0m     "agent_rewards": {
+[36m(train_multi_agents pid=1130391)[0m       "code_generator": [
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ],
+[36m(train_multi_agents pid=1130391)[0m       "test_generator": [
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ]
+[36m(train_multi_agents pid=1130391)[0m     },
+[36m(train_multi_agents pid=1130391)[0m     "env_state.ground_truth_test_vs_generated_code_match_ratio": 1.0
+[36m(train_multi_agents pid=1130391)[0m   }
+[36m(train_multi_agents pid=1130391)[0m }
+[36m(train_multi_agents pid=1130391)[0m INFO:2025-08-23 12:47:04,585:{
+[36m(train_multi_agents pid=1130391)[0m   "env_idx": 4,
+[36m(train_multi_agents pid=1130391)[0m   "rollout_idx": 17,
+[36m(train_multi_agents pid=1130391)[0m   "agent_rewards": "rollout_complete",
+[36m(train_multi_agents pid=1130391)[0m   "termination_reason": "Rollout 17 completed successfully",
+[36m(train_multi_agents pid=1130391)[0m   "timestamp": "2025-08-23T12:47:04.585704",
+[36m(train_multi_agents pid=1130391)[0m   "extra_data": {
+[36m(train_multi_agents pid=1130391)[0m     "turn_idx": 4,
+[36m(train_multi_agents pid=1130391)[0m     "agent_rewards": {
+[36m(train_multi_agents pid=1130391)[0m       "code_generator": [
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ],
+[36m(train_multi_agents pid=1130391)[0m       "test_generator": [
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ]
+[36m(train_multi_agents pid=1130391)[0m     },
+[36m(train_multi_agents pid=1130391)[0m     "env_state.ground_truth_test_vs_generated_code_match_ratio": 1.0
+[36m(train_multi_agents pid=1130391)[0m   }
+[36m(train_multi_agents pid=1130391)[0m }
+[36m(train_multi_agents pid=1130391)[0m 
+[36m(train_multi_agents pid=1130391)[0m Rollouts:   1%|          | 1/128 [00:43<1:32:20, 43.62s/it][A
+[36m(train_multi_agents pid=1130391)[0m Rollouts (1/128):   1%|          | 1/128 [00:43<1:32:20, 43.62s/it][A
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(AgentLoopWorker pid=1156908)[0m INFO 08-23 12:47:01 [__init__.py:235] Automatically detected platform cuda.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request 2772ab01-370d-422a-bba0-84dec6a9c880_653af281.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request 433bc4af-db8a-4207-9261-b9f569acbdf2_8c632a19.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request 9ec3d616-5f15-4bc3-b77c-fec097ee7aa3_02d54ce6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request b84ae276-43a6-4560-b706-13024df7bf7b_6b6419de.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request 5a222938-0587-4bda-a953-77a8d5c3baf4_3da6b54b.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request ce35f708-9982-44e8-9b72-e1671f4a2adc_371c276a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request 8d0f29f8-467a-4840-998e-0cba6aeea8fd_eb8bc2e4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request 78d6c36f-1130-4813-ba6a-41e5e8b6db7e_7ad42fca.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request e41539a6-f20f-46c0-b7e3-3b7b21c6edfe_4be63448.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:02 [async_llm.py:269] Added request 70ee43e6-3fd5-4ee4-9693-ad5416baf5dd_fa2553a5.
+[36m(_RayDockerWorker pid=1170933)[0m printed_output: None (timeout)[32m [repeated 2x across cluster][0m
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 120 | 当前平均 prompt 长度=599.82, answer 长度=284.76 (基于 119 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:03 [async_llm.py:269] Added request 2aaf853c-2401-4b10-bd79-1b11e9dd7672_c5246235.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:03 [async_llm.py:269] Added request 875e5ab3-c98d-4c38-b259-e2c8ded8bcfb_33d5a447.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:03 [async_llm.py:269] Added request 03f53cd3-158e-4224-9d40-be1e1928e951_567ea4ee.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:03 [async_llm.py:269] Added request db7b2af9-94e6-4f7f-a78c-c9cf03ca0765_5af1f63b.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 240
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request 3b9febce-b2ea-4b9f-bf87-a010ba22daf9_5711d3bf.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request ccdca7d9-2f29-4ad6-95d6-776b490f4436_3b272be5.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request ad5cce47-383c-4534-b341-d8a15aa2a21f_55dbf149.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request 41b28e43-ebc3-4dd6-810c-82e82922ef34_8c69a2e4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request 8ee3bf9b-cb41-4536-a560-3d7ecf9d0cdd_adc4f26a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request 56b4a6eb-5846-4c15-bc5f-9bbf7377525e_e2e83a23.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request 95a0d938-fe8f-49d4-bfeb-bc3d8f654789_1bfab160.
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request b5712dd3-b7ae-450f-8598-aa9546d4e63e_8e6c7aec.
+[36m(train_multi_agents pid=1130391)[0m DataProto(batch=TensorDict(
+[36m(train_multi_agents pid=1130391)[0m     fields={
+[36m(train_multi_agents pid=1130391)[0m         attention_mask: Tensor(shape=torch.Size([2, 9216]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         input_ids: Tensor(shape=torch.Size([2, 9216]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         position_ids: Tensor(shape=torch.Size([2, 9216]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         prompts: Tensor(shape=torch.Size([2, 1024]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         response_mask: Tensor(shape=torch.Size([2, 8192]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         responses: Tensor(shape=torch.Size([2, 8192]), device=cpu, dtype=torch.int64, is_shared=False)},
+[36m(train_multi_agents pid=1130391)[0m     batch_size=torch.Size([2]),
+[36m(train_multi_agents pid=1130391)[0m     device=None,
+[36m(train_multi_agents pid=1130391)[0m     is_shared=False), non_tensor_batch={'rollout_idx': array([17, 17], dtype=object), 'turn_idx': array([0, 0], dtype=object), 'agent_idx': array([0, 1], dtype=object), 'reward': array([1., 1.]), 'agent_name': array(['code_generator', 'test_generator'], dtype='<U14')}, meta_info={})
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request bb5772cf-71a7-4857-b7c0-c1e81d847e2b_c6ee6391.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:04 [async_llm.py:269] Added request e9bc902b-b65d-4c3f-b4d7-c584e668928a_f97ad1ce.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:05 [async_llm.py:269] Added request 41983a33-43db-4f55-849e-72d968f6c2b0_b5a93ee4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:05 [async_llm.py:269] Added request b9f40658-1261-4b20-905b-673f2fb92c36_b1003d4f.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:05 [async_llm.py:269] Added request 51de1fd1-d1d4-45b5-a3d1-b687aebfdb3b_9102d1a4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:05 [async_llm.py:269] Added request 057cf572-777e-4a46-958c-a0dda86c6deb_bc898fd4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:06 [async_llm.py:269] Added request 8a761f7b-b01a-4396-9ad5-dbfb4a8908e5_afc08a33.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:06 [async_llm.py:269] Added request 50442282-fe9f-43d3-b721-35440f52c92b_b2b1cc0d.
+[36m(AgentLoopWorker pid=1154506)[0m INFO 08-23 12:47:04 [__init__.py:235] Automatically detected platform cuda.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:08 [async_llm.py:269] Added request 11b7216e-a3ea-466f-b7f3-3715bc4cd69d_b3e84d15.
+[36m(_RayDockerWorker pid=1170106)[0m printed_output: None (timeout)[32m [repeated 14x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:08 [async_llm.py:269] Added request 84e69e94-5387-43c1-8ef0-7bd39d1934f6_6cf08d1b.
+[36m(train_multi_agents pid=1130391)[0m DataProto(batch=TensorDict(
+[36m(train_multi_agents pid=1130391)[0m     fields={
+[36m(train_multi_agents pid=1130391)[0m         attention_mask: Tensor(shape=torch.Size([4, 9216]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         input_ids: Tensor(shape=torch.Size([4, 9216]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m INFO:2025-08-23 12:47:08,513:{
+[36m(train_multi_agents pid=1130391)[0m   "env_idx": 7,
+[36m(train_multi_agents pid=1130391)[0m   "rollout_idx": 29,
+[36m(train_multi_agents pid=1130391)[0m   "agent_rewards": "success!!",
+[36m(train_multi_agents pid=1130391)[0m   "termination_reason": "Rollout 29 completed successfully",
+[36m(train_multi_agents pid=1130391)[0m   "timestamp": "2025-08-23T12:47:08.513667",
+[36m(train_multi_agents pid=1130391)[0m   "extra_data": {
+[36m(train_multi_agents pid=1130391)[0m     "turn_idx": 1,
+[36m(train_multi_agents pid=1130391)[0m     "agent_rewards": {
+[36m(train_multi_agents pid=1130391)[0m       "code_generator": [
+[36m(train_multi_agents pid=1130391)[0m         1.0,
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ],
+[36m(train_multi_agents pid=1130391)[0m       "test_generator": [
+[36m(train_multi_agents pid=1130391)[0m         0.0,
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ]
+[36m(train_multi_agents pid=1130391)[0m     },
+[36m(train_multi_agents pid=1130391)[0m     "env_state.ground_truth_test_vs_generated_code_match_ratio": 1.0
+[36m(train_multi_agents pid=1130391)[0m   }
+[36m(train_multi_agents pid=1130391)[0m }
+[36m(train_multi_agents pid=1130391)[0m INFO:2025-08-23 12:47:08,514:{
+[36m(train_multi_agents pid=1130391)[0m   "env_idx": 7,
+[36m(train_multi_agents pid=1130391)[0m   "rollout_idx": 29,
+[36m(train_multi_agents pid=1130391)[0m   "agent_rewards": "rollout_complete",
+[36m(train_multi_agents pid=1130391)[0m   "termination_reason": "Rollout 29 completed successfully",
+[36m(train_multi_agents pid=1130391)[0m   "timestamp": "2025-08-23T12:47:08.514206",
+[36m(train_multi_agents pid=1130391)[0m   "extra_data": {
+[36m(train_multi_agents pid=1130391)[0m     "turn_idx": 4,
+[36m(train_multi_agents pid=1130391)[0m     "agent_rewards": {
+[36m(train_multi_agents pid=1130391)[0m       "code_generator": [
+[36m(train_multi_agents pid=1130391)[0m         1.0,
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ],
+[36m(train_multi_agents pid=1130391)[0m       "test_generator": [
+[36m(train_multi_agents pid=1130391)[0m         0.0,
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ]
+[36m(train_multi_agents pid=1130391)[0m     },
+[36m(train_multi_agents pid=1130391)[0m     "env_state.ground_truth_test_vs_generated_code_match_ratio": 1.0
+[36m(train_multi_agents pid=1130391)[0m   }
+[36m(train_multi_agents pid=1130391)[0m }
+[36m(train_multi_agents pid=1130391)[0m 
+[36m(train_multi_agents pid=1130391)[0m Rollouts (1/128):   2%|▏         | 2/128 [00:47<42:22, 20.18s/it]  [A
+[36m(train_multi_agents pid=1130391)[0m Rollouts (2/128):   2%|▏         | 2/128 [00:47<42:22, 20.18s/it][A
+[36m(train_multi_agents pid=1130391)[0m         position_ids: Tensor(shape=torch.Size([4, 9216]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         prompts: Tensor(shape=torch.Size([4, 1024]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         response_mask: Tensor(shape=torch.Size([4, 8192]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         responses: Tensor(shape=torch.Size([4, 8192]), device=cpu, dtype=torch.int64, is_shared=False)},
+[36m(train_multi_agents pid=1130391)[0m     batch_size=torch.Size([4]),
+[36m(train_multi_agents pid=1130391)[0m     device=None,
+[36m(train_multi_agents pid=1130391)[0m     is_shared=False), non_tensor_batch={'rollout_idx': array([29, 29, 29, 29], dtype=object), 'turn_idx': array([0, 0, 1, 1], dtype=object), 'agent_idx': array([0, 1, 0, 1], dtype=object), 'reward': array([1., 0., 0., 1.]), 'agent_name': array(['code_generator', 'test_generator', 'code_generator',
+[36m(train_multi_agents pid=1130391)[0m        'test_generator'], dtype='<U14')}, meta_info={})
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:09 [async_llm.py:269] Added request 07319d31-ca42-4e60-9b8b-23ce41ebcc8a_bfef52b6.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 260
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:10 [async_llm.py:269] Added request 12777177-f9d1-4561-a8b2-cbf7c46a6520_b826660a.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 140 | 当前平均 prompt 长度=612.00, answer 长度=292.96 (基于 139 个成功请求)
+[36m(AgentLoopWorker pid=1162376)[0m INFO 08-23 12:47:14 [__init__.py:235] Automatically detected platform cuda.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:15 [async_llm.py:269] Added request b3554465-594d-497f-ae06-ed4e85525cba_324dedf3.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:15 [async_llm.py:269] Added request e0a04498-e477-45c7-988e-1fe18bd28b8e_6a404f98.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:15 [async_llm.py:269] Added request 36bedbd6-36f3-4e44-a59b-c892af5c55a6_32ab6ad7.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:15 [async_llm.py:269] Added request 1596c942-e8d5-4a64-965c-5ea62031ee9f_c4f0f820.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:15 [async_llm.py:269] Added request 44754524-05fc-4d35-b055-66414ec02465_3fede779.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:15 [async_llm.py:269] Added request 6592920d-d43f-4490-8d61-ed9862ec41ef_3b40c106.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:15 [async_llm.py:269] Added request bab94e97-e7ae-44a4-a1fc-8b8f4cd12e35_7ca885b7.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 160 | 当前平均 prompt 长度=619.94, answer 长度=315.77 (基于 159 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:16 [async_llm.py:269] Added request 40b876c5-0bb1-44f8-9553-1136ecc79d23_41ca4065.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:16 [async_llm.py:269] Added request 3d975bb4-948d-4651-9d62-25316d15f829_6f7aa5d0.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:16 [async_llm.py:269] Added request a90f012f-e526-4965-ae2c-42f146e6a5a9_f019aa30.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:16 [async_llm.py:269] Added request 083326c4-160e-4c74-b333-04b90a650ba9_664e822e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:16 [async_llm.py:269] Added request 1be167bd-f47b-4d4f-bb6a-67e78c5c8119_3250e216.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:16 [async_llm.py:269] Added request 0c95eccf-caa1-4f84-9c7a-5863fe83a425_6d6313d2.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:16 [async_llm.py:269] Added request ed6310b8-b492-4a9a-a676-0ff6f52dc279_5978a9fc.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:17 [async_llm.py:269] Added request 340b5185-9228-42cd-967a-c5e1b5e154e1_b381ab19.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:17 [async_llm.py:269] Added request e5418325-9802-43a0-8e8e-666a1b5f9f1c_e4d924ef.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:17 [async_llm.py:269] Added request bf02b052-c06c-4c7b-92d4-d4cf7003c2a4_1ca78aeb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:17 [async_llm.py:269] Added request 127c034d-3981-4c17-af0d-028a8117a882_e95c3c78.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:18 [async_llm.py:269] Added request d6782130-30f0-4263-9d1e-29845148b74d_6be930bc.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:18 [async_llm.py:269] Added request 22759cbb-0a3f-440f-8091-c2d13c72e65f_6e72a743.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:18 [async_llm.py:269] Added request 20c7a6fb-5178-4a5c-8069-30221bb55cf5_b06b5eba.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 280
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:19 [async_llm.py:269] Added request 634bf688-a627-4110-98d8-f09e886307c2_818640d8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:19 [async_llm.py:269] Added request dea76084-ffdb-4082-9fce-4d888e517149_e355421e.
+[36m(AgentLoopWorker pid=1154507)[0m INFO 08-23 12:47:16 [__init__.py:235] Automatically detected platform cuda.[32m [repeated 3x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:20 [async_llm.py:269] Added request 3cc87aa0-331b-42b1-8e2a-84f7450e994d_1e2c57a2.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:20 [async_llm.py:269] Added request 4c79663c-edf0-435e-a259-95b95e54a312_7cdca15d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:20 [async_llm.py:269] Added request 1619e03a-18f7-492d-a312-2add4e537f24_8bb97af6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:21 [async_llm.py:269] Added request 1b2dbd31-4356-40f9-ae12-93f233b65222_b85cb495.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:21 [async_llm.py:269] Added request 188e395e-1475-40c8-b354-e861fb2b3b08_aa0ccfea.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:21 [async_llm.py:269] Added request 3851524d-cb74-486e-92e7-9ed1722522c3_844003bd.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:22 [async_llm.py:269] Added request 7fb19704-2626-4dca-a02a-570a4d8a69fb_e645b2e8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:22 [async_llm.py:269] Added request 4f600e75-2552-40fd-a550-617d0e78c651_d89b69f6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:23 [async_llm.py:269] Added request d81fad8f-151c-4233-88bf-564d9fbd0b8e_9fac6c64.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:23 [async_llm.py:269] Added request a56f5483-dc01-4926-97de-4ad6f9953331_a9cfc8e5.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:24 [async_llm.py:269] Added request 2776f328-7c91-4e38-9561-bb200fb71461_150e4eb9.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:24 [async_llm.py:269] Added request 32635613-07f2-424f-b7d9-b61a926dd598_638d0495.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:24 [async_llm.py:269] Added request 0f379531-f26b-487b-a5b0-8f996d437b0e_baf0dd70.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:24 [async_llm.py:269] Added request bd9f2429-a74d-47fc-ac61-adabc14c9528_5cf1b60d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:24 [async_llm.py:269] Added request b4e4ae90-c3d9-4299-b299-d3da9840f5ee_298c019d.
+[36m(AgentLoopWorker pid=1162280)[0m INFO 08-23 12:47:23 [__init__.py:235] Automatically detected platform cuda.[32m [repeated 4x across cluster][0m
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 180 | 当前平均 prompt 长度=636.47, answer 长度=326.91 (基于 179 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request dd355348-972e-4b97-97ab-5aced5ededad_7a72fe69.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request 652f3cbc-c7bf-4be4-894c-521b4210fd12_a5572dac.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 300
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request 932e7add-a8f1-48f6-b4fd-bb5975a5f2f6_43d30de5.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request e8f1d111-d49e-4682-9cc6-619af312e16f_c9532061.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request 48b77f63-33c7-40ba-b39b-51e9e2f6413a_bb50246c.
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(train_multi_agents pid=1130391)[0m item code_execution_output: Ray task timed out after 15.0s
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request e634a43c-8ba0-40c0-b5fe-f1d2e088299c_c1035df3.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request 6f57817e-65bd-402b-aaa4-834be130ac87_cd21f5e4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request 0bddffb6-9d7c-4003-abff-a3b783fbcd8f_120988b1.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request 45491cd8-c702-4457-abb7-a4a6b1f1be59_c50a5da6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request 924c64d9-b8e4-41a7-a365-1ccdeb28ba49_2605d865.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request aef0fab7-4986-4c7f-ad40-35e978e4bbc5_5365d585.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:25 [async_llm.py:269] Added request 2bd84cdc-47a1-4944-a3d2-92eaa55c8c49_33a527fd.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:26 [async_llm.py:269] Added request 79893eaf-032a-4eba-a842-aa0d8bf8493c_fe744a55.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:26 [async_llm.py:269] Added request 34a09595-1b46-4ae4-bab9-f52d5b8786d3_463d9a3b.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:27 [async_llm.py:269] Added request e8a90e5b-0cde-4c7f-94f7-7acadb64ea56_4bab1cd2.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:27 [async_llm.py:269] Added request ed3eb562-2dc6-44ef-8eb0-5034623114b6_912d6612.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:27 [async_llm.py:269] Added request 5c59ae0c-87c1-4a43-8abd-9e7e9ca0dbac_b50202ce.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:27 [async_llm.py:269] Added request fc9e358e-15dd-46eb-8ec7-05e64bb3afa0_382f0cff.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 200 | 当前平均 prompt 长度=648.13, answer 长度=340.94 (基于 199 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:28 [async_llm.py:269] Added request c30a1f94-8551-4dc1-9009-062d7b9cb787_6209b259.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:28 [async_llm.py:269] Added request ae1be914-0cfe-4504-a079-e8f1e310742d_eeda204c.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 320
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:28 [async_llm.py:269] Added request db7b217f-9a70-4a83-90d8-7f1d5fb1197b_86ea0201.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:28 [async_llm.py:269] Added request 32770e7b-6ca3-4e01-aa20-23200a0f9fa6_13f37acf.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:28 [async_llm.py:269] Added request 6ecfb422-6bf0-4111-85e8-588aec358e71_c6a84a70.
+[36m(_RayDockerWorker pid=1170379)[0m printed_output: None (timeout)
+[36m(_RayDockerWorker pid=1170379)[0m printed_output: None (timeout)
+[36m(_RayDockerWorker pid=1170379)[0m printed_output: None (timeout)
+[36m(_RayDockerWorker pid=1170379)[0m printed_output: None (timeout)
+[36m(_RayDockerWorker pid=1170379)[0m printed_output: None (timeout)
+[36m(_RayDockerWorker pid=1170379)[0m printed_output: None (timeout)
+[36m(_RayDockerWorker pid=1170379)[0m printed_output: None (timeout)
+[36m(_RayDockerWorker pid=1170379)[0m printed_output: None (timeout)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:29 [async_llm.py:269] Added request 5ac66972-fb57-4aa8-948b-d09671bc2e3a_6370e701.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:29 [async_llm.py:269] Added request 4088d817-5832-481a-bd8d-6d69255e3a96_73d4e5bf.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:29 [async_llm.py:269] Added request 77ad4529-6fea-47d3-8cbd-c5f5b86c8491_2e3d8cb9.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:29 [async_llm.py:269] Added request 5ffb7f45-c3a7-4204-b242-ab899863de74_5d20e31e.
+[36m(AgentLoopWorker pid=1159160)[0m INFO 08-23 12:47:28 [__init__.py:235] Automatically detected platform cuda.[32m [repeated 4x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:30 [async_llm.py:269] Added request ee329a49-f77e-420b-9109-d7b34dac1f2a_6f0c62b0.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:31 [async_llm.py:269] Added request fd8a9754-d7d5-42b7-9e59-fba1303ff99c_ee3d62f9.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:31 [async_llm.py:269] Added request 2245f1f4-73bc-44f3-a426-d008bf181c55_d684af1e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:31 [async_llm.py:269] Added request d51c382b-c8a3-4af2-b8ea-b65d9224de7a_f0ad4dcb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:31 [async_llm.py:269] Added request 0fc2c546-d9d8-4d71-9c17-44462852a180_c0ddf80d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:31 [async_llm.py:269] Added request f6f24de3-a373-4ef7-b0f5-058cc9fe52b7_f03f8231.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:32 [async_llm.py:269] Added request dcb1d72b-abb9-4fdd-b950-0ec022c0e01b_ac9c181e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:32 [async_llm.py:269] Added request 8e182f26-1a78-4f53-8720-2baf66832aa8_96cd02ae.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:33 [async_llm.py:269] Added request e03e1bc5-e81f-451d-bc98-eadd1af123c5_39f37823.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 220 | 当前平均 prompt 长度=656.67, answer 长度=347.75 (基于 219 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:34 [async_llm.py:269] Added request c8758be6-f256-40c1-8c51-ec26dcbc69c8_995594d3.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:34 [async_llm.py:269] Added request 0e67a38e-9abc-45f0-9288-8ab398c4d8e0_88d66d7d.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:34 [async_llm.py:269] Added request d52418b8-69c1-43f0-9757-62858f0572c8_520ea002.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:34 [async_llm.py:269] Added request cced359b-be18-4ef0-b20c-63ca4fc9334f_8879979e.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:35 [async_llm.py:269] Added request 8eb4b6ac-ae38-42a3-abd8-6b8bf34bf290_b9b52022.
+[36m(AgentLoopWorker pid=1156260)[0m INFO 08-23 12:47:34 [__init__.py:235] Automatically detected platform cuda.[32m [repeated 3x across cluster][0m
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 340
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:35 [async_llm.py:269] Added request 8e66e6f1-6f59-48ee-8c24-8f19e8762a68_f38bfb21.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:35 [async_llm.py:269] Added request 65fd76fb-e350-4bbc-b0fe-087a51753300_937db1f7.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:35 [async_llm.py:269] Added request b61af82b-4d7d-4b63-96b0-a5c7ee675221_3e4a0ba9.
+[36m(train_multi_agents pid=1130391)[0m INFO:2025-08-23 12:47:40,398:{
+[36m(train_multi_agents pid=1130391)[0m   "env_idx": 11,
+[36m(train_multi_agents pid=1130391)[0m   "rollout_idx": 46,
+[36m(train_multi_agents pid=1130391)[0m   "agent_rewards": "success!!",
+[36m(train_multi_agents pid=1130391)[0m   "termination_reason": "Rollout 46 completed successfully",
+[36m(train_multi_agents pid=1130391)[0m   "timestamp": "2025-08-23T12:47:40.398423",
+[36m(train_multi_agents pid=1130391)[0m   "extra_data": {
+[36m(train_multi_agents pid=1130391)[0m     "turn_idx": 1,
+[36m(train_multi_agents pid=1130391)[0m     "agent_rewards": {
+[36m(train_multi_agents pid=1130391)[0m       "code_generator": [
+[36m(train_multi_agents pid=1130391)[0m         0.75,
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ],
+[36m(train_multi_agents pid=1130391)[0m       "test_generator": [
+[36m(train_multi_agents pid=1130391)[0m         0.6666666666666666,
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ]
+[36m(train_multi_agents pid=1130391)[0m     },
+[36m(train_multi_agents pid=1130391)[0m     "env_state.ground_truth_test_vs_generated_code_match_ratio": 1.0
+[36m(train_multi_agents pid=1130391)[0m   }
+[36m(train_multi_agents pid=1130391)[0m }
+[36m(train_multi_agents pid=1130391)[0m INFO:2025-08-23 12:47:40,402:{
+[36m(train_multi_agents pid=1130391)[0m   "env_idx": 11,
+[36m(train_multi_agents pid=1130391)[0m   "rollout_idx": 46,
+[36m(train_multi_agents pid=1130391)[0m   "agent_rewards": "rollout_complete",
+[36m(train_multi_agents pid=1130391)[0m   "termination_reason": "Rollout 46 completed successfully",
+[36m(train_multi_agents pid=1130391)[0m   "timestamp": "2025-08-23T12:47:40.399290",
+[36m(train_multi_agents pid=1130391)[0m   "extra_data": {
+[36m(train_multi_agents pid=1130391)[0m     "turn_idx": 4,
+[36m(train_multi_agents pid=1130391)[0m     "agent_rewards": {
+[36m(train_multi_agents pid=1130391)[0m       "code_generator": [
+[36m(train_multi_agents pid=1130391)[0m         0.75,
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ],
+[36m(train_multi_agents pid=1130391)[0m       "test_generator": [
+[36m(train_multi_agents pid=1130391)[0m         0.6666666666666666,
+[36m(train_multi_agents pid=1130391)[0m         1.0
+[36m(train_multi_agents pid=1130391)[0m       ]
+[36m(train_multi_agents pid=1130391)[0m     },
+[36m(train_multi_agents pid=1130391)[0m     "env_state.ground_truth_test_vs_generated_code_match_ratio": 1.0
+[36m(train_multi_agents pid=1130391)[0m   }
+[36m(train_multi_agents pid=1130391)[0m }
+[36m(train_multi_agents pid=1130391)[0m 
+[36m(train_multi_agents pid=1130391)[0m Rollouts (2/128):   2%|▏         | 3/128 [01:19<53:48, 25.83s/it][A
+[36m(train_multi_agents pid=1130391)[0m Rollouts (3/128):   2%|▏         | 3/128 [01:19<53:48, 25.83s/it][A
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:35 [async_llm.py:269] Added request e93787ab-c0e5-4cbd-841b-da6c5946b312_96552763.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:35 [async_llm.py:269] Added request 5cdb61c0-a914-46e5-96aa-456bac98fcaf_29964bcb.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:36 [async_llm.py:269] Added request 74521f2e-440f-45cf-972a-9e2560f56348_95c269e3.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:36 [async_llm.py:269] Added request 9d734491-c8a5-49b7-8348-89d53afcf980_ba25cb0c.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:36 [async_llm.py:269] Added request d7bd600e-1327-47d8-97ed-a1fcaafee470_d9da1676.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:36 [async_llm.py:269] Added request c68907f0-9ac5-42f5-8f9c-68a16b82b202_236914c6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:36 [async_llm.py:269] Added request dd3b79bb-daa2-4931-a39f-28abdfa81076_3f6b0b37.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:36 [async_llm.py:269] Added request a0e8aefa-418e-40f6-82e7-0494d6b2cf69_62906b12.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:37 [async_llm.py:269] Added request edc3666a-e6a4-40c9-9ffa-fdbdc0ff8974_e8c55ae8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:37 [async_llm.py:269] Added request f1416a2f-850f-4ef9-9aac-61011ff3f760_0cc6e6dc.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:37 [async_llm.py:269] Added request cdf2296a-9cb5-4b7b-90ba-ef040c50fb23_50089778.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 240 | 当前平均 prompt 长度=667.66, answer 长度=358.64 (基于 239 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:37 [async_llm.py:269] Added request d0685fbe-5524-427e-af64-21b4cf80903a_995fdd57.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:37 [async_llm.py:269] Added request 44158c2e-8c47-4147-a851-6c02704f71c2_57d2be99.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:37 [async_llm.py:269] Added request d78019f5-ea67-42a5-ab22-eb842028abb9_f4684dc8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:38 [async_llm.py:269] Added request 013e9f44-1ab9-4296-b275-5528897fb996_d00b6d0a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:38 [async_llm.py:269] Added request dc4aeadc-b3ca-43a3-8f29-5f9d4b37518e_757f2f66.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:38 [async_llm.py:269] Added request 4cbfd7eb-85a8-4c53-b90a-3ea5e5681003_6a9fa87e.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 360
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:38 [async_llm.py:269] Added request c1e5db71-e58a-4c25-a346-b0017470d9b9_e04f37e0.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:38 [async_llm.py:269] Added request 956fd8b6-2141-49d8-b6b8-d303eaa15a89_6eb2a600.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:39 [async_llm.py:269] Added request 25377e5a-9856-4427-9553-146bec9b2645_a1e37089.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:39 [async_llm.py:269] Added request 5a45eeaa-9ba3-4316-931d-6da98451fc5b_c7c8b38c.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:39 [async_llm.py:269] Added request 7728950e-d127-41fd-9ecd-cff736ecc13f_1f42e91c.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:39 [async_llm.py:269] Added request d694bd07-8376-4c82-aff1-6e4dad182b05_b33e866c.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:39 [async_llm.py:269] Added request ca5bf98b-65c3-405c-a52e-666a002779c8_ef75e1d6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:39 [async_llm.py:269] Added request ec201215-1bad-48f8-8aa2-4193d3190557_cb99a82e.
+[36m(AgentLoopWorker pid=1163964)[0m INFO 08-23 12:47:40 [__init__.py:235] Automatically detected platform cuda.[32m [repeated 5x across cluster][0m
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:40 [async_llm.py:269] Added request bf8e7be5-24e1-4e0e-abf0-cec3d274ce08_61e415c7.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:40 [async_llm.py:269] Added request caf2d962-3c66-4aae-8f5c-b152253f70dd_9cd46700.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:40 [async_llm.py:269] Added request 5a8463a8-f80d-4401-8fd4-fc09fe5dd8d9_3f1e699a.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:40 [async_llm.py:269] Added request 7d4e6106-9399-483a-a537-b3e6b668728b_283643ff.
+[36m(train_multi_agents pid=1130391)[0m DataProto(batch=TensorDict(
+[36m(train_multi_agents pid=1130391)[0m     fields={
+[36m(train_multi_agents pid=1130391)[0m         attention_mask: Tensor(shape=torch.Size([4, 9216]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         input_ids: Tensor(shape=torch.Size([4, 9216]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         position_ids: Tensor(shape=torch.Size([4, 9216]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         prompts: Tensor(shape=torch.Size([4, 1024]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         response_mask: Tensor(shape=torch.Size([4, 8192]), device=cpu, dtype=torch.int64, is_shared=False),
+[36m(train_multi_agents pid=1130391)[0m         responses: Tensor(shape=torch.Size([4, 8192]), device=cpu, dtype=torch.int64, is_shared=False)},
+[36m(train_multi_agents pid=1130391)[0m     batch_size=torch.Size([4]),
+[36m(train_multi_agents pid=1130391)[0m     device=None,
+[36m(train_multi_agents pid=1130391)[0m     is_shared=False), non_tensor_batch={'rollout_idx': array([46, 46, 46, 46], dtype=object), 'turn_idx': array([0, 0, 1, 1], dtype=object), 'agent_idx': array([0, 1, 0, 1], dtype=object), 'reward': array([0.75      , 0.66666667, 0.25      , 0.33333333]), 'agent_name': array(['code_generator', 'test_generator', 'code_generator',
+[36m(train_multi_agents pid=1130391)[0m        'test_generator'], dtype='<U14')}, meta_info={})
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:41 [async_llm.py:269] Added request 13615de2-21cd-4973-934d-b7a26d1868e0_a3074eac.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已完成请求数达到 260 | 当前平均 prompt 长度=672.71, answer 长度=365.16 (基于 259 个成功请求)
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:41 [async_llm.py:269] Added request 7a42de80-7144-4634-b018-3976b6f48577_a6dc66cc.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:42 [async_llm.py:269] Added request 8dc87fcd-4860-4734-8f98-9a80a48756bb_422405fc.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:42 [async_llm.py:269] Added request 8bcf78c8-c2ba-4510-bfde-8580b9bbd29e_1479c2c4.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:42 [async_llm.py:269] Added request cf9f4983-4588-460f-9a68-2bad8a72a0da_167be1be.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:43 [async_llm.py:269] Added request f9475d54-2645-4f6d-b436-0e3d0186dc5d_e29b7534.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:43 [async_llm.py:269] Added request d6509ba2-0c2e-4ee3-9218-707b54fcec65_92acaa00.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:43 [async_llm.py:269] Added request 77c645ec-4b84-436c-b8e6-c51dec552700_e96df0b8.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:43 [async_llm.py:269] Added request 576a94cb-b2d5-47e0-9660-43e9a6e23196_5f4b2274.
+[36m(train_multi_agents pid=1130391)[0m [AsyncLLMServerManager] 已发送请求数达到 380
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:44 [async_llm.py:269] Added request 0c22429e-0aea-4949-9b38-7ac2b7f172e1_8680aaf1.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:44 [async_llm.py:269] Added request 20a78284-52db-48ef-a0d7-1bd9790f27ad_fecf8e68.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:44 [async_llm.py:269] Added request ebeb9e5d-4242-4e3d-9029-49dbb927b193_d6599fa6.
+[36m(AsyncvLLMServer pid=1149347)[0m INFO 08-23 12:47:44 [async_llm.py:269] Added request aa9aaa8a-e5c9-4b59-a217-43d987c2899c_d634d18e.

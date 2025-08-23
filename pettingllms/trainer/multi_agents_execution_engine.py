@@ -145,6 +145,7 @@ class MultiAgentsExecutionEngine:
                 else:
                     self.sample_num *= 1
                     self.sample_num_list.append(1)
+        self.filter_ratio=self.config.data.filter_ratio
         print(f"sample_num: {self.sample_num}")
         print(f"sample_num_list: {self.sample_num_list}")
         print(f"agent_config_dict keys: {list(self.agent_config_dict.keys())}")
@@ -872,11 +873,11 @@ class MultiAgentsExecutionEngine:
         self.multi_logger.log_ray_status(context="after_concurrent_batch")
         
         # 为 aggregated_results 分配基于 rollout_idx, turn_idx, agent_idx 的相同 uid
-        aggregated_results = self._assign_consistent_uids(aggregated_results)
+        aggregated_results = self._assign_consistent_uids(aggregated_results,filter_ratio=self.filter_ratio)
         
         return aggregated_results
     
-    def _assign_consistent_uids(self, aggregated_results, filter_ratio=0.0):
+    def _assign_consistent_uids(self, aggregated_results,filter_ratio=0.0):
         import uuid
         import numpy as np
         from collections import defaultdict

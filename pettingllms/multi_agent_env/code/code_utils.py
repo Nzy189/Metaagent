@@ -25,6 +25,7 @@ import contextlib
 import textwrap
 import traceback as _traceback
 import errno
+import signal
 import ray
 from typing import Any
 def _stdin_from_input_val_like_inproc(input_val: Any) -> str:
@@ -307,48 +308,63 @@ async def _worker_docker(
     tmpdir = tempfile.mkdtemp(prefix="pllm_exec_")
     script_path = os.path.join(tmpdir, "script.py")
     try:
-        # 写入脚本到临时文件
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script)
 
         stdin_text = _stdin_from_input_val_like_inproc(input_val)
-        
+        proc = await asyncio.create_subprocess_exec(
+            "python", script_path,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=tmpdir,
+            start_new_session=True,
+        )
         try:
-            # 直接使用 python 命令执行，不使用 Docker
-            cmd = ["python", script_path]
-            
-            # 使用 subprocess.run 直接执行
-            result = await asyncio.to_thread(
-                subprocess.run,
-                cmd,
-                input=stdin_text,
-                capture_output=True,
-                text=True,
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=stdin_text.encode()),
                 timeout=timeout,
-                cwd=tmpdir  # 设置工作目录
             )
-            
-            if result.returncode == 0:
-                printed_output = result.stdout
+            rc = proc.returncode
+            if rc == 0:
+                printed_output = stdout.decode()
             else:
-                # 归并到 error 输出
-                err_text = result.stderr.strip()
-                out_text = result.stdout.strip()
+                err_text = (stderr or b"").decode().strip()
+                out_text = (stdout or b"").decode().strip()
                 combined = err_text or out_text
-                # 压缩 Traceback：仅取最后一行错误摘要
                 if "Traceback (most recent call last):" in combined:
                     last_line = combined.strip().splitlines()[-1]
                     combined = last_line
-                printed_output = f"error: exit {result.returncode}: {combined}"
-                
-        except (asyncio.TimeoutError, subprocess.TimeoutExpired):
+                printed_output = f"error: exit {rc}: {combined}"
+        except asyncio.TimeoutError:
+            # 超时：整组杀死
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            try:
+                await proc.wait()
+            except Exception:
+                pass
             printed_output = None
-            print(f"printed_output: {printed_output}")
-
-        except FileNotFoundError as e:
-            # python 不存在
-            printed_output = f"error: python not found: {e}"
+            print("printed_output: None (timeout)")
         except Exception as e:
+            # 其他异常：尽力清理子进程
+            try:
+                if proc.returncode is None:
+                    os.killpg(proc.pid, signal.SIGKILL)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            try:
+                await proc.wait()
+            except Exception:
+                pass
             printed_output = f"error: {e}"
 
     finally:
@@ -432,15 +448,11 @@ async def evaluate_code_against_tests(
             # 规范化 actor 列表
             actors = [ray_actor]
 
-            #print(f"rollout_idx: {rollout_idx} the length of actors: {len(actors)}")
             obj_refs = []
-            # 获取 actor 的 idx（异步调用）
+  
 
             actor_idx = ray.get(ray_actor.get_idx.remote())
-                #print(f"begin to run code for rollout_idx: {rollout_idx}, the idx of actor: {actor_idx}")
-        
             for i in range(total_tests):
-                # 确保 rollout_idx 不为 None，如果为 None 则使用 0
                 safe_rollout_idx = rollout_idx if rollout_idx is not None else 0
                 actor = actors[safe_rollout_idx % len(actors)]
                 obj_refs.append(
@@ -448,13 +460,11 @@ async def evaluate_code_against_tests(
                 )
             
             async_tasks = [
-                _await_ray_object_ref(obj_ref, timeout + 5.0)
+                _await_ray_object_ref(obj_ref, timeout - 5.0)
                 for obj_ref in obj_refs
-            ]
-            
-            
+            ]        
             results_or_exc = await asyncio.gather(*async_tasks, return_exceptions=True)
-            #print(f"end to run code for rollout_idx: {rollout_idx}")
+
 
             processed_results: List[Dict[str, Any]] = []
             for i, item in enumerate(results_or_exc):
@@ -472,7 +482,6 @@ async def evaluate_code_against_tests(
             results = processed_results
         except Exception as e:
             print(f"Ray execution failed, falling back to docker: {e}")
-            # 添加更好的错误处理和日志记录
             try:
                 # 确保所有参数都是有效的
                 if not isinstance(code, str):
@@ -685,17 +694,6 @@ def get_ray_docker_worker_cls():
                 image: str = "python:3.11-slim",
             ) -> Dict[str, Any]:
                 
-                # 添加参数验证
-                if not isinstance(script, str):
-                    script = str(script) if script is not None else ""
-                if not isinstance(input_val, str):
-                    input_val = str(input_val) if input_val is not None else ""
-                if not isinstance(expected_output, str):
-                    expected_output = str(expected_output) if expected_output is not None else ""
-                if not isinstance(timeout, (int, float)):
-                    timeout = 10.0
-                if not isinstance(image, str):
-                    image = "python:3.11-slim"
                 
                 try:
                     return await _worker_docker(

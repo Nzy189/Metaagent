@@ -17,7 +17,7 @@ from verl.workers.fsdp_workers import ActorRolloutRefWorker, AsyncActorRolloutRe
 # Local application imports
 from pettingllms.trainer.multi_agents_ppo_trainer import MultiAgentsPPOTrainer
 from verl.trainer.ppo.reward import load_reward_manager
-
+import multiprocessing
 
 def force_kill_ray_processes():
     try:
@@ -150,8 +150,7 @@ def main(config: DictConfig):
 def run_ppo(config):
     try:
         if not ray.is_initialized():
-            # this is for local ray cluster
-            import multiprocessing
+            
             num_cpus = int(os.getenv("RAY_NUM_CPUS", multiprocessing.cpu_count()))
             ray.init(
                 num_cpus=num_cpus,
@@ -165,7 +164,6 @@ def run_ppo(config):
         emergency_cleanup()
         raise e
     finally:
-        # 确保在函数退出时清理 Ray
         print("Executing cleanup in run_ppo...")
         try:
             emergency_cleanup()
@@ -173,7 +171,7 @@ def run_ppo(config):
             pass
 
 
-@ray.remote(num_cpus=1)  # please make sure main_task is not scheduled on head
+@ray.remote(num_cpus=int(os.getenv("RAY_NUM_CPUS", multiprocessing.cpu_count())))
 def train_multi_agents(config):
     # print initial config
     from pprint import pprint
@@ -195,7 +193,7 @@ def train_multi_agents(config):
     tokenizer_dict = {}
     processor_dict = {}
     ppo_trainer_config_dict = {}
-    
+
     # Check if we have models configuration for multi-model training
     if hasattr(config, 'models') and config.models is not None:
         print("Multi-model training mode detected")
