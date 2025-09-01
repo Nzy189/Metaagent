@@ -294,17 +294,6 @@ class MultiAgentsExecutionEngine:
         agent_group = []
         for agent_name in self.turn_order:
             agent_group.append(self.agent_groups_dict[agent_name][rollout_idx])
-
-
-        self.multi_logger.log_async_event(env_idx,
-            rollout_idx, "rollout_start", 
-            f"Starting multi-turn conversation, max turns: {self.max_turns}",
-            {
-                "turn_order": self.turn_order,
-                "available_tokenizers": list(self.tokenizer_dict.keys()),
-                "available_server_addresses": list(self.server_address_dict.keys())
-            }
-        )
         
         for turn_idx in range(self.max_turns):
             self.multi_logger.log_async_event(
@@ -325,7 +314,8 @@ class MultiAgentsExecutionEngine:
                         self.max_prompt_length,
                         multi_modal=False
                    )
-                
+                if format_prompt.batch is None:
+                    return None
                 ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
                 model_path=ppo_trainer_config.actor_rollout_ref.model.path
                 model_name = "/".join(model_path.split("/")[-2:])
@@ -382,8 +372,8 @@ class MultiAgentsExecutionEngine:
                         current_agent.agent_reward = 0.0
                     current_agent.reward_history.append(0.0)
                 if output_dpr is not None:
-                    output_dpr.non_tensor_batch["reward"] = [current_agent.agent_reward]
-                    output_dpr.non_tensor_batch["agent_name"] = [agent_name]  # Add agent name for metrics tracking
+                    output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
+                    output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)  # Add agent name for metrics tracking
                
                     if trajectory_per_task_dict[policy_name].batch is None:
                         # If empty, assign directly
@@ -516,13 +506,8 @@ class MultiAgentsExecutionEngine:
                     current_agent = self.agent_groups_dict[agent_name][env_idx][sample_idx]
                     current_agent.update_from_env(self.envs[self.agent_rollout_mapping[env_idx][agent_name][sample_idx][0]])
                     prompt = current_agent.current_prompt
-                
                     # Select the policy name; if not provided, fall back to any available policy
-                    policy_name = self.agent_policy_mapping.get(agent_name) if self.agent_policy_mapping else None
-                    if policy_name is None:
-                        policy_name = next(iter(self.server_manager_dict.keys())) if self.server_manager_dict else next(iter(self.tokenizer_dict.keys()))
-                
-
+                    policy_name = self.agent_policy_mapping.get(agent_name)
                     # Convert to DataProto format
                     dpr_prompt = convert_prompt_to_dpr(self.tokenizer_dict[policy_name], 
                             self.processor_dict.get(policy_name) if isinstance(self.processor_dict, dict) else None,
@@ -687,8 +672,8 @@ class MultiAgentsExecutionEngine:
                     policy_name = result['policy_name']
                     # Only process trajectory if both generation and step succeeded
                     if output_dpr is not None:
-                        output_dpr.non_tensor_batch["reward"] = [current_agent.agent_reward]
-                        output_dpr.non_tensor_batch["agent_name"] = [agent_name]  # Add agent name for metrics tracking
+                        output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
+                        output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)  # Add agent name for metrics tracking
                     
                         if trajectory_per_task_dict[policy_name].batch is None:
                             # If empty, assign directly
@@ -778,6 +763,9 @@ class MultiAgentsExecutionEngine:
         concurrent_timer.start(f"Starting concurrent rollouts for {len(rollout_indices)} rollouts")
         
         max_concurrent_tasks=self.max_workers
+        empty_result = {}
+        for policy_name in self.tokenizer_dict.keys():
+            empty_result[policy_name] = DataProto()
         
         semaphore = asyncio.Semaphore(max_concurrent_tasks)
         
@@ -785,7 +773,11 @@ class MultiAgentsExecutionEngine:
             start_time = time.perf_counter()
             try:
                 result = await self.generate_single_rollout(rollout_idx)
-                return result
+                if result is None:
+                
+                    return empty_result
+                else:
+                    return result
             except Exception as e:
                 # Log the error but don't raise it, let the caller handle it
                 self.multi_logger.log_async_event(
@@ -793,10 +785,6 @@ class MultiAgentsExecutionEngine:
                     f"Rollout {rollout_idx} failed: {e}",
                     {"error": str(e), "rollout_idx": rollout_idx}
                 )
-                # Return empty result instead of raising
-                empty_result = {}
-                for policy_name in self.tokenizer_dict.keys():
-                    empty_result[policy_name] = DataProto()
                 return empty_result
             finally:
                 try:
@@ -926,7 +914,7 @@ class MultiAgentsExecutionEngine:
         concurrent_timer.end("Concurrent rollouts completed successfully")
         return aggregated_results
     
-    def _assign_consistent_uids(self, aggregated_results,filter_ratio=0.0, mode="dapo"):
+    def _assign_consistent_uids(self, aggregated_results,filter_ratio=0.0, mode="mean"):
         import uuid
         import numpy as np
         from collections import defaultdict
@@ -979,12 +967,12 @@ class MultiAgentsExecutionEngine:
         if filter_ratio > 0:
             # calculate the variance of each uid group
             if mode == "dapo":
-                uids_to_remove = set()
+                uids_to_remove = []
                 for uid, samples in uid_reward_groups.items():
                     rewards_in_group = [s[2] for s in samples]
                     variance = range_normalized_variance(rewards_in_group)
                     if variance==0:
-                        uids_to_remove.add(uid)
+                        uids_to_remove.append(uid)
                 for uid in uids_to_remove:
                     if uid in uid_reward_groups:
                         for sample_idx, policy_name, reward_val in uid_reward_groups[uid]:
@@ -1052,7 +1040,7 @@ class MultiAgentsExecutionEngine:
                             if isinstance(value, np.ndarray):
                                 data_proto.non_tensor_batch[key] = value[keep_indices]
                             elif hasattr(value, '__getitem__'):
-                                data_proto.non_tensor_batch[key] = [value[i] for i in keep_indices]
+                                data_proto.non_tensor_batch[key] = np.array([value[i] for i in keep_indices], dtype=object)
         
         if all_rewards:
             summary = {

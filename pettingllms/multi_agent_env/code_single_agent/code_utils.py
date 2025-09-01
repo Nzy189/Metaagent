@@ -455,7 +455,7 @@ async def _worker_docker(
         print(f"_worker_docker 执行异常: {e}")
 
     finally:
-        # 无论如何都要清理临时目录
+        shutil.rmtree(tmpdir, ignore_errors=True)
         cleanup_tmpdir()
 
     if_passed = await test_if_eq(printed_output, str(expected_output)) if printed_output is not None else False
@@ -597,8 +597,7 @@ async def evaluate_code_against_tests(
                     ) for i in range(total_tests)
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # 处理可能的异常结果
+             
                 processed_results = []
                 for i, result in enumerate(results):
                     if isinstance(result, Exception):

@@ -67,8 +67,8 @@ class UnitTestGenerationAgent(Agent):
 
         question = getattr(state, "problem", None)
         current_code = getattr(state, "generated_code", None)
-        mismatch_cases = getattr(state, "ground_truth_test_vs_generated_code_mismatch_cases", None)
-        match_cases = getattr(state, "ground_truth_test_vs_generated_code_match_cases", None)
+        mismatch_cases = getattr(state, "generated_test_vs_generated_code_mismatch_cases", None)
+        match_cases = getattr(state, "generated_test_vs_generated_code_match_cases", None)
         formatted_prompt_for_match_cases = ""
         formatted_prompt_for_mismatch_cases = ""
         if match_cases is not None:

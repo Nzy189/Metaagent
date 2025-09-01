@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from pettingllms.multi_agent_env.base.env import MultiAgentsEnvironment
 from pettingllms.utils.logger_config import get_multi_logger
-import alfworld.agents.environment as env_mod
-
+from alfworld.agents.environment import get_environment
+from .utils import load_config_file
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -24,9 +24,6 @@ class AlfWorldState:
 
 class AlfWorldEnv(MultiAgentsEnvironment):
     """
-    兼容多种 ALFWorld 封装差异的轻量环境包装：
-      - 通过整数 task_id 指向具体任务
-      - reset() 前尽力把底层 env 切到指定任务（set_task_id/属性/重置入参等多种回退）
     """
     def __init__(
         self,
@@ -44,11 +41,7 @@ class AlfWorldEnv(MultiAgentsEnvironment):
 
         self._split = split or self._get_from_config(config, ["env", "split"], default="train")
         self._task_id = task_id if task_id is not None else env_idx
-
-        # 加载原生 ALFWorld 环境
         self._load_raw_env(config)
-
-        # 采集可用任务列表（尽量兼容不同实现）
         self._task_count, self._task_indexer = self._introspect_tasks(self.raw_env)
 
         # 归一化 task_id 到合法范围（允许超界循环）
@@ -64,9 +57,7 @@ class AlfWorldEnv(MultiAgentsEnvironment):
         task_type = self._get_from_config(config, ["env", "task_type"], default=None)
         reward_type = self._get_from_config(config, ["env", "reward_type"], default="dense")
         extra = self._get_from_config(config, ["env", "kwargs"], default={}) or {}
-
-        # 官方推荐入口
-        self.raw_env = env_mod.load_env(split=split, task_type=task_type, reward=reward_type, **extra)
+        self.raw_env = get_environment("AlfredTWEnv")(split=split, task_type=task_type, reward=reward_type, **extra)
 
     @staticmethod
     def _get_from_config(cfg: Optional[dict], path: List[str], default=None):
@@ -237,12 +228,7 @@ from typing import List
 
 class AlfWorldEnvBatch:
     """
-    需求：
-      1) train：按 env_idx_list 的个数加载任务；保持传入的 samples。
-      2) validate：加载验证集的全部任务；强制 samples=1；rollout_idx_list=range(总任务数)。
-    约定：
-      - config["env"]["split"] 用作默认 split；Batch 内会根据 mode 覆盖为 "train"/"valid"。
-      - 任务编号即整数序号（0..N-1），以 ALFWorld 的 valid 集总量为准。
+   
     """
     def __init__(
         self,
@@ -256,6 +242,8 @@ class AlfWorldEnvBatch:
         env_workers: List = None,
     ):
         self.mode = mode
+        alf_config_path = "pettingllms/multi_agent_env/alfworld/configs/config_tw.yaml"
+        config = load_config_file(alf_config_path)
         base_split = (config or {}).get("env", {}).get("split", "train")
         split = "valid" if mode in ("validate", "test") else "train"
 
@@ -270,9 +258,7 @@ class AlfWorldEnvBatch:
         )
         total_tasks = max(_probe_env._task_count, 0)
 
-        # 组装任务索引列表
         if mode == "train":
-            # 训练集：按请求数量取前 K 个任务
             k = len(env_idx_list)
             if total_tasks > 0:
                 task_ids = list(range(min(k, total_tasks)))

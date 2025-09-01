@@ -18,7 +18,7 @@ data:
   resample_freq: 10
 
   # Batch sizes
-  train_batch_size: 32
+  train_batch_size: 128
   val_batch_size: 32
   
   # Sequence lengths

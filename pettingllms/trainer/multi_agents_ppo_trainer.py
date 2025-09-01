@@ -604,31 +604,7 @@ class MultiAgentsPPOTrainer:
             # Standard data and timing metrics
             #metrics.update(compute_data_metrics(batch=first_batch, use_critic=any(trainer.use_critic for trainer in self.ppo_trainer_dict.values())))
             #metrics.update(compute_timing_metrics(batch=first_batch, timing_raw=timing_raw))
-            
-            # Agent-specific data metrics if available
-            if hasattr(first_batch, 'non_tensor_batch') and 'agent_name' in first_batch.non_tensor_batch:
-                agent_names = first_batch.non_tensor_batch['agent_name']
-                unique_agents = list(set(agent_names))
-                
-                for agent_name in unique_agents:
-                    # Create a mask for this agent's data
-                    agent_mask = np.array([name == agent_name for name in agent_names])
-                    if np.any(agent_mask):
-                        # Extract data for this agent
-                        agent_batch_data = {}
-                        for key, value in first_batch.batch.items():
-                            if isinstance(value, torch.Tensor) and len(value) == len(agent_names):
-                                agent_batch_data[key] = value[agent_mask]
-                        
-                        if agent_batch_data:
-                            # Create a temporary batch for this agent
-                            agent_batch = DataProto.from_dict(agent_batch_data)
-                            agent_data_metrics = compute_data_metrics(batch=agent_batch, use_critic=any(trainer.use_critic for trainer in self.ppo_trainer_dict.values()))
-                            
-                            # Add agent prefix to metrics
-                            for key, value in agent_data_metrics.items():
-                                metrics[f"agent_{agent_name}_data/{key}"] = value
-            
+                    
             # Add training step metrics
             metrics.update({
                 "training/global_step": self.global_steps,

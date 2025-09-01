@@ -348,6 +348,8 @@ def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, mult
 
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask", torch.ones_like(input_ids))
+        if len(input_ids) >= 2048:
+            return None
 
         # Multimodal (optional): depends on externally provided processor
         multi_modal_inputs = None
@@ -386,7 +388,7 @@ def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, mult
         meta_info = kwargs.get("meta_info")
         if meta_info:
             data.meta_info = union_two_dict(data.meta_info, meta_info)
-
+        
         return data
     finally:
         tokenizer.padding_side = old_padding_side
