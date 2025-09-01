@@ -421,6 +421,29 @@ def extract_boxed_answer(solution: str) -> str:
     return solution
 
 
+def extract_hash_answer(solution: str) -> str:
+    """Extract the answer after #### marker"""
+    if "####" not in solution:
+        return None
+    
+    # Find the last occurrence of ####
+    idx = solution.rfind("####")
+    if idx < 0:
+        return None
+    
+    # Extract everything after ####
+    answer_part = solution[idx + 4:].strip()
+    
+    # Split by lines and take the first non-empty line as the answer
+    lines = answer_part.split('\n')
+    for line in lines:
+        line = line.strip()
+        if line:
+            return line
+    
+    return None
+
+
 def grade_answer_sympy(given_answer: str, ground_truth: str) -> bool:
     ground_truth_normalized = _normalize(ground_truth)
     given_normalized = _normalize(given_answer)
@@ -468,16 +491,18 @@ def grade_answer_mathd(given_answer: str, ground_truth: str) -> bool:
     return False
 
 
-def extract_answer(passage: str) -> str:
-    if "\\boxed" in passage:
-        return extract_boxed_answer(passage)
-    return None
-
+def extract_answer(solution_str):
+    solution = re.search("#### (\\-?[0-9\\.\\,]+)", solution_str)
+    assert solution is not None
+    final_solution = solution.group(0)
+    final_solution = final_solution.split("#### ")[1].replace(",", "")
+    return final_solution
 
 def grade_answer_verl(solution_str, ground_truth):
     if not ground_truth:
         return False
-    if "\\boxed" in ground_truth:
+    # Extract ground truth answer if it's in boxed or hash format
+    if "\\boxed" in ground_truth or "####" in ground_truth:
         ground_truth = extract_answer(ground_truth)
     given_answer = extract_answer(solution_str)
     if given_answer is None:

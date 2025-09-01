@@ -249,7 +249,6 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 python-json-logger==3.3.0
 python-multipart==0.0.20
-pytorch-triton==3.2.0+git4b3bb1f8
 pytz==2025.2
 PyYAML==6.0.2
 pyzmq==27.0.1
@@ -331,7 +330,7 @@ unidiff==0.7.5
 urllib3==2.5.0
 uvicorn==0.35.0
 uvloop==0.21.0
--e git+https://github.com/volcengine/verl.git@92e81cfcfd7c5a088032c78f2c80b4fc32b88119#egg=verl&subdirectory=../../verl
+-e git+https://github.com/volcengine/verl.git@92e81cfcfd7c5a088032c78f2c80b4fc32b88119#egg=verl
 vertexai==1.71.1
 virtualenv==20.34.0
 vllm==0.10.0

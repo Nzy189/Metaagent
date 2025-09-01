@@ -17,11 +17,12 @@ from verl.workers.fsdp_workers import ActorRolloutRefWorker, AsyncActorRolloutRe
 # Local application imports
 from pettingllms.trainer.multi_agents_ppo_trainer import MultiAgentsPPOTrainer
 from verl.trainer.ppo.reward import load_reward_manager
-import multiprocessing
+from pettingllms.utils.simpler_timer import create_timer, timer_checkpoint
 
 def force_kill_ray_processes():
     try:
         print("Force killing Ray processes...")
+        # 杀死所有 Ray 相关进程
         commands = [
             ['pkill', '-9', '-f', 'ray'],
             ['pkill', '-9', '-f', 'raylet'],
@@ -42,13 +43,11 @@ def force_kill_ray_processes():
 
 
 def cleanup_ray():
-    """清理 Ray 资源 - 强制版本"""
     print("\n" + "="*50)
     print("STARTING RAY CLEANUP...")
     print("="*50)
     
     try:
-        # 方法1: 正常关闭
         if ray.is_initialized():
             print("Step 1: Attempting normal Ray shutdown...")
             try:
@@ -62,117 +61,87 @@ def cleanup_ray():
     except Exception as e:
         print(f"Error checking Ray status: {e}")
     
-    # 方法2: 强制杀死进程
-    try:
-        print("Step 2: Force killing Ray processes...")
-        force_kill_ray_processes()
-        time.sleep(1)
-    except Exception as e:
-        print(f"Error in force kill: {e}")
-    
-    # 方法3: 清理环境变量
-    try:
-        print("Step 3: Cleaning Ray environment...")
-        ray_env_vars = [key for key in os.environ.keys() if key.startswith('RAY_')]
-        for var in ray_env_vars:
-            del os.environ[var]
-        print(f"Cleared {len(ray_env_vars)} Ray environment variables")
-    except Exception as e:
-        print(f"Error cleaning environment: {e}")
-    
-    print("="*50)
-    print("RAY CLEANUP COMPLETED")
-    print("="*50)
-
 
 def signal_handler(signum, frame):
-    """信号处理器，在接收到终止信号时清理资源"""
     print(f"Received signal {signum}, cleaning up...")
     cleanup_ray()
     sys.exit(1)
 
 
-# 多重清理机制
-def emergency_cleanup():
-    """紧急清理 - 确保无论如何都要关闭 Ray"""
-    try:
-        cleanup_ray()
-    except:
-        # 如果正常清理失败，直接强制杀死进程
-        try:
-            force_kill_ray_processes()
-        except:
-            pass
 
-
-# 注册多个清理函数确保一定执行
-atexit.register(emergency_cleanup)
 atexit.register(cleanup_ray)
-
-# 注册信号处理器
 signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
-signal.signal(signal.SIGTERM, signal_handler)  # 终止信号
+signal.signal(signal.SIGTERM, signal_handler)  # Terminate signal
 
-# 尝试注册更多信号处理器（如果系统支持）
 try:
     signal.signal(signal.SIGQUIT, signal_handler)  # Quit
     signal.signal(signal.SIGHUP, signal_handler)   # Hangup
 except (AttributeError, OSError):
-    pass  # 某些信号在某些系统上不可用
+    pass  # Some signals are not available on some systems
 
 
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
 def main(config: DictConfig):
+    main_timer = create_timer("MainTraining")
+    main_timer.start("Starting main training function")
+    
     try:
+        main_timer.checkpoint("Loading config")
         OmegaConf.to_yaml(config)
-        #print(config.models.model_0.ppo_trainer_config.actor_rollout_ref.model.path)
-        #print(config.models.model_1.ppo_trainer_config.actor_rollout_ref.model)
-        #print(config.models.model_0.ppo_trainer_config)
-
+        main_timer.checkpoint("Config loaded, starting PPO training")
         run_ppo(config)
+        main_timer.checkpoint("PPO training completed")
     except KeyboardInterrupt:
+        main_timer.checkpoint("Training interrupted by user (Ctrl+C)")
         print("\nTraining interrupted by user (Ctrl+C)")
-        emergency_cleanup()
+        cleanup_ray()
         sys.exit(1)
     except Exception as e:
+        main_timer.checkpoint("Training failed with unexpected error")
         print(f"Training failed with unexpected error: {e}")
-        emergency_cleanup()
+        cleanup_ray()
         raise e
     finally:
-        # 最终保障 - 无论如何都要清理 Ray
+        main_timer.checkpoint("Executing final cleanup in main")
         print("Executing final cleanup in main...")
-        try:
-            emergency_cleanup()
-        except:
-            pass
+        cleanup_ray()
+        main_timer.end("Main training function completed")
 
 
 def run_ppo(config):
+    ppo_timer = create_timer("PPORunner")
+    ppo_timer.start("Starting run_ppo function")
+    
     try:
         if not ray.is_initialized():
-            
-            num_cpus = int(os.getenv("RAY_NUM_CPUS", multiprocessing.cpu_count()))
-            ray.init(
-                num_cpus=num_cpus,
-                runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}}
-            )
+            ppo_timer.checkpoint("Initializing Ray cluster")
+            # this is for local ray cluster
+            ray.init(runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}})
+            ppo_timer.checkpoint("Ray cluster initialized")
 
+        ppo_timer.checkpoint("Starting remote multi-agent training")
         ray.get(train_multi_agents.remote(config))
+        ppo_timer.checkpoint("Remote multi-agent training completed")
     except Exception as e:
+        ppo_timer.checkpoint("Training failed with error")
         print(f"Training failed with error: {e}")
         print("Cleaning up Ray cluster due to error...")
-        emergency_cleanup()
+        cleanup_ray()
         raise e
     finally:
+        # Ensure cleanup when function exits
+        ppo_timer.checkpoint("Executing cleanup in run_ppo")
         print("Executing cleanup in run_ppo...")
-        try:
-            emergency_cleanup()
-        except:
-            pass
+        cleanup_ray()
+        ppo_timer.end("run_ppo function completed")
 
 
-@ray.remote(num_cpus=int(os.getenv("RAY_NUM_CPUS", multiprocessing.cpu_count())))
+@ray.remote(num_cpus=224)  # please make sure main_task is not scheduled on head
 def train_multi_agents(config):
+    train_timer = create_timer("MultiAgentsTraining")
+    train_timer.start("Starting train_multi_agents function")
+    n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1)
+    
     # print initial config
     from pprint import pprint
 
@@ -180,8 +149,6 @@ def train_multi_agents(config):
 
     from verl.utils.fs import copy_local_path_from_hdfs
    
-    
-
     
     pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
     OmegaConf.resolve(config)
@@ -193,18 +160,22 @@ def train_multi_agents(config):
     tokenizer_dict = {}
     processor_dict = {}
     ppo_trainer_config_dict = {}
-
+    
+    train_timer.checkpoint("Starting model processing")
+    model_num = 0
     # Check if we have models configuration for multi-model training
     if hasattr(config, 'models') and config.models is not None:
         print("Multi-model training mode detected")
         
         # Process each model in the models configuration
         for model_key, model_config in config.models.items():
+            model_num += 1
             model_path = model_config.path
             model_name = model_config.name
             
             print(f"Processing model: {model_name} at path: {model_path}")
             
+            train_timer.checkpoint(f"Downloading model {model_name}")
             # Download the model checkpoint from hdfs
             local_path = copy_local_path_from_hdfs(model_path)
             
@@ -213,6 +184,7 @@ def train_multi_agents(config):
             if hasattr(config, 'resource') and hasattr(config.resource, 'trust_remote_code'):
                 trust_remote_code = config.resource.trust_remote_code
             
+            train_timer.checkpoint(f"Creating tokenizer for {model_name}")
             # Create tokenizer for this model
             tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
             processor = hf_processor(local_path, trust_remote_code=trust_remote_code)
@@ -222,29 +194,29 @@ def train_multi_agents(config):
             ppo_trainer_config = model_config.ppo_trainer_config
             ppo_trainer_config_dict[model_name] = ppo_trainer_config
         
+    n_gpus_per_model = n_gpus_per_node // model_num
+    print(f"n_gpus_per_model: {n_gpus_per_model}")
             
-            
-
+    train_timer.checkpoint("Setting up resource pools and worker mappings")
+    
     from pettingllms.verl.ray_trainer import ResourcePoolManager, Role
     ray_worker_group_cls = RayWorkerGroup
 
     role_worker_mapping = {
         Role.ActorRollout: ray.remote(max_concurrency=2048)(AsyncActorRolloutRefWorker),
-        Role.Critic: ray.remote(CriticWorker),
-        Role.RefPolicy: ray.remote(ActorRolloutRefWorker),
     }
 
     global_pool_id = "global_pool"
     
     # Access resource configuration safely
-    n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1) if hasattr(config, 'resource') else 1
+    #n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1) if hasattr(config, 'resource') else 1
     nnodes = getattr(config.resource, 'nnodes', 1) if hasattr(config, 'resource') else 1
     
     managers = []
-    for id in range(2):
-        global_pool_id = f"global_pool_{id}"
+    for model_key, model_config in config.models.items():
+        global_pool_id = f"global_pool_{model_key}"
         resource_pool_spec = {
-           global_pool_id: [n_gpus_per_node] * nnodes,
+           global_pool_id: [n_gpus_per_model] * nnodes,
         }
         mapping = {
             Role.ActorRollout: global_pool_id,
@@ -258,6 +230,7 @@ def train_multi_agents(config):
 
     trainer = None
     try:
+        train_timer.checkpoint("Creating MultiAgentsPPOTrainer")
         trainer = MultiAgentsPPOTrainer(
             config=config,
             tokenizer_dict=tokenizer_dict,
@@ -267,21 +240,25 @@ def train_multi_agents(config):
             ray_worker_group_cls=ray_worker_group_cls,
         )
 
+        train_timer.checkpoint("Initializing workers")
         trainer.init_workers()
+        train_timer.checkpoint("Initializing multi-agent execution engine")
         trainer.init_multi_agent_sys_execution_engine()
+        train_timer.checkpoint("Starting training (fit)")
         trainer.fit()
+        train_timer.checkpoint("Training completed successfully")
     except Exception as e:
+        train_timer.checkpoint("Training failed with exception")
         print(f"Training failed in train_multi_agents: {e}")
         if trainer is not None:
             try:
-                # 如果有清理方法，调用它
                 if hasattr(trainer, 'cleanup'):
                     trainer.cleanup()
             except Exception as cleanup_error:
                 print(f"Error during trainer cleanup: {cleanup_error}")
         raise e
     finally:
-        # 最终清理
+        train_timer.checkpoint("Executing final cleanup in train_multi_agents")
         print("Executing final cleanup in train_multi_agents...")
         if trainer is not None:
             try:
@@ -289,9 +266,8 @@ def train_multi_agents(config):
                     trainer.cleanup()
             except:
                 pass
+        train_timer.end("train_multi_agents function completed")
 
 
 if __name__ == "__main__":
     main()
-
-

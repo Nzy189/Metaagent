@@ -94,7 +94,6 @@ except ImportError:
 def load_problem_batch( 
     batch_size: int=10,
     dataset_name: str="train",
-    split: str = "train",
     mode: str = "train"
 ) -> List[Dict[str, Any]]:
     """
@@ -104,7 +103,7 @@ def load_problem_batch(
         batch_size: Batch size
         dataset_name: Dataset name (e.g., "deepmind/code_contests", "Gen-Verse/CodeContests")
         split: Dataset split ("train", "test", etc.)
-        mode: "train" or "validation"
+        mode: "train" or "validate"
         
     Returns:
         A list of dicts with keys question/test_input/test_output/solution
@@ -113,25 +112,22 @@ def load_problem_batch(
         print("❌ datasets library unavailable")
         return []
     
-    if mode == "validation":
-        print(f"🔄 Loading all problems from dataset {dataset_name} (split={split})...")
-    else:
-        print(f"🔄 Loading {batch_size} problems from dataset {dataset_name}...")
-    
-    # 获取本地数据集路径
+    # 期望的目录结构：datasets/code/train/{train.parquet,test.parquet}
     current_dir = Path(__file__).parent.parent.parent.parent  # 回到 pettingllms 根目录
-    local_datasets_dir = current_dir / "datasets" / dataset_name.lower().replace("/", "_")
-    parquet_file = local_datasets_dir / f"{split}.parquet"
+    local_datasets_dir = current_dir / "datasets" / "code" / dataset_name.lower().replace("/", "_")
+    split_name = "train" if mode == "train" else "test"
+    parquet_file = local_datasets_dir / f"{split_name}.parquet"
+    print(f"📄 目标文件: {parquet_file}")
     
-    # train mode: 必须从本地加载，没有则报错
     if mode == "train":
         if not parquet_file.exists():
             raise FileNotFoundError(f"❌ Train mode requires local dataset at {parquet_file}, but file not found!")
         
-        print(f"📁 Loading from local dataset: {local_datasets_dir}")
+        print(f"📁 从本地加载训练集: {local_datasets_dir}")
         try:
-            ds = hf_load_dataset("parquet", data_files=str(parquet_file), split=split)
-            print(f"✅ Successfully loaded local dataset with {len(ds)} samples")
+            # parquet 单文件默认 split 名称为 "train"
+            ds = hf_load_dataset("parquet", data_files=str(parquet_file), split="train")
+            print(f"✅ 训练集加载成功，共 {len(ds)} 条")
         except Exception as e:
             raise Exception(f"❌ Failed to load local dataset: {e}")
         
@@ -139,7 +135,7 @@ def load_problem_batch(
         if len(ds) < batch_size:
             raise Exception(f"❌ Local dataset only has {len(ds)} samples, but batch_size is {batch_size}")
         
-        # 随机选择索引
+        
         indices = random.sample(range(len(ds)), batch_size)
         batch_results = []
         
@@ -150,44 +146,33 @@ def load_problem_batch(
                 batch_results.append(problem_dict)
                 print(f"✅ Loaded train problem {i+1}/{batch_size} (index={idx})")
         
-        print(f"✅ Successfully loaded {len(batch_results)} train problems")
+        print(f"✅ 成功返回 {len(batch_results)} 条训练样本")
         return batch_results
     
     # validation mode: 先尝试本地，没有则下载
     else:
-        if parquet_file.exists():
-            print(f"📁 Found local dataset at: {local_datasets_dir}")
-            try:
-                ds = hf_load_dataset("parquet", data_files=str(parquet_file), split=split)
-                print(f"✅ Successfully loaded local dataset with {len(ds)} samples")
-            except Exception as e:
-                print(f"❌ Error loading local dataset: {e}")
-                ds = None
-        else:
-            print(f"📁 Local dataset not found at: {local_datasets_dir}")
-            ds = None
-        
-        # 如果本地没有，则从Hugging Face下载
-        if ds is None:
-            hf_dataset_name = f"Gen-Verse/{dataset_name}"
-            print(f"🌐 Loading from Hugging Face: {hf_dataset_name}")
-            
-            try:
-                ds = hf_load_dataset(hf_dataset_name, split=split)
-                print(f"✅ Successfully downloaded dataset with {len(ds)} samples")
-            except Exception as e:
-                raise Exception(f"❌ Failed to load dataset: {e}")
+        if not parquet_file.exists():
+            raise FileNotFoundError(
+                f"❌ 验证模式需要本地测试集 {parquet_file}，未找到！请先运行 scripts/dataprocess/load_train_code.py 生成数据。"
+            )
+        print(f"📁 从本地加载测试集: {local_datasets_dir}")
+        try:
+            # parquet 单文件默认 split 名称为 "train"
+            ds = hf_load_dataset("parquet", data_files=str(parquet_file), split="train")
+            print(f"✅ 测试集加载成功，共 {len(ds)} 条")
+        except Exception as e:
+            raise Exception(f"❌ Failed to load local dataset: {e}")
         
         # 加载所有验证数据
         batch_results = []
         for i, example in enumerate(ds):
-            problem_dict = _format_competition_problem(example, i, mode="validation")
+            problem_dict = _format_competition_problem(example, i, mode="validate")
             if problem_dict:
                 batch_results.append(problem_dict)
                 if i % 100 == 0:  # 每100个打印一次进度
                     print(f"🔄 Loaded validation problem {i+1}/{len(ds)}")
         
-        print(f"✅ Successfully loaded {len(batch_results)} validation problems")
+        print(f"✅ 成功返回 {len(batch_results)} 条验证样本")
         return batch_results
 
 
@@ -204,23 +189,19 @@ def _format_competition_problem(example: Dict, index: int, mode: str = "train") 
     Returns:
         Formatted problem dictionary or None if invalid
     """
+    print(example)
     try:
         # 提取基本字段
         question = example.get("question", "")
         test_input = example.get("test_input", "")
-        if len(test_input)>8:
-            test_input=test_input[:8]
+        if len(test_input)>4:
+            test_input=test_input[:4]
         test_output = example.get("test_output", "")
-        if len(test_output)>8:
-            test_output=test_output[:8]
+        if len(test_output)>4:
+            test_output=test_output[:4]
+
+        solution = example.get("solution", "")
         
-        # 根据mode处理solution字段
-        if mode == "train":
-            solution = example.get("solution", "")
-        else:  # validation mode
-            solution = ""  # validation数据集没有solution，设为空
-        
-        # 验证必要字段
         if not question or not test_input or not test_output:
             print(f"⚠️ Skipping example {index}: missing required fields")
             return None
@@ -305,70 +286,155 @@ async def _worker_docker(
     timeout: float = 40.0,
     image: str = "python:3.11-slim"
 ):
-    tmpdir = tempfile.mkdtemp(prefix="pllm_exec_")
+    tmpdir = tempfile.mkdtemp(prefix="pllm_exec_",dir="tmp")
     script_path = os.path.join(tmpdir, "script.py")
+    def cleanup_tmpdir():
+        if not os.path.exists(tmpdir):
+            return
+        
+        for attempt in range(3):
+            try:
+                shutil.rmtree(tmpdir, ignore_errors=False)
+                print(f"成功删除临时目录: {tmpdir}")
+                return
+            except OSError as e:
+                print(f"删除临时目录失败 (尝试 {attempt + 1}/3): {e}")
+                if attempt < 2:
+                    # 如果删除失败，尝试强制删除所有文件
+                    try:
+                        for root, dirs, files in os.walk(tmpdir):
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                try:
+                                    os.chmod(file_path, 0o777)
+                                    os.remove(file_path)
+                                except Exception:
+                                    pass
+                            for dir_name in dirs:
+                                dir_path = os.path.join(root, dir_name)
+                                try:
+                                    os.chmod(dir_path, 0o777)
+                                except Exception:
+                                    pass
+                        # 再次尝试删除目录
+                        os.rmdir(tmpdir)
+                        print(f"强制删除临时目录成功: {tmpdir}")
+                        return
+                    except Exception as force_e:
+                        print(f"强制删除也失败: {force_e}")
+                        time.sleep(0.1)  # 短暂等待后重试
+                else:
+                    # 最后一次尝试，使用 ignore_errors=True
+                    shutil.rmtree(tmpdir, ignore_errors=True)
+                    print(f"使用 ignore_errors 删除临时目录: {tmpdir}")
+    
+    stdin_file = None
+    stdout_file = None
+    stderr_file = None
+    printed_output = None
+    
     try:
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script)
 
         stdin_text = _stdin_from_input_val_like_inproc(input_val)
-        proc = await asyncio.create_subprocess_exec(
-            "python", script_path,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=tmpdir,
-            start_new_session=True,
-        )
+        stdin_path = os.path.join(tmpdir, "stdin.txt")
+        stdout_path = os.path.join(tmpdir, "stdout.txt")
+        stderr_path = os.path.join(tmpdir, "stderr.txt")
+
+        # 预写入 stdin 内容，并将 stdout/stderr 重定向到临时文件，避免通过管道通信
+        with open(stdin_path, "w", encoding="utf-8") as f_in:
+            f_in.write(stdin_text)
+
+        stdin_file = open(stdin_path, "rb")
+        stdout_file = open(stdout_path, "wb")
+        stderr_file = open(stderr_path, "wb")
+
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=stdin_text.encode()),
-                timeout=timeout,
+            proc = await asyncio.create_subprocess_exec(
+                "python", script_path,
+                stdin=stdin_file,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                cwd=tmpdir,
+                start_new_session=True,
             )
-            rc = proc.returncode
-            if rc == 0:
-                printed_output = stdout.decode()
-            else:
-                err_text = (stderr or b"").decode().strip()
-                out_text = (stdout or b"").decode().strip()
-                combined = err_text or out_text
-                if "Traceback (most recent call last):" in combined:
-                    last_line = combined.strip().splitlines()[-1]
-                    combined = last_line
-                printed_output = f"error: exit {rc}: {combined}"
-        except asyncio.TimeoutError:
-            # 超时：整组杀死
+
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except Exception:
+                await asyncio.wait_for(proc.wait(), timeout=timeout-10)
+                rc = proc.returncode
+            except asyncio.TimeoutError:
                 try:
-                    proc.kill()
-                except Exception:
-                    pass
-            try:
-                await proc.wait()
-            except Exception:
-                pass
-            printed_output = None
-            print("printed_output: None (timeout)")
-        except Exception as e:
-            # 其他异常：尽力清理子进程
-            try:
-                if proc.returncode is None:
                     os.killpg(proc.pid, signal.SIGKILL)
-            except Exception:
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
                 try:
-                    proc.kill()
+                    await proc.wait()
                 except Exception:
                     pass
-            try:
-                await proc.wait()
+                rc = None
+                printed_output = None
+                print("printed_output: None (timeout)")
             except Exception:
+                # 其他等待异常：尽力清理
+                try:
+                    if proc.returncode is None:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                try:
+                    await proc.wait()
+                except Exception:
+                    pass
+                rc = proc.returncode
+            if printed_output is None and rc is None:
                 pass
-            printed_output = f"error: {e}"
+            elif rc is not None:
+                try:
+                    with open(stdout_path, "rb") as f_out:
+                        out_bytes = f_out.read()
+                except Exception:
+                    out_bytes = b""
+                try:
+                    with open(stderr_path, "rb") as f_err:
+                        err_bytes = f_err.read()
+                except Exception:
+                    err_bytes = b""
+
+                if rc == 0:
+                    printed_output = out_bytes.decode(errors="replace")
+                else:
+                    err_text = (err_bytes or b"").decode(errors="replace").strip()
+                    out_text = (out_bytes or b"").decode(errors="replace").strip()
+                    combined = err_text or out_text
+                    if "Traceback (most recent call last):" in combined:
+                        last_line = combined.strip().splitlines()[-1]
+                        combined = last_line
+                    printed_output = f"error: exit {rc}: {combined}"
+        finally:
+            # 确保所有文件句柄都被关闭
+            for file_handle, file_name in [(stdin_file, "stdin"), (stdout_file, "stdout"), (stderr_file, "stderr")]:
+                if file_handle is not None:
+                    try:
+                        if not file_handle.closed:
+                            file_handle.close()
+                    except Exception as e:
+                        print(f"关闭 {file_name} 文件句柄失败: {e}")
+                        
+    except Exception as e:
+        # 顶层兜底，保持与原实现一致的行为：将异常转为可读字符串
+        printed_output = f"error: {e}"
+        print(f"_worker_docker 执行异常: {e}")
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+        cleanup_tmpdir()
 
     if_passed = await test_if_eq(printed_output, str(expected_output)) if printed_output is not None else False
     
@@ -379,6 +445,7 @@ async def _worker_docker(
         "passed": if_passed,
     }
     return result
+
 
 
 _RAY_TASK_HANDLE = None  # 缓存 Ray 远程函数句柄
@@ -460,7 +527,7 @@ async def evaluate_code_against_tests(
                 )
             
             async_tasks = [
-                _await_ray_object_ref(obj_ref, timeout - 5.0)
+                _await_ray_object_ref(obj_ref, timeout + 5.0)
                 for obj_ref in obj_refs
             ]        
             results_or_exc = await asyncio.gather(*async_tasks, return_exceptions=True)
@@ -510,7 +577,7 @@ async def evaluate_code_against_tests(
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 
-                # 处理可能的异常结果
+          
                 processed_results = []
                 for i, result in enumerate(results):
                     if isinstance(result, Exception):
@@ -528,7 +595,6 @@ async def evaluate_code_against_tests(
                 
             except Exception as fallback_error:
                 print(f"Fallback to docker also failed: {fallback_error}")
-                # 最后的fallback：返回错误结果
                 results = [{
                     "test_input": test_inputs[i] if i < len(test_inputs) else "",
                     "code_execution_output": f"error: fallback failed - {fallback_error}",
@@ -1015,6 +1081,7 @@ def test_load_problem(batch_size: int):
     # Get problems
     results= load_problem_batch(
         batch_size=batch_size,
+        mode="validate"
 
     )
     for result in results:

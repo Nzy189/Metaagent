@@ -16,6 +16,7 @@ from verl.trainer.ppo.reward import load_reward_manager
 from pettingllms.trainer.multi_agents_execution_engine import MultiAgentsExecutionEngine
 from verl import DataProto
 from verl.protocol import pad_dataproto_to_divisor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from verl.trainer.ppo.ray_trainer import (
     
     RayWorkerGroup,
@@ -32,8 +33,7 @@ from verl.trainer.ppo.ray_trainer import (
 from pettingllms.verl.ray_trainer import RayPPOTrainer
 from verl.utils.torch_functional import pad_sequence_to_length
 from typing import Dict
-from verl.utils.profiler.performance import simple_timer
-from pettingllms.trainer.utils import AsyncLLMServerManager, initialize_llm_servers
+from pettingllms.utils.profiler.performance import simple_timer
 import ray
 
 def colorful_print(text, color="white"):
@@ -73,8 +73,10 @@ class MultiAgentsPPOTrainer:
                 colorful_print(f"Agent mapping: {agent_name} -> {policy_name}", "green")
         
         # Initialize ppo_trainer_dict from models configuration
-        self.ppo_trainer_dict = {}
+        self.ppo_trainer_config_dict = {}
+        self.rollout_sample_dict = {}
         self.tokenizer_dict = tokenizer_dict
+        self.ppo_trainer_dict = {}
         
         
         if hasattr(config, 'models'):
@@ -83,6 +85,7 @@ class MultiAgentsPPOTrainer:
                 print(f"model_config: {model_config}")
                 if hasattr(model_config, 'ppo_trainer_config'):
                     ppo_config = model_config.ppo_trainer_config
+                    self.ppo_trainer_config_dict[model_name] = ppo_config
                     ppo_config.data["train_batch_size"]=self.config.data.train_batch_size
                     ppo_config.data["val_batch_size"]=self.config.data.val_batch_size
                     print(f"ppo_config: {ppo_config}")
@@ -95,7 +98,8 @@ class MultiAgentsPPOTrainer:
                     # Compose full PPO config by merging the base config with the per-model overrides.
                     # This explicitly expands nested defaults like `- /ppo_trainer` which are not
                     # automatically composed by Hydra when placed inside nested nodes.
-                    # Prefer VERL's canonical PPO trainer config as the base to ensure required `_target_` fields andbox_fusion = {"url": None, "max_concurrent": 64, "memory_limit_mb": 1024}
+                    # Prefer VERL's canonical PPO trainer config as the base to ensure required `_target_` fields
+                    # sandbox_fusion = {"url": None, "max_concurrent": 64, "memory_limit_mb": 1024}
 
                     ppo_trainer = RayPPOTrainer(
                         config=ppo_config,
@@ -106,6 +110,7 @@ class MultiAgentsPPOTrainer:
                         
                     )
                     ppo_trainer.global_steps = 0
+                    
                     self.ppo_trainer_dict[model_name] = ppo_trainer
                     self.tokenizer_dict[model_name] = model_tokenizer
                     colorful_print(f"PPO trainer created for model: {model_name}", "green")
@@ -124,58 +129,41 @@ class MultiAgentsPPOTrainer:
     def init_multi_agent_sys_execution_engine(self):
         from verl.workers.rollout.vllm_rollout.vllm_async_server import AsyncvLLMServer
         # Get the rollout engines and tokenizers from the trainers
-        rollout_engine_dict = {}
-        tokenizer_dict = {}
-        server_manager_dict = {}
+        self.rollout_engine_dict = {}
+        self.tokenizer_dict = {}
+        self.server_address_dict = {}
         
         for model_name, trainer in self.ppo_trainer_dict.items():
-            rollout_engine_dict[model_name] = trainer.actor_rollout_wg
-            tokenizer_dict[model_name] = trainer.tokenizer
-
-
-            #TODO: add async_servser_class
-            async_servser_class=AsyncvLLMServer
-            try:
-                async_llm_servers, server_addresses = initialize_llm_servers(
-                    worker_group=trainer.actor_rollout_wg,
-                    server_class=async_servser_class,
-                    server_config=trainer.config,
-                    reuse_existing=True,
-                    lifetime_detached=False,
-                    actor_name="async_llm_server",
-                    write_registry_path=None,
-                    strict_reuse=False,
-                )
-                colorful_print(f"Successfully initialized {len(async_llm_servers)} LLM servers for model: {model_name}", "green")
-                # 存储 servers 以便后续清理
-                self.llm_servers.extend(async_llm_servers)
-            except Exception as e:
-                colorful_print(f"Failed to initialize LLM servers for model {model_name}: {str(e)}", "red")
-                # Clean up any partially created servers
-                if 'async_llm_servers' in locals():
-                    self._cleanup_llm_servers(async_llm_servers)
-                raise e
-
-            
-            #server_addresses = getattr(trainer.async_rollout_manager, "server_addresses", [])
-            server_manager_dict[model_name] = AsyncLLMServerManager(config=trainer.config, server_handles=async_llm_servers)
+            self.rollout_engine_dict[model_name] = trainer.async_rollout_manager
+            self.tokenizer_dict[model_name] = trainer.tokenizer
+            rollout_engine = trainer.async_rollout_manager
+            server_address_list = getattr(rollout_engine, "server_addresses", [])
+            server_address=server_address_list[0]
+            self.server_address_dict[model_name] = server_address
  
             # Construct an independent Router for each model
             
         
         self.agent_execution_engine = MultiAgentsExecutionEngine(
             config=self.config,
-            tokenizer_dict=tokenizer_dict,
-            server_manager_dict=server_manager_dict,
+            ppo_trainer_config_dict=self.ppo_trainer_config_dict,
+            tokenizer_dict=self.tokenizer_dict,
+            processor_dict=self.processor_dict,
+            server_address_dict=self.server_address_dict,
             agent_policy_mapping=self.agent_policy_mapping,
         )
 
     def init_workers(self):
         """Initialize workers for all PPO trainers."""
         colorful_print("Initializing workers for all PPO trainers...", "cyan")
+        if not self.ppo_trainer_dict:
+            colorful_print("No PPO trainers to initialize", "yellow")
+            return
+
+        
         for model_name, trainer in self.ppo_trainer_dict.items():
-            colorful_print(f"Initializing workers for trainer: {model_name}", "green")
             trainer.init_workers()
+            colorful_print(f"Initialized workers for trainer: {model_name}", "green")
         colorful_print("All workers initialized successfully", "green")
 
     def _update_parameters(self, batch, ppo_trainer, timing_raw):
@@ -454,46 +442,29 @@ class MultiAgentsPPOTrainer:
         self.global_steps = 0
         
 
-        # load checkpoint before doing anything
-        for model_name, trainer in self.ppo_trainer_dict.items():
-            colorful_print(f"Loading checkpoint for trainer {model_name}", "cyan")
-            trainer._load_checkpoint()
-            start_time = time.time()
-            if trainer.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
-                val_metrics = trainer._validate()
-                pprint(f"Initial validation metrics: {val_metrics}")
-                logger.log(data=val_metrics, step=self.global_steps)
-            print(f"Time taken to validate agent_{model_name}: {time.time() - start_time}")
-
-
+        
 
         # perform validation before training
        
         
         # Use the minimum total training steps among sub-trainers as the global total
-        if len(self.ppo_trainer_dict) > 0:
-            self.total_training_steps = min(tr.total_training_steps for tr in self.ppo_trainer_dict.values())
-        else:
-            self.total_training_steps = 0
-        progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
+        self.total_training_steps = getattr(self.config, "trainer.total_training_steps", 200)
+        progress_bar = tqdm(range(self.total_training_steps), desc="Training Progress", position=0, leave=True)
        
         # we start from step 1
-        self.global_steps += 1
         last_val_metrics = None
         self.max_steps_duration = 0
 
-        # 添加epoch级别的进度条
-        epoch_pbar = tqdm(range(self.config.trainer.total_epochs), desc="Epochs", position=0, leave=True)
+        #epoch_pbar = tqdm(range(self.config.trainer.total_epochs), desc="Epochs", position=0, leave=True)
         
-        for epoch in epoch_pbar:
-            self.agent_execution_engine.init_agents_and_envs()
-            epoch_pbar.set_description(f"Epoch {epoch} (Step {self.global_steps})")
-            pprint(f"epoch {epoch}, step {self.global_steps} started")
+        for i,step in enumerate(progress_bar):
+            
+            progress_bar.set_description(f"Step {self.global_steps}")
+            pprint(f"step {self.global_steps} started")
             #for batch_dict in self.train_dataloader:
                 #batch: DataProto = DataProto.from_single_dict(batch_dict)
             meta_info = {
-                    "agent_rollout": True,  # no need to generate multiple ones since environment is repeated already
-                    "epoch": epoch,
+                    "agent_rollout": True,  # no need to generate multiple ones since 
                     "global_step": self.global_steps,
                 }
             batch_size = self.config.data.gen_batch_size
@@ -509,34 +480,69 @@ class MultiAgentsPPOTrainer:
                 
             metrics = {}
             timing_raw = {}
+            validation_summary={}
+            last_resample_mode="train"
+
+            # load checkpoint before doing anything
+            if i==0:
+                
+                colorful_print(f"Loading checkpoint for trainer {model_name}", "cyan")
+                start_time = time.time()
+                # validation before training
+                val_metrics = self._validate()
+                last_resample_mode="validate"
+                pprint(f"Initial validation metrics: {val_metrics}")
+                logger.log(data=val_metrics, step=self.global_steps)
+                print(f"Time taken to validate agent_{model_name}: {time.time() - start_time}")
+                for agent_name, success_rate in val_metrics.items():
+                    metrics[f"validation/agent_{agent_name}/success_rate"] = success_rate
+                    validation_summary[agent_name] = success_rate
+                
+                        # 计算总体统计信息
+                if val_metrics:
+                    success_rates = list(val_metrics.values())
+                    metrics["validation/overall/avg_success_rate"] = sum(success_rates) / len(success_rates)
+
+
 
                 # Process each trainer's batch
 
             with simple_timer("step", timing_raw):
                 
-
-                
-                # Directly call generate_agent_trajectories_async for simplified logic
                 with simple_timer("collect_trajectory", timing_raw):
+                    resample_freq=self.config.data.get("resample_freq",10)
+                    resample_=False
+                    if self.global_steps%resample_freq==0 or i==0 or last_resample_mode=="validate":
+                        resample_=True
+                    
+                    self.agent_execution_engine.init_agents_and_envs(mode="train",resample=resample_)
+                    last_resample_mode="train"
+                    for model_name,rollout_engine in self.rollout_engine_dict.items():
+                        rollout_engine.wake_up()
                     gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.rollout_idx_list))
-                    for model_name in self.ppo_trainer_dict.keys():
+                    for model_name, trainer in self.ppo_trainer_dict.items():
+                        world_sizes = trainer.config.actor_rollout_ref.rollout.tensor_model_parallel_size
+                        batch_per_trainer_temp=self._pad_dataproto_to_world_size(gen_batch_output_per_policy[model_name], world_sizes)
                         if batch_per_trainer[model_name].batch is None:
                         # If empty, assi`gn directly
-                            batch_per_trainer[model_name] = gen_batch_output_per_policy[model_name]
-                    else:
-                        # Use concat instead of union, because each response content is different
-                        batch_per_trainer[model_name] = DataProto.concat([
-                            batch_per_trainer[model_name], 
-                            gen_batch_output_per_policy[model_name]
-                        ])
+                            
+                            batch_per_trainer[model_name] = batch_per_trainer_temp
+                        else:
+                            # Use concat instead of union, because each response content is different
+                            
+                            batch_per_trainer[model_name] = DataProto.concat([
+                                batch_per_trainer[model_name], 
+                                batch_per_trainer_temp
+                            ])
+                    for model_name,rollout_engine in self.rollout_engine_dict.items():
+                        rollout_engine.sleep()
                 
                 # Sort trajectories by their idx, to ensure they are in order.
-    
+                timing_raw = {}
                 with simple_timer("update_parameters", timing_raw):
                     # Track metrics from all trainers
                     all_trainer_metrics = {}
                     
-                    # 添加参数更新的进度条
                     update_pbar = tqdm(self.ppo_trainer_dict.items(), desc="Updating Parameters", position=2, leave=False)
                     
                     for model_name, trainer in update_pbar:
@@ -570,20 +576,10 @@ class MultiAgentsPPOTrainer:
                                 for key, value in trainer_metrics.items():
                                     prefixed_key = f"model_{model_name}/{key}"
                                     all_trainer_metrics[prefixed_key] = value
-                    
-                    # 关闭参数更新进度条
                     update_pbar.close()
                     
                     # Add trainer metrics to main metrics
                     metrics.update(all_trainer_metrics)
-            
-                # TODO:validate
-                #with simple_timer("testing", timing_raw):
-                    # Use the first trainer's validation metrics (or aggregate)
-                    #first_trainer = next(iter(self.ppo_trainer_dict.values()))
-                    #val_metrics: dict = first_trainer._validate()
-                #metrics.update(val_metrics)
-
                 
 
                 #save checkpoint done
@@ -595,12 +591,19 @@ class MultiAgentsPPOTrainer:
 
             # TODO: collect metrics
             # Use the first trainer's batch for metrics calculation
-            first_model_name = list(self.ppo_trainer_dict.keys())[0]
-            first_batch = batch_per_trainer[first_model_name]
+    
+            for model_name, batch in batch_per_trainer.items():
+                for metric_name, metric_value in compute_data_metrics(batch=batch, use_critic=any(trainer.use_critic for trainer in self.ppo_trainer_dict.values())).items():
+                    metric_name_policy= model_name + "_" + metric_name
+                    metrics[metric_name_policy] = metric_value
+                
+                for metric_name, metric_value in compute_timing_metrics(batch=batch, timing_raw=timing_raw).items():
+                    metric_name_policy= model_name + "_" + metric_name
+                    metrics[metric_name_policy] = metric_value
             
             # Standard data and timing metrics
-            metrics.update(compute_data_metrics(batch=first_batch, use_critic=any(trainer.use_critic for trainer in self.ppo_trainer_dict.values())))
-            metrics.update(compute_timing_metrics(batch=first_batch, timing_raw=timing_raw))
+            #metrics.update(compute_data_metrics(batch=first_batch, use_critic=any(trainer.use_critic for trainer in self.ppo_trainer_dict.values())))
+            #metrics.update(compute_timing_metrics(batch=first_batch, timing_raw=timing_raw))
             
             # Agent-specific data metrics if available
             if hasattr(first_batch, 'non_tensor_batch') and 'agent_name' in first_batch.non_tensor_batch:
@@ -629,18 +632,33 @@ class MultiAgentsPPOTrainer:
             # Add training step metrics
             metrics.update({
                 "training/global_step": self.global_steps,
-                "training/epoch": epoch,
+                
             })
-
-            # TODO: make a canonical logger that supports various backend
-            logger.log(data=metrics, step=self.global_steps)
 
             self.global_steps += 1
 
+            if self.global_steps % self.config.data.val_freq == 0:
+                val_metrics = self._validate()
+                last_resample_mode="validate"
+                # val_metrics是success_rollout_rate_dict，包含每个agent的成功率
+                validation_summary = {}
+                
+                for agent_name, success_rate in val_metrics.items():
+                    metrics[f"validation/agent_{agent_name}/success_rate"] = success_rate
+                    validation_summary[agent_name] = success_rate
+                
+                # 计算总体统计信息
+                if val_metrics:
+                    success_rates = list(val_metrics.values())
+                    metrics["validation/overall/avg_success_rate"] = sum(success_rates) / len(success_rates)
+                
+                pprint(f"Validation Summary - Step {self.global_steps}: {validation_summary}")
+                pprint(f"Overall avg success rate: {metrics.get('validation/overall/avg_success_rate', 0.0):.4f}")
+            
+            # TODO: make a canonical logger that supports various backend
+            logger.log(data=metrics, step=self.global_steps)
             # Check if any trainer has reached its total training steps
-            if any(self.global_steps >= trainer.total_training_steps for trainer in self.ppo_trainer_dict.values()):
-                # 关闭所有进度条
-                epoch_pbar.close()
+            if self.global_steps >= self.total_training_steps:
                 progress_bar.close()
                 
                 # perform validation after training
@@ -651,137 +669,46 @@ class MultiAgentsPPOTrainer:
                     #logger.log(data=val_metrics, step=self.global_steps)
                 return
         
-        # 如果循环正常结束，也关闭进度条
-        epoch_pbar.close()
         progress_bar.close()
 
     def _validate(self):
-        rewards_lst = []
-        data_source_lst = []
-        uid_lst = []
-        for test_data in self.val_dataloader:
-            test_batch_per_trainer = {}
-            for model_name in self.ppo_trainer_dict.keys():
-                test_batch_per_trainer[model_name] = DataProto.from_single_dict(test_data)
-                test_batch_per_trainer[model_name].non_tensor_batch["uid"] = np.array([str(uuid.uuid4()) for _ in range(len(test_batch_per_trainer[model_name].batch))], dtype=object)
-                n_val_samples = self.config.actor_rollout_ref.rollout.val_kwargs.n
-                test_batch_per_trainer[model_name] = test_batch_per_trainer[model_name].repeat(repeat_times=n_val_samples, interleave=True)
-                test_batch_per_trainer[model_name].pop(["input_ids", "attention_mask", "position_ids"])  # these are not needed for environment based interaction
-                test_batch_per_trainer[model_name].meta_info = {
-                    "eos_token_id": self.tokenizer.eos_token_id,
-                    "pad_token_id": self.tokenizer.pad_token_id,
-                    "recompute_log_prob": False,
-                    "do_sample": False,
-                    "validate": True,
-                    "agent_rollout": True,
-                }
+        self.agent_execution_engine.init_agents_and_envs(mode="validate")
+        batch_per_trainer: Dict[str,DataProto]={}
+        for model_name in self.ppo_trainer_dict.keys():
+            batch_per_trainer[model_name] = DataProto.from_dict({})
             
-
+        for _, rollout_engine in self.rollout_engine_dict.items():
+            rollout_engine.wake_up()
             
-            # Directly call generate_agent_trajectories_async for simplified logic
-            timing_raw = {}
-            with simple_timer("collect_trajectory", timing_raw):
-                steps = []
-                # Use the first model's batch for trajectory generation
-                first_model_name = list(self.ppo_trainer_dict.keys())[0]
-                gen_seq_generator = self.generate_agent_trajectories_async(timing_raw=timing_raw, meta_info=test_batch_per_trainer[first_model_name].meta_info, mode="Step")
-                for _, trajectory in enumerate(gen_seq_generator):
-                    steps.append(trajectory)
-            
-            # Sort trajectories by their idx, to ensure they are in order.
-            steps.sort(key=lambda x: x["idx"])
-
-            with simple_timer("transform_trajectory", timing_raw):
-                # Transform the raw trajectories into DataProto format.
-                test_output_gen_batch = self._transform_agent_steps(steps, uids=test_batch_per_trainer[first_model_name].non_tensor_batch["uid"])
-            
-            # for validation, we only need the last step
-            is_last_step = test_output_gen_batch.non_tensor_batch["is_last_step"]
-            last_step_indices = np.where(is_last_step == True)[0]
-            test_output_gen_batch = test_output_gen_batch.select_idxs(last_step_indices)  # This batch only has last steps
-            
-            # Union the generated output with all trainer batches
-            for model_name in self.ppo_trainer_dict.keys():
-                test_batch_per_trainer[model_name] = test_batch_per_trainer[model_name].union(test_output_gen_batch)
-
-            # Use the first trainer's batch for reward calculation (should be the same for all trainers in validation)
-            reward_tensor = test_batch_per_trainer[first_model_name].batch["token_level_scores"]
-
-            rewards_lst.append(reward_tensor.sum(-1).cpu())
-            data_source_lst.append(test_batch_per_trainer[first_model_name].non_tensor_batch.get("data_source", ["unknown"] * reward_tensor.shape[0]))
-            uid_lst.append(test_batch_per_trainer[first_model_name].non_tensor_batch["uid"])
-
-        reward_tensor = torch.cat(rewards_lst, dim=0)  # (batch_size,)
-        data_sources = np.concatenate(data_source_lst, axis=0)
-        # evaluate test_score based on data source
-        data_source_reward = {}
-
-        # to group for pass@k
-        uid_tensor = np.concatenate(uid_lst, axis=0)
-        data_source_uid_pass_rates = {}  # data source to {uid: pass or not}
-
-        for i in range(reward_tensor.shape[0]):
-            data_source = data_sources[i]
-
-            if data_source not in data_source_reward:
-                data_source_reward[data_source] = []
-            data_source_reward[data_source].append(reward_tensor[i].item())
-
-            # pass@k
-            if data_source not in data_source_uid_pass_rates:
-                data_source_uid_pass_rates[data_source] = {}
-
-            uid = uid_tensor[i]
-            if uid not in data_source_uid_pass_rates[data_source]:
-                data_source_uid_pass_rates[data_source][uid] = 0  # default to not pass
-            # take highest score
-            data_source_uid_pass_rates[data_source][uid] = max(data_source_uid_pass_rates[data_source][uid], reward_tensor[i].item())
-
-        metric_dict = {}
-        
-        # Check if we have agent information for validation metrics
-        first_batch = test_batch_per_trainer[first_model_name] if test_batch_per_trainer else None
-        agent_names = None
-        if first_batch and hasattr(first_batch, 'non_tensor_batch') and 'agent_name' in first_batch.non_tensor_batch:
-            agent_names = first_batch.non_tensor_batch['agent_name']
-        
-        # Standard validation metrics
-        for data_source, rewards in data_source_reward.items():
-            # clip rewards to be between 0 and 1
-            rewards_array = np.array(rewards)
-            rewards_array = np.clip(rewards_array, 0, 1)
-            metric_dict[f"val/test_score/{data_source}"] = np.mean(rewards_array)
-            
-            # Agent-specific validation metrics if agent names are available
-            if agent_names is not None:
-                unique_agents = list(set(agent_names))
-                for agent_name in unique_agents:
-                    agent_mask = np.array([name == agent_name for name in agent_names])
-                    if np.any(agent_mask):
-                        agent_rewards = rewards_array[agent_mask[:len(rewards_array)]]
-                        if len(agent_rewards) > 0:
-                            metric_dict[f"val_agent_{agent_name}/test_score/{data_source}"] = np.mean(agent_rewards)
-
-        for data_source, pass_rates in data_source_uid_pass_rates.items():
-            pass_k_lst = []
-            for uid, pass_score in pass_rates.items():
-                pass_k_lst.append(pass_score >= 1)  # assuming 1 means passed
-            metric_dict[f"val/test_score/pass@k/{data_source}"] = np.mean(pass_k_lst)
-            
-            # Agent-specific pass@k metrics if agent names are available
-            if agent_names is not None:
-                unique_agents = list(set(agent_names))
-                for agent_name in unique_agents:
-                    agent_pass_k_lst = []
-                    agent_mask = np.array([name == agent_name for name in agent_names])
-                    for uid, pass_score in pass_rates.items():
-                        # Check if this uid belongs to the current agent
-                        # This is a simplified approach - you might need to adjust based on your UID structure
-                        agent_pass_k_lst.append(pass_score >= 1)
-                    if len(agent_pass_k_lst) > 0:
-                        metric_dict[f"val_agent_{agent_name}/test_score/pass@k/{data_source}"] = np.mean(agent_pass_k_lst)
-
-        return metric_dict
+        gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.rollout_idx_list))
+        for model_name,rollout_engine in self.rollout_engine_dict.items():
+            rollout_engine.sleep()
+        for model_name in self.ppo_trainer_dict.keys():
+            if batch_per_trainer[model_name].batch is None:
+            # If empty, assi`gn directly
+                batch_per_trainer[model_name] = gen_batch_output_per_policy[model_name]
+            else:
+                # Use concat instead of union, because each response content is different
+                batch_per_trainer[model_name] = DataProto.concat([
+                    batch_per_trainer[model_name], 
+                    gen_batch_output_per_policy[model_name]
+                ])
+        for model_name,rollout_engine in self.rollout_engine_dict.items():
+            rollout_engine.sleep()
+                
+        # 统计成功率
+        total_rollout_num = len(self.agent_execution_engine.rollout_idx_list)
+        success_rollout_rate_dict: Dict[str, float] = {}
+        for agent_name in self.agent_execution_engine.turn_order:
+            success_rollout_num = len(
+                self.agent_execution_engine.success_rollout_idx_list_dict.get(agent_name, [])
+            )
+            success_rollout_rate_dict[agent_name] = (
+                success_rollout_num / total_rollout_num if total_rollout_num > 0 else 0.0
+            )
+        # 可选：保存验证样本到本地目录
+        save_dir = getattr(self.config.trainer, "validation_data_dir", None)
+        return success_rollout_rate_dict
 
     def visualize_trajectory(self, tensor_batch, sample_idx=0, max_samples=1, mask_key="traj_mask"):
         """
@@ -859,33 +786,11 @@ class MultiAgentsPPOTrainer:
             print(f" Trajectory Reward={total_reward:.2f}")
 
   
-    def _pad_dataproto_to_world_size(self, batch):
-        world_sizes = []
-        # Collect world sizes from all trainers
-        for trainer in self.ppo_trainer_dict.values():
-            if hasattr(trainer, 'use_critic') and trainer.use_critic and hasattr(trainer, 'critic_wg') and trainer.critic_wg.world_size != 0:
-                world_sizes.append(trainer.critic_wg.world_size)
-            if hasattr(trainer, 'use_reference_policy') and trainer.use_reference_policy and hasattr(trainer, 'ref_policy_wg') and trainer.ref_policy_wg.world_size != 0:
-                world_sizes.append(trainer.ref_policy_wg.world_size)
-            if hasattr(trainer, 'use_rm') and trainer.use_rm and hasattr(trainer, 'rm_wg') and trainer.rm_wg.world_size != 0:
-                world_sizes.append(trainer.rm_wg.world_size)
-            if hasattr(trainer, 'actor_rollout_wg') and trainer.actor_rollout_wg.world_size != 0:
-                world_sizes.append(trainer.actor_rollout_wg.world_size)
-        
-        if not world_sizes:
-            return batch
-
-        world_size = reduce(math.lcm, world_sizes)
-
-        original_batch_size = batch.batch["prompts"].shape[0]
-        batch, pad_size = pad_dataproto_to_divisor(batch, world_size)
+    def _pad_dataproto_to_world_size(self, batch, world_sizes):
+        #world_sizes = self.config.data.tensor_model_parallel_size
+        batch, pad_size = pad_dataproto_to_divisor(batch, world_sizes)
 
         # for the padded dataproto, make the traj mask to 0. is_last_step also False
-        for i in range(pad_size):
-            idx = original_batch_size + i
-            batch.non_tensor_batch["is_last_step"][idx] = False
-            batch.non_tensor_batch["is_pad_step"][idx] = True
-
         return batch
     
     def _cleanup_llm_servers(self, servers):

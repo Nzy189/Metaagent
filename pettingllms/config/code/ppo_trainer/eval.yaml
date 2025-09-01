@@ -1,12 +1,12 @@
 data:
   tokenizer: null
   use_shm: False
-  train_batch_size: 256  # 增加训练批次大小
-  val_batch_size: 256  # 增加验证批次大小
+  train_batch_size: 128
+  val_batch_size: 32
   prompt_key: prompt
   reward_fn_key: data_source
-  max_prompt_length: 1024
-  max_response_length: 8192
+  max_prompt_length: 2048
+  max_response_length: 2048
   dataloader_num_workers: 0
   return_raw_input_ids: False  # This should be set to true when the tokenizer between policy and rm differs
   return_raw_chat: False
@@ -35,13 +35,14 @@ data:
 actor_rollout_ref:
   hybrid_engine: True
   model:
-    path: Qwen/Qwen3-8B # Set to null to allow overriding
+    path: Qwen/Qwen3-8B
+    #path: "/home/lah003/models/Qwen3-4B" # Set to null to allow overriding
     use_shm: False
     external_lib: null
     override_config: { }
     enable_gradient_checkpointing: True
-    enable_activation_offload: False
-    use_remove_padding: False
+    enable_activation_offload: True
+    use_remove_padding: True
     lora_rank: 0  # Set to positive value to enable LoRA (e.g., 32)
     lora_alpha: 16  # LoRA scaling factor
     target_modules: all-linear  # all-linear or [q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]
@@ -51,11 +52,12 @@ actor_rollout_ref:
   actor:
     _target_: verl.workers.config.FSDPActorConfig
     strategy: fsdp  # [fsdp, fsdp2], This is for backward-compatibility
-    ppo_mini_batch_size: 512  # 增加PPO mini batch大小
+    ppo_mini_batch_size: 16  # 减小PPO mini batch大小以节省内存
     use_dynamic_bsz: True
+    use_dynamic_mini_batch: False
     ppo_micro_batch_size: null # will be deprecated, use ppo_micro_batch_size_per_gpu
     ppo_micro_batch_size_per_gpu: null
-    ppo_max_token_len_per_gpu: ${data.max_response_length} # n * ${data.max_prompt_length} + ${data.max_response_length}
+    ppo_max_token_len_per_gpu: 16384 # n * ${data.max_prompt_length} + ${data.max_response_length}
     grad_clip: 1.0
     # pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
     clip_ratio: 0.2 # default value if clip_ratio_low and clip_ratio_high are not specified
@@ -65,7 +67,7 @@ actor_rollout_ref:
     loss_agg_mode: "token-mean" # / "seq-mean-token-sum" / "seq-mean-token-mean"
     entropy_coeff: 0
     use_kl_loss: False # True for GRPO
-    use_torch_compile: True # False to disable torch compile
+    use_torch_compile: False # False to disable torch compile
     kl_loss_coef: 0.001 # for grpo
     kl_loss_type: low_var_kl # for grpo
     ppo_epochs: 1
@@ -84,6 +86,7 @@ actor_rollout_ref:
       weight_decay: 0.01
     fsdp_config:
       _target_: verl.workers.config.FSDPEngineConfig
+      
       wrap_policy:
         # transformer_layer_cls_to_wrap: None
         min_num_params: 0
@@ -91,7 +94,9 @@ actor_rollout_ref:
       optimizer_offload: False
       offload_policy: False # only for fsdp2, offload param\grad\optimizer during train
       reshard_after_forward: True # only for fsdp2, [True, False, int between 1 and fsdp_size]
-      fsdp_size: 8  # 设置FSDP大小匹配GPU数量
+      fsdp_size: -1
+      model_dtype: bf16
+    grad_norm_threshold: 1e5
       
 
   ref:
@@ -99,12 +104,14 @@ actor_rollout_ref:
     strategy: fsdp
     fsdp_config:
       _target_: verl.workers.config.FSDPEngineConfig
+      model_dtype: bf16
       param_offload: False
       reshard_after_forward: True # only for fsdp2, [True, False, int between 1 and fsdp_size]
       wrap_policy:
         # transformer_layer_cls_to_wrap: None
         min_num_params: 0
-    use_torch_compile: True
+      #model_dtype: bf16
+    use_torch_compile: False
     log_prob_micro_batch_size: 1 # will be deprecated, use log_prob_micro_batch_size_per_gpu
     log_prob_micro_batch_size_per_gpu: null
     log_prob_use_dynamic_bsz: False
@@ -114,9 +121,11 @@ actor_rollout_ref:
     ulysses_sequence_parallel_size: 1 # sp size
     entropy_from_logits_with_chunking: False
   rollout:
+
     name: vllm
+    _target_: verl.workers.config.RolloutConfig
     mode: async # sync: LLM, async: AsyncLLM
-    chat_scheduler: null # async chat scheduler, e.g verl.schedulers.naive_chat_scheduler.NaiveChatCompletionScheduler
+    chat_scheduler: verl.schedulers.completions_scheduler.CompletionsScheduler # async chat scheduler, e.g verl.schedulers.naive_chat_scheduler.NaiveChatCompletionScheduler
     chat_template: null
     temperature: 0.6
     top_k: -1 # 0 for hf rollout, -1 for vllm rollout
@@ -125,18 +134,18 @@ actor_rollout_ref:
     prompt_length: ${data.max_prompt_length} # not use for opensource
     response_length: ${data.max_response_length}
     # for vllm rollout
-    dtype: bfloat16 # should align with FSDP
-    gpu_memory_utilization: 0.8  
+    dtype: bfloat16
+    gpu_memory_utilization: 0.6  
     ignore_eos: False
-    enforce_eager: True  
+    enforce_eager: False  
     free_cache_engine: False
     load_format: auto  
     layered_summon: False # for huge model, layered summon can save memory (prevent OOM) but make it slower
-    tensor_model_parallel_size: 7  # 增加到8以使用所有GPU
-    max_num_batched_tokens: 1048576  # 增加batched tokens以提高吞吐量
+    tensor_model_parallel_size: 4
+    max_num_batched_tokens: 131072  # 减小batched tokens以节省内存
     max_model_len: ${data.max_response_length}
-    max_num_seqs: 512  # 增加并行序列数
-    log_prob_micro_batch_size: 32 # will be deprecated, use log_prob_micro_batch_size_per_gpu
+    max_num_seqs: 256  # 减小并行序列数以节省内存
+    log_prob_micro_batch_size: 4 # will be deprecated, use log_prob_micro_batch_size_per_gpu
     log_prob_micro_batch_size_per_gpu: null
     log_prob_use_dynamic_bsz: False
     log_prob_max_token_len_per_gpu: 16384
@@ -160,12 +169,15 @@ actor_rollout_ref:
       do_sample: False # default eager for validation
     multi_turn: 
       enable: False  # should set rollout.name to sglang_async if True
-      max_turns: null  # null for no limit (default max_length // 3)
+      max_turns: 4 # null for no limit (default max_length // 3)
       tool_config_path: null  # null for no tool
       format: chatml  # chatml, more formats will be supported in the future
     # RLLM Arguments
     disable_logging: True # Disable logging for vLLM async rollout.
     entropy_from_logits_with_chunking: False
+    use_torch_compile: False
+    #compilation_config:
+    #  use_inductor: False
     
     # [Experimental] agent loop based rollout configs
     agent:
@@ -193,7 +205,7 @@ actor_rollout_ref:
 
 critic:
   _target_: verl.workers.config.FSDPCriticConfig
-  enable: null
+  enable: false
 
   # distribution strategy. Options: fsdp (deprecating), fsdp2
   strategy: fsdp
@@ -284,7 +296,7 @@ critic:
         min_num_params: 0
 
       # Number of GPUs in each FSDP shard group; -1 means auto
-      fsdp_size: 8  # 设置FSDP大小匹配GPU数量
+      fsdp_size: -1  
 
       # Only for FSDP1: FSDP1 configuration, prefetch the next forward-pass all-gather
       # before the current forward computation.
@@ -327,7 +339,7 @@ reward_model:
         min_num_params: 0
       param_offload: False
       reshard_after_forward: True # only for fsdp2, [True, False, int between 1 and fsdp_size]
-      fsdp_size: 8  # 设置FSDP大小匹配GPU数量
+      fsdp_size: -1
   micro_batch_size: null # will be deprecated, use micro_batch_size_per_gpu
   micro_batch_size_per_gpu: null # set a number
   max_length: null
@@ -366,18 +378,18 @@ algorithm:
 
 trainer:
   device: cuda
-  n_gpus_per_node: 4  # 使用所有8个GPU
+  n_gpus_per_node: 1  # 使用单卡
   nnodes: 1
   balance_batch: True
-  total_epochs: 30
-  total_training_steps: null
+  total_epochs: 1
+  total_training_steps: 200
   project_name: verl_examples
   experiment_name: gsm8k
   logger: [ 'console', 'wandb' ]
   log_val_generations: 0
   rollout_data_dir: null # directory for logging the rollout data, no dump if null
   validation_data_dir: null # directory for logging the validation data, no dump if null
-  save_freq: -1
+  save_freq: 20
   # auto: find the last ckpt to resume. If can't find, start from scratch
   resume_mode: auto # or disable or resume_path if resume_from_path is set
   resume_from_path: null
@@ -387,7 +399,7 @@ trainer:
   default_hdfs_dir: null
   del_local_ckpt_after_load: False
   default_local_dir: checkpoints/verl_examples/gsm8k
-  max_actor_ckpt_to_keep: null
+  max_actor_ckpt_to_keep: 3
   max_critic_ckpt_to_keep: null
   # The timeout for ray worker group to wait for the register center to be ready
   ray_wait_register_center_timeout: 300
@@ -396,7 +408,7 @@ trainer:
   # RLLM arguments
   rejection_sample: False # Reject sample prompts that all succeed or all fail (0 signal for GRPO due to normalization).
   rejection_sample_multiplier: 2 # Multiple the training batch size by this factor to account for rejection sampling reduction.
-  n_training_gpus_per_node: 4 # For verl-pipeline. 使用所有8个GPU
+  n_training_gpus_per_node: 4 # For verl-pipeline. 使用4个可见GPU
 
 # profiler configs
 global_profiler:

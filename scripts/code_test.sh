@@ -1,7 +1,7 @@
 set -x
 
 export CUDA_VISIBLE_DEVICES=0,1
-
+export RAY_TMPDIR='./tmp'
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:False"

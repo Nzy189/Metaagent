@@ -3,4 +3,8 @@
 	url = https://github.com/facebookresearch/sweet_rl.git
 [submodule "verl"]
 	path = verl
-	url = https://github.com/volcengine/verl.git
+	url = https://github.com/agentica-project/verl
+	branch = main
+[submodule "external/webshop-minimal"]
+	path = external/webshop-minimal
+	url = https://github.com/ZihanWang314/webshop-minimal.git

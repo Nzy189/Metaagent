@@ -16,6 +16,7 @@ class AgentData:
     agent_reward: Optional[float] = None
     done: bool = False
     reward_history: Optional[List[float]] = field(default_factory=list)
+    is_pass: bool = False
 
 class Agent(AgentData):
     def __init__(self):
@@ -51,10 +52,30 @@ class Agent(AgentData):
 
         This function should clear any stored history or state information necessary
         for a fresh interaction.
+        history: Optional[Any] = None
+        current_prompt: Optional[Dict[str, Any]] = field(
+            default_factory=lambda: {"text": None, "image": None}
+        )
+        current_action: Optional[Any] = None
+        current_observation: Optional[Any] = None
+        info: Optional[Dict[str, Any]] = None
+        agent_reward: Optional[float] = None
+        done: bool = False
+        reward_history: Optional[List[float]] = field(default_factory=list)
+        is_pass: bool = False
 
         Returns:
             None
         """
+        self.history = None
+        self.current_prompt = {"text": None, "image": None}
+        self.current_action = None
+        self.current_observation = None
+        self.info = None
+        self.agent_reward = None
+        self.reward_history = []
+        self.is_pass = False
+        self.done = False
         return
 
     def get_current_state(self) -> Optional[Any]:

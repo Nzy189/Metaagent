@@ -14,11 +14,17 @@ ENV_CLASSES = {
     "code_env": safe_import("pettingllms.multi_agent_env.code.code_test_env", "CodeTestEnv"),
     "base_env": safe_import("pettingllms.multi_agent_env.base.env", "BaseEnv"),
     "multi_turn_env": safe_import("pettingllms.multi_agent_env.base.env", "MultiTurnEnvironment"),
+    "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_test_env", "CodeTestEnv"),
+    "math_env_single_agent": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnv"),
+    "math_env": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnv"),
 }
 
 ENV_BATCH_CLASSES = {
     "base_env": safe_import("pettingllms.multi_agent_env.base.env", "EnvBatch"),
     "code_env": safe_import("pettingllms.multi_agent_env.code.code_test_env", "CodeTestEnvBatch"),
+    "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_test_env", "CodeTestEnvBatch"),
+    "math_env": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnvBatch"),
+    "math_env_single_agent": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnvBatch"),
 }
 
 # Import agent classes
@@ -33,6 +39,10 @@ AGENT_CLASSES = {
     # Aliases aligned with config.multi_agent_interaction.turn_order values
     "code_generator": safe_import("pettingllms.multi_agent_env.code.agents.code_agent", "CodeGenerationAgent"),
     "test_generator": safe_import("pettingllms.multi_agent_env.code.agents.unit_test_agent", "UnitTestGenerationAgent"),
+    "code_generator_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.agents.code_agent", "CodeGenerationAgent"),
+    "reasoning_agent": safe_import("pettingllms.multi_agent_env.math.agents.math_agent", "ReasoningAgent"),
+    "tool_agent": safe_import("pettingllms.multi_agent_env.math.agents.code_agent", "ToolAgent"),
+    "math_agent_single_agent": safe_import("pettingllms.multi_agent_env.math_single_agent.agents.math_agent", "MathGenerationAgent"),
 }
 
 # Filter out None values for unavailable imports
