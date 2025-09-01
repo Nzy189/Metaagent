@@ -205,6 +205,7 @@ def main():
     out_dir = project_root / "datasets" / "code" / "livecodebench"
     test_dir = project_root / "datasets" / "code" /"train" 
     os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(test_dir, exist_ok=True)
     print(f"📁 输出目录: {out_dir}")
 
     print("🔄 加载 LiveCodeBench v1–v5 作为 train ...")
