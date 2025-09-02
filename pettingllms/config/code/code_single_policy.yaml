@@ -8,10 +8,12 @@ data:
   #rollout config
   gen_batch_size: 32
   gen_n_samples: 1
-  sample_temperature: 0
+  sample_temperature: 1
+  filter_method: uid
+  filter_ratio: 0.6
 
   # Batch sizes
-  train_batch_size: 16
+  train_batch_size: 128
   val_batch_size: 8
   
   # Sequence lengths

@@ -154,8 +154,8 @@ class CodeGenerationAgent(Agent):
                 passed_ratio, passed_cases, failed_cases = await evaluate_code_against_tests(
                     gen_code, ground_truth_test_input, ground_truth_test_output, timeout=60.0, ray_actor=env_worker,rollout_idx=self.rollout_idx
                 )
-                #if passed_ratio < 1.0:
-                #    passed_ratio = 0.0
+                if passed_ratio < 1.0:
+                    passed_ratio = 0.0
                                 
                 env_data.state.ground_truth_test_vs_generated_code_match_cases = passed_cases
                 env_data.state.ground_truth_test_vs_generated_code_mismatch_cases = failed_cases

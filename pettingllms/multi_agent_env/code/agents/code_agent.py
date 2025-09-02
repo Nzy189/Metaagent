@@ -157,8 +157,8 @@ class CodeGenerationAgent(Agent):
                 env_data.state.ground_truth_test_vs_generated_code_match_cases = passed_cases
                 env_data.state.ground_truth_test_vs_generated_code_mismatch_cases = failed_cases
                 env_data.state.ground_truth_test_vs_generated_code_match_ratio = passed_ratio
-                #if passed_ratio < 1.0:
-                #    passed_ratio = 0.0
+                if passed_ratio < 1.0:
+                    passed_ratio = 0.0
                 if passed_ratio >= 1.0 and len(ground_truth_test_input) > 0:
                     self.done = True
                     self.is_pass = True

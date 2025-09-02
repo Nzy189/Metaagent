@@ -102,7 +102,7 @@ class MultiAgentsExecutionEngine:
         self.env_args = env_args or {}
         self.max_workers = max_workers
  
-        self.multi_logger = get_multi_logger()
+        
         
         # Read parameters from config with fallback to defaults
         self.timer.checkpoint("Loading config parameters")
@@ -146,6 +146,7 @@ class MultiAgentsExecutionEngine:
         
 
     def init_agents_and_envs(self,mode="train",step_idx=0,resample=True):
+        self.multi_logger = get_multi_logger()
         self.timer.checkpoint("Starting init_agents_and_envs")
         self.mode=mode
         if mode=="validate":
@@ -479,6 +480,15 @@ class MultiAgentsExecutionEngine:
                         else:
                             current_agent.agent_reward = 0.0
                         current_agent.reward_history.append(0.0)
+                    
+                    self.multi_logger.log_env_agent_info(
+                        env_idx, rollout_idx, turn_idx + 1, agent_name,
+                        "Trajectory information updated",
+                        {
+                            "env_state": env.state,
+                       
+                        }
+                    )
                     if output_dpr is not None:
                         output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
                         output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)  # Add agent name for metrics trackin

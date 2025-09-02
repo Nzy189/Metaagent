@@ -1,7 +1,7 @@
 # Configuration for Code multi-agent training with TWO different policies
 # code_generator uses Qwen/Qwen2.5-Coder-3B, test_generator uses DeepSeek-R1-Distill
 mode: "validate"
-sample_mode: "env"
+sample_mode: "tree"
 # Inherit from base configuration
 defaults:
   # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently
@@ -12,13 +12,14 @@ defaults:
 # dataset config (shared by all agents)
 data:
   filter_ratio: 0.5
+  filter_method: uid
   gen_batch_size: 32
-  gen_n_samples: 4
-  sample_temperature: 0.6
+  gen_n_samples: 16
+  sample_temperature: 1
   val_freq: 10
 
   # Batch sizes
-  train_batch_size: 64
+  train_batch_size: 256
   val_batch_size: 32
   
   # Sequence lengths

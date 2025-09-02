@@ -1,7 +1,7 @@
 # Configuration for Code multi-agent training with TWO different policies
 # code_generator uses Qwen/Qwen2.5-Coder-3B, test_generator uses DeepSeek-R1-Distill
 mode: "validate"
-sample_mode: "env"
+sample_mode: "tree"
 # Inherit from base configuration
 defaults:
   # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently

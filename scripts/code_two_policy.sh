@@ -1,6 +1,6 @@
 set -x
 export RAY_TMPDIR="$(pwd)/tmp"
-export CUDA_VISIBLE_DEVICES=2,3,6,7
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -37,4 +37,6 @@ python3 -m pettingllms.trainer.train --config-path ../config/code --config-name 
     experiment_name=code_eval_two_policies \
     $total_resource \
     $model_0_USE_GRPO $model_0_resource $model_0_data \
-    $model_1_USE_GRPO $model_1_resource $model_1_data
+    $model_1_USE_GRPO $model_1_resource $model_1_data\
+    data.filter_method=uid \
+    sample_mode=tree \
