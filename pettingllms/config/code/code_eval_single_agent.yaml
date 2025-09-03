@@ -10,8 +10,8 @@ defaults:
 
 # dataset config (shared by all agents)
 data:
-  filter_method: mean # mean, uid, max, std
-  filter_ratio: 0.6
+  filter_method: mean # mean, uid, dapo, std
+  filter_ratio: 0.3
   gen_batch_size: 64
   gen_n_samples: 8
   sample_temperature: 1
