@@ -12,19 +12,20 @@ defaults:
 data:
   filter_method: mean # mean, uid, max, std
   filter_ratio: 0.6
-  gen_batch_size: 32
-  gen_n_samples: 16
+  gen_batch_size: 64
+  gen_n_samples: 8
   sample_temperature: 1
   val_freq: 10
   resample_freq: 1
   epoch_size: 30
+  
 
   # Batch sizes
   train_batch_size: 256
   val_batch_size: 256
   
   # Sequence lengths
-  max_prompt_length: 8192
+  max_prompt_length: 2048
   max_response_length: 2048
 
 resource:

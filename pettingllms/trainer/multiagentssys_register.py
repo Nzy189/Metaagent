@@ -17,6 +17,7 @@ ENV_CLASSES = {
     "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_test_env", "CodeTestEnv"),
     "math_env_single_agent": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnv"),
     "math_env": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnv"),
+    "alfworld_env": safe_import("pettingllms.multi_agent_env.alfworld.alfworld_env", "AlfworldEnv"),
 }
 
 ENV_BATCH_CLASSES = {
@@ -25,11 +26,12 @@ ENV_BATCH_CLASSES = {
     "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_test_env", "CodeTestEnvBatch"),
     "math_env": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnvBatch"),
     "math_env_single_agent": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnvBatch"),
+    "alfworld_env": safe_import("pettingllms.multi_agent_env.alfworld.alfworld_env", "AlfWorldEnvBatch"),
 }
 
 # Import agent classes
 AGENT_CLASSES = {
-    
+    "alfworld_agent": safe_import("pettingllms.multi_agent_env.alfworld.alf_agent", "AlfWorldAgent"),
     # Multi-agent system agents
     "base_agent": safe_import("pettingllms.multi_agent_env.base.agent", "BaseAgent"),
     "review_agent": safe_import("pettingllms.multi_agent_env.frontend.agents.review_agent", "ReviewAgent"),

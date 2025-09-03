@@ -1,5 +1,5 @@
 set -x
-export RAY_TMPDIR="$(pwd)/tmp"
+export RAY_TMPDIR="/home/lah003/workspace/PettingLLMs/tmp"
 export CUDA_VISIBLE_DEVICES=2,3
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
@@ -32,6 +32,7 @@ model_0_resource="resource.n_gpus_per_node=2  $model_0_config_path.trainer.n_gpu
 model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/train.parquet +$model_0_config_path.data.val_files=$model_0_data_dir/text/test.parquet"
 
 python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_eval_single_agent \
-    $model_0_USE_GRPO $model_0_resource $model_0_data data.epoch_size=1 data.resample_freq=10\
+    $model_0_USE_GRPO $model_0_resource $model_0_data data.epoch_size=60 data.resample_freq=3\
     sample_mode=tree\
-    experiment_name=4B_base_max_tree_resample_10\
+    experiment_name=4B_base_max_tree_epoch\
+    data.filter_ratio=0\

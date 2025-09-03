@@ -366,12 +366,6 @@ class MultiAgentsPPOTrainer:
 
         self.global_steps = 0
         
-
-        
-
-        # perform validation before training
-       
-        
         # Use the minimum total training steps among sub-trainers as the global total
         self.total_training_steps = getattr(self.config, "trainer.total_training_steps", 200)
         progress_bar = tqdm(range(self.total_training_steps), desc="Training Progress", position=0, leave=True)
@@ -422,8 +416,6 @@ class MultiAgentsPPOTrainer:
                 for agent_name, success_rate in val_metrics.items():
                     metrics[f"validation/agent_{agent_name}/success_rate"] = success_rate
                     validation_summary[agent_name] = success_rate
-                
-                        # 计算总体统计信息
                 if val_metrics:
                     success_rates = list(val_metrics.values())
                     metrics["validation/overall/avg_success_rate"] = sum(success_rates) / len(success_rates)

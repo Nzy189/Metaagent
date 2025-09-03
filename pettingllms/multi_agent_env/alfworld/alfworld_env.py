@@ -20,7 +20,7 @@ def extract_task(text_obs: str):
 
 
 @ray.remote(num_cpus=0.002)
-class AlfworldWorker:
+class AlfworldEnv:
     """
     Ray remote actor that replaces the worker function.
     Each actor holds one environment instance.
@@ -40,10 +40,10 @@ class AlfworldWorker:
         actions = [action] 
         self.action_history.append(action)
         
-        obs, scores, dones, infos = self.env.step(actions)
+        obs, reward, done_list, infos = self.env.step([action])
         self.observation=obs
         self.admissible_actions=infos['admissible_commands']
-        return obs, scores, dones, infos
+        return obs[0], reward[0], done_list[0], infos[0]
     
     def reset(self):
         """Reset the environment"""
@@ -79,10 +79,10 @@ class AlfWorldEnvBatch:
         base_env = AlfredTWEnv(config, train_eval='train' if mode == 'train' else 'valid')
         if mode == "train":
             for rollout_idx in rollout_idx_list:
-                env_worker=AlfworldWorker.remote(config, 0+rollout_idx//samples, base_env)
+                env_worker=AlfworldEnv.remote(config, 0+rollout_idx//samples, base_env)
                 self.env_list.append(env_worker)
 
         else:
             for rollout_idx in range(valid_env_list_num):
-                env_worker=AlfworldWorker.remote(config, 0+rollout_idx, base_env)
+                env_worker=AlfworldEnv.remote(config, 0+rollout_idx, base_env)
                 self.env_list.append(env_worker)

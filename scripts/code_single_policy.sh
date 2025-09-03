@@ -1,5 +1,5 @@
 set -x
-export RAY_TMPDIR="$(pwd)/tmp"
+export RAY_TMPDIR="/home/lah003/workspace/PettingLLMs/tmp"
 export CUDA_VISIBLE_DEVICES=6,7
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN

@@ -500,27 +500,14 @@ class MultiAgentsExecutionEngine:
                 
                 tasks=[single_generate_response(idx) for idx in range(len(rollout_idx_list))]
                 results=await asyncio.gather(*tasks, return_exceptions=True)
-                for result in results:
-                    if result is not None and not isinstance(result, Exception):
-                        current_agent = result['current_agent']
-                        output_dpr = result['output_dpr']
-                        policy_name = result['policy_name']
-                        if output_dpr is not None:
-                            if trajectory_per_task_dict[policy_name].batch is None:
-                                trajectory_per_task_dict[policy_name] = output_dpr
-                            else:
-                                # Use concat instead of union, because each response content is different
-                                trajectory_per_task_dict[policy_name] = DataProto.concat([
-                                    trajectory_per_task_dict[policy_name], 
-                                    output_dpr
-                                ])
-                                print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
+               
                 values = []
                 for i in range(len(rollout_idx_list)):
                     agent_i = agent_groups[i][agent_idx]
                     val = getattr(agent_i, 'value', None)
                     if agent_i.done:
                         finish=True
+                        
                     if val is None:
                         val = -1e9
                     values.append(val)
@@ -532,6 +519,21 @@ class MultiAgentsExecutionEngine:
                 envs_list = [selected_env for _ in envs_list]
                 agent_groups = [copy.deepcopy(agent_groups[best_i]) for _ in agent_groups]
                 if finish:
+                    for result in results:
+                            if result is not None and not isinstance(result, Exception):
+                                current_agent = result['current_agent']
+                                output_dpr = result['output_dpr']
+                                policy_name = result['policy_name']
+                                if output_dpr is not None:
+                                    if trajectory_per_task_dict[policy_name].batch is None:
+                                        trajectory_per_task_dict[policy_name] = output_dpr
+                                    else:
+                                        # Use concat instead of union, because each response content is different
+                                        trajectory_per_task_dict[policy_name] = DataProto.concat([
+                                            trajectory_per_task_dict[policy_name], 
+                                            output_dpr
+                                        ])
+                                        print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
                     break
             if finish:
                 break
