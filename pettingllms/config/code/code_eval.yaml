@@ -32,7 +32,7 @@ resource:
   n_gpus_per_node: 8
   trust_remote_code: true
 
-
+experiment_name: code_eval
 
 trainer:
   device: cuda
