@@ -18,7 +18,7 @@ import numpy as np
 import openai
 import torch
 from openai.types import Completion
-from pettingllms.trainer.multiagentssys_register import AGENT_CLASS_MAPPING, ENV_CLASS_MAPPING, ENV_BATCH_CLASSES
+from pettingllms.trainer.multiagentssys_register import AGENT_CLASS_MAPPING, ENV_CLASS_MAPPING, ENV_BATCH_CLASSES, ENV_WORKER_CLASS_MAPPING
 from functools import partial
 import multiprocessing
 from pettingllms.utils.simpler_timer import create_timer, timer_checkpoint
@@ -76,7 +76,7 @@ class MultiAgentsExecutionEngine:
             self.step_timeout = getattr(self.config.timeout, 'step_timeout', 30.0)
         else:
             self.generate_timeout = 120.0  # 60 seconds for generation
-            self.step_timeout = 60     # 30 seconds for environment step
+            self.step_timeout = 30     # 30 seconds for environment step
         
     def __init__(
         self,
@@ -198,16 +198,26 @@ class MultiAgentsExecutionEngine:
                     self.env_rollout_mapping[env_idx] = [_ for _ in range(env_idx*self.sample_num, (env_idx+1)*self.sample_num)]
             self.timer.checkpoint("Starting batched env initialization")
             self.env_workers = None
-            RayDockerWorker = get_ray_docker_worker_cls()
+            if self.env_name in ENV_WORKER_CLASS_MAPPING:
+                _worker_factory_or_cls = ENV_WORKER_CLASS_MAPPING[self.env_name]
+                try:
+                    RayDockerWorker = _worker_factory_or_cls() if callable(_worker_factory_or_cls) else _worker_factory_or_cls
+                except Exception as e:
+                    print(f"Failed to create RayDockerWorker from mapping for env '{self.env_name}': {e}")
+                    RayDockerWorker = None
+            else:
+                RayDockerWorker = get_ray_docker_worker_cls()
             print("begin to create Ray docker workers")
-            if RayDockerWorker is not None:
+            if RayDockerWorker is not None and hasattr(RayDockerWorker, "remote"):
                 num_workers = len(self.envs)
                 self.timer.checkpoint(f"Creating {num_workers} Ray docker workers")
-                self.env_workers = [RayDockerWorker.remote(_) for _ in range(num_workers)]
+                self.env_workers = [RayDockerWorker.remote(idx) for idx in range(num_workers)]
                 self.multi_logger.log_rollout_summary(
                     -1, -1, "env_workers",
                     f"init {num_workers} env workers"
                 )
+            else:
+                print(f"RayDockerWorker is not available or invalid for env '{self.env_name}'. Skipping env workers initialization.")
             self.agent_groups_list = []
             for rollout_idx in range(len(self.envs)):
                 self.agent_groups_list_per_rollout = []
@@ -422,8 +432,10 @@ class MultiAgentsExecutionEngine:
 
         envs_list = [self.envs[rollout_idx] for rollout_idx in rollout_idx_list]
         agent_groups = [self.agent_groups_list[rollout_idx] for rollout_idx in rollout_idx_list]
-        finish=False
+        
         for turn_idx in range(self.max_turns):
+            agent_done_list=[]
+
             for agent_idx, agent_name in enumerate(self.turn_order):
                 async def single_generate_response(idx):
                     rollout_idx=rollout_idx_list[idx]
@@ -475,10 +487,7 @@ class MultiAgentsExecutionEngine:
                             timeout=self.step_timeout
                         )
                     except asyncio.TimeoutError:
-                        if len(current_agent.reward_history)>0:
-                            current_agent.agent_reward = 0.0-current_agent.reward_history[-1]
-                        else:
-                            current_agent.agent_reward = 0.0
+                        current_agent.agent_reward = 0.0
                         current_agent.reward_history.append(0.0)
                     
                     self.multi_logger.log_env_agent_info(
@@ -502,15 +511,16 @@ class MultiAgentsExecutionEngine:
                 results=await asyncio.gather(*tasks, return_exceptions=True)
                
                 values = []
+                agent_done=False
                 for i in range(len(rollout_idx_list)):
                     agent_i = agent_groups[i][agent_idx]
                     val = getattr(agent_i, 'value', None)
                     if agent_i.done:
-                        finish=True
-                        
+                        agent_done=True                 
                     if val is None:
                         val = -1e9
                     values.append(val)
+                agent_done_list.append(agent_done)
                 try:
                     best_i = int(np.argmax(np.asarray(values)))
                 except Exception:
@@ -518,7 +528,7 @@ class MultiAgentsExecutionEngine:
                 selected_env = envs_list[best_i]
                 envs_list = [selected_env for _ in envs_list]
                 agent_groups = [copy.deepcopy(agent_groups[best_i]) for _ in agent_groups]
-                if finish:
+                if agent_done:
                     for result in results:
                             if result is not None and not isinstance(result, Exception):
                                 current_agent = result['current_agent']
@@ -535,7 +545,7 @@ class MultiAgentsExecutionEngine:
                                         ])
                                         print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
                     break
-            if finish:
+            if agent_done_list.count(True)==len(agent_done_list):
                 break
         return trajectory_per_task_dict
 

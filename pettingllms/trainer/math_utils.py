@@ -581,7 +581,6 @@ async def _worker_docker(
                         print(f"关闭 {file_name} 文件句柄失败: {e}")
                         
     except Exception as e:
-        # 顶层兜底，保持与原实现一致的行为：将异常转为可读字符串
         printed_output = f"error: {e}"
         print(f"_worker_docker 执行异常: {e}")
 
@@ -641,7 +640,6 @@ async def get_code_execution_output(
         if ray_actor is None:
             raise ValueError("ray_actor is required")
         
-        # 使用 Ray actor 执行代码
         result = await ray_actor.run.remote(code, timeout)
         return result
         

@@ -96,21 +96,5 @@ def choose_executable_action(intent: str, admissible: List[str], threshold: int 
         if norm and (norm in low or low.startswith(norm)):
             return a
 
-    # 模糊匹配
-    if _HAS_RAPIDFUZZ:
-        best, score, _ = process.extractOne(
-            norm,
-            admissible,
-            scorer=fuzz.token_sort_ratio
-        )
-        if score >= threshold:
-            return best
-    else:
-        # 简单 difflib 兜底
-        import difflib
-        candidates = difflib.get_close_matches(norm, admissible, n=1, cutoff=0.6)
-        if candidates:
-            return candidates[0]
-
     # 实在不行：返回第一个
     return admissible[0]

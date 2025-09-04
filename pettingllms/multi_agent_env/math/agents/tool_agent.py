@@ -5,7 +5,7 @@ from pettingllms.multi_agent_env.base.agent import Agent, AgentData
 from pettingllms.multi_agent_env.base.env import Env
 from pettingllms.utils.logger_config import get_multi_logger
 from typing import List
-from pettingllms.multi_agent_env.math.math_utils import  extract_code
+from pettingllms.multi_agent_env.math.math_utils import extract_code, get_code_execution_output, test_if_eq
 logger = logging.getLogger(__name__)
 
 
@@ -34,8 +34,7 @@ class ToolAgent(Agent):
         # Accept other unrelated keyword arguments for compatibility
         for key, value in (kwargs or {}).items():
             setattr(self, key, value)
-        
-        # 初始化多日志系统
+  
         self.multi_logger = get_multi_logger()
 
     def update_from_env(self, env_data: Env):
@@ -100,24 +99,34 @@ class ToolAgent(Agent):
         """
         generated_solution = self.current_action
         env_data.state.code_generated_solution = generated_solution
-
-        # 2) Extract answer from the code solution
-        extracted_answer = extract_answer(generated_solution)
-        env_data.state.code_extracted_answer = extracted_answer
+        # 先不设置提取答案，待执行代码后根据输出设置
 
         # 3) Evaluate correctness
         ground_truth_answer = env_data.state.ground_truth_answer
         is_correct = False
+        code_execution_output = None
+        try:
+            # 执行代码（通过 ray worker）
+            code_execution_output = await get_code_execution_output(
+                generated_solution,
+                timeout=40.0,
+                ray_actor=env_worker,
+            )
+        except Exception as e:
+            code_execution_output = f"error: {e}"
+        # 记录执行输出
+        try:
+            env_data.state.code_execution_output = code_execution_output
+        except Exception:
+            pass
         
-        if extracted_answer is not None and ground_truth_answer is not None:
+        if code_execution_output is not None and ground_truth_answer is not None:
             try:
-                is_correct = grade_answer_verl(generated_solution, ground_truth_answer)
-                # 存储代码智能体的正确性（如果需要的话，可以添加code_is_correct字段）
-                # 这里暂时使用通用的is_correct字段，但可以根据需要分离
-                if not hasattr(env_data.state, 'code_is_correct'):
-                    env_data.state.code_is_correct = is_correct
-                else:
-                    env_data.state.code_is_correct = is_correct
+                # 使用执行输出与标准答案进行比较
+                extracted = str(code_execution_output).strip()
+                env_data.state.code_extracted_answer = extracted
+                is_correct = await test_if_eq(extracted, str(ground_truth_answer).strip())
+                env_data.state.code_is_correct = bool(is_correct)
                 
                 if is_correct:
                     self.done = True
@@ -126,15 +135,9 @@ class ToolAgent(Agent):
             except Exception as e:
                 print(f"Warning: Failed to evaluate code solution: {e}")
                 is_correct = False
-                if not hasattr(env_data.state, 'code_is_correct'):
-                    env_data.state.code_is_correct = False
-                else:
-                    env_data.state.code_is_correct = False
+                env_data.state.code_is_correct = False
         else:
-            if not hasattr(env_data.state, 'code_is_correct'):
-                env_data.state.code_is_correct = False
-            else:
-                env_data.state.code_is_correct = False
+            env_data.state.code_is_correct = False
 
         # 4) Update reward based on correctness
         if len(self.reward_history) > 0:

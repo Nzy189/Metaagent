@@ -5,7 +5,8 @@ from pettingllms.multi_agent_env.base.agent import Agent, AgentData
 from pettingllms.multi_agent_env.base.env import Env
 from pettingllms.utils.logger_config import get_multi_logger
 from typing import List
-from pettingllms.rewards.math_utils.utils import extract_answer, grade_answer_verl
+from pettingllms.rewards.math_utils.utils import extract_answer
+from pettingllms.multi_agent_env.math.math_utils import evaluate_math_solution
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ class ReasoningAgent(Agent):
         """
         Process the generated reasoning solution and evaluate it against the ground truth.
         """
-        # 1) Update reasoning智能体的生成解决方案
+       
         generated_solution = self.current_action
         env_data.state.reasoning_generated_solution = generated_solution
 
@@ -114,11 +115,11 @@ class ReasoningAgent(Agent):
         ground_truth_answer = env_data.state.ground_truth_answer
         is_correct = False
         
-        if extracted_answer is not None and ground_truth_answer is not None:
+        if generated_solution is not None and ground_truth_answer is not None:
             try:
-                is_correct = grade_answer_verl(generated_solution, ground_truth_answer)
-                # 存储推理智能体的正确性（如果需要的话，可以添加reasoning_is_correct字段）
-                # 这里暂时使用通用的is_correct字段，但可以根据需要分离
+                # 使用本项目的 utils 进行一致的评估
+                is_correct, extracted = await evaluate_math_solution(generated_solution, ground_truth_answer)
+                env_data.state.reasoning_extracted_answer = extracted
                 if not hasattr(env_data.state, 'reasoning_is_correct'):
                     env_data.state.reasoning_is_correct = is_correct
                 else:

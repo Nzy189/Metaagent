@@ -47,7 +47,14 @@ AGENT_CLASSES = {
     "math_agent_single_agent": safe_import("pettingllms.multi_agent_env.math_single_agent.agents.math_agent", "MathGenerationAgent"),
 }
 
+ENV_WORKER_CLASSES = {
+    "code_env": safe_import("pettingllms.multi_agent_env.code.code_utils", "get_ray_docker_worker_cls"),
+    "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_utils", "get_ray_docker_worker_cls"),
+    "math_env": safe_import("pettingllms.multi_agent_env.math.math_utils", "get_ray_docker_worker_cls")
+}
+
 # Filter out None values for unavailable imports
 ENV_CLASS_MAPPING = {k: v for k, v in ENV_CLASSES.items() if v is not None}
 ENV_BATCH_CLASS_MAPPING = {k: v for k, v in ENV_BATCH_CLASSES.items() if v is not None}
 AGENT_CLASS_MAPPING = {k: v for k, v in AGENT_CLASSES.items() if v is not None}
+ENV_WORKER_CLASS_MAPPING = {k: v for k, v in ENV_WORKER_CLASSES.items() if v is not None}

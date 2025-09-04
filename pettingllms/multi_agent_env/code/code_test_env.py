@@ -15,7 +15,7 @@ from pettingllms.multi_agent_env.code.code_utils import (
         extract_code_from_response,
         evaluate_code_against_tests,
     )
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 class CodeTestEnvState:
     problem: str=None
     golden_code: str=None
+    generated_code_history: List[str]=field(default_factory=list)
     generated_code: str=None
     generated_test_input: List[str]=None
     generated_test_output: List[str]=None
@@ -36,6 +37,7 @@ class CodeTestEnvState:
     ground_truth_test_vs_generated_code_match_ratio: float=None
     generated_test_vs_generated_code_match_cases: List[Dict]=None
     generated_test_vs_generated_code_mismatch_cases: List[Dict]=None
+    generated_test_vs_generated_code_mismatch_cases_history: List[Dict]=field(default_factory=list)
     generated_test_vs_generated_code_match_ratio: float=None
     generated_test_vs_golden_code_match_cases: List[Dict]=None
     generated_test_vs_golden_code_mismatch_cases: List[Dict]=None
@@ -68,15 +70,6 @@ class CodeTestEnv(MultiAgentsEnvironment):
 
 
    
-    async def step(self, role: str, action: str,env_worker:Any=None):
-        if role == "code_generator":
-            await self._code_step(action,env_worker)
-        elif role == "test_generator":
-            await self._test_step(action,env_worker)
-        else:
-            raise ValueError(f"Invalid role: {role}")
-
-        pass
 
     def reset(self):
         """
@@ -104,6 +97,7 @@ class CodeTestEnv(MultiAgentsEnvironment):
         """
 
         self.state.generated_code=None
+        self.state.generated_code_history=[]
         self.state.generated_test_input=None
         self.state.generated_test_output=None
         self.state.exe_code_generated_test_output=None
@@ -113,6 +107,7 @@ class CodeTestEnv(MultiAgentsEnvironment):
         self.state.ground_truth_test_vs_generated_code_match_ratio=None
         self.state.generated_test_vs_generated_code_match_cases=None
         self.state.generated_test_vs_generated_code_mismatch_cases=None
+        self.state.generated_test_vs_generated_code_mismatch_cases_history=[]
         self.state.generated_test_vs_generated_code_match_ratio=None
         self.state.generated_test_vs_golden_code_match_cases=None
         self.state.generated_test_vs_golden_code_mismatch_cases=None

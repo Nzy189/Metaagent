@@ -12,7 +12,7 @@ defaults:
 # dataset config (shared by all agents)
 data:
   filter_method: mean # mean, uid, dapo, std
-  filter_ratio: 0.3
+  filter_ratio: 0.5
   gen_batch_size: 64
   gen_n_samples: 8
   sample_temperature: 1
@@ -24,7 +24,7 @@ data:
   val_batch_size: 32
   
   # Sequence lengths
-  max_prompt_length: 2048
+  max_prompt_length: 4096
   max_response_length: 2048
 
 resource:
@@ -36,7 +36,7 @@ resource:
 env:
   name: code_env
   benchmark: "CodeForces"
-  max_turns: 3
+  max_turns: 5
   resolve: false
   multi_modal: false
   batched_init: true
@@ -58,7 +58,8 @@ models:
   model_0:
     # TODO: make configurable
     #path: "/home/lah003/models/Qwen3-4B"
-    path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
+    path: "/home/lah003/models/Qwen2.5-7B-Instruct"
+    #path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
     name: "code_generator_model"
     ppo_trainer_config:
       data: 

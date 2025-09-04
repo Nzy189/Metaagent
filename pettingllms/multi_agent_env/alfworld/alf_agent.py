@@ -29,9 +29,8 @@ class AlfWorldAgent(Agent):
     def update_from_env(self, env):
         self.task_description = ray.get(env.get_task_description.remote())
         self.current_observation = ray.get(env.get_observation.remote())
-        self.admissible_actions = ", ".join(ray.get(env.get_admissible_actions.remote())[0])
-        self.action_history = ", ".join(ray.get(env.get_action_history.remote()))
-        
+        self.admissible_actions = ray.get(env.get_admissible_actions.remote())[0]
+        self.action_history = ray.get(env.get_action_history.remote())
 
         format_prompt = f"""
     You are an expert agent operating in the ALFRED Embodied Environment. Your task is to: {self.task_description}
@@ -49,17 +48,15 @@ class AlfWorldAgent(Agent):
 
 
     def update_from_model(self, response: str):
-        """从模型文本中抽取动作（字符串），并尝试对齐 admissible actions。"""
-        obs = getattr(self.env_data, "agent_observations", None) or {}
-        admissible = obs.get("admissible_actions", []) or []
+        admissible = self.admissible_actions
         intent = extract_action_from_text(response)
         action = choose_executable_action(intent, admissible)
         self.current_action = action
         return action
 
-    async def step(self, env_worker: Any = None):
+    async def step(self, env: Any = None, env_worker: Any = None):
         action = self.current_action
-        obs, reward, done, info = await env_worker.step.remote(action)
+        obs, reward, done, info = ray.get(env.step.remote(action))
         if len(self.reward_history) > 0:
             self.agent_reward = float(reward) - float(self.reward_history[-1])
         else:

@@ -43,7 +43,7 @@ class AlfworldEnv:
         obs, reward, done_list, infos = self.env.step([action])
         self.observation=obs
         self.admissible_actions=infos['admissible_commands']
-        return obs[0], reward[0], done_list[0], infos[0]
+        return obs[0], reward[0], done_list[0], infos
     
     def reset(self):
         """Reset the environment"""

@@ -11,19 +11,7 @@ from pylatexenc import latex2text
 from sympy.parsing import sympy_parser
 
 
-# Dan Hendrycks' code
-def mathd_normalize_answer(answer: str | None) -> str | None:
-    if answer is None:
-        return None
-    answer = answer.strip()
-    try:
-        # Remove enclosing `\text{}`.
-        m = re.search("^\\\\text\{(?P<text>.+?)\}$", answer)
-        if m is not None:
-            answer = m.group("text").strip()
-        return _strip_string(answer)
-    except Exception:
-        return answer
+
 
 
 def _strip_string(string):
@@ -421,27 +409,6 @@ def extract_boxed_answer(solution: str) -> str:
     return solution
 
 
-def extract_hash_answer(solution: str) -> str:
-    """Extract the answer after #### marker"""
-    if "####" not in solution:
-        return None
-    
-    # Find the last occurrence of ####
-    idx = solution.rfind("####")
-    if idx < 0:
-        return None
-    
-    # Extract everything after ####
-    answer_part = solution[idx + 4:].strip()
-    
-    # Split by lines and take the first non-empty line as the answer
-    lines = answer_part.split('\n')
-    for line in lines:
-        line = line.strip()
-        if line:
-            return line
-    
-    return None
 
 
 def grade_answer_sympy(given_answer: str, ground_truth: str) -> bool:
@@ -481,16 +448,6 @@ def grade_answer_sympy(given_answer: str, ground_truth: str) -> bool:
     return is_correct
 
 
-def grade_answer_mathd(given_answer: str, ground_truth: str) -> bool:
-    ground_truth_normalized_mathd = mathd_normalize_answer(ground_truth)
-    given_answer_normalized_mathd = mathd_normalize_answer(given_answer)
-
-    # be at least as lenient as mathd
-    if ground_truth_normalized_mathd == given_answer_normalized_mathd:
-        return True
-    return False
-
-
 def extract_answer(solution_str):
     solution = re.search("#### (\\-?[0-9\\.\\,]+)", solution_str)
     assert solution is not None
@@ -498,13 +455,12 @@ def extract_answer(solution_str):
     final_solution = final_solution.split("#### ")[1].replace(",", "")
     return final_solution
 
-def grade_answer_verl(solution_str, ground_truth):
+def grade_answer(given_answer, ground_truth):
     if not ground_truth:
         return False
-    # Extract ground truth answer if it's in boxed or hash format
-    if "\\boxed" in ground_truth or "####" in ground_truth:
+    # Extract ground truth answer if it's in hash format
+    if "####" in ground_truth:
         ground_truth = extract_answer(ground_truth)
-    given_answer = extract_answer(solution_str)
     if given_answer is None:
         return False
-    return grade_answer_mathd(given_answer, ground_truth) or grade_answer_sympy(given_answer, ground_truth)
+    return given_answer == ground_truth
