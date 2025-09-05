@@ -13,7 +13,7 @@ defaults:
 data:
   filter_method: mean # mean, uid, dapo, std
   filter_ratio: 0.5
-  gen_batch_size: 64
+  gen_batch_size: 32
   gen_n_samples: 8
   sample_temperature: 1
   val_freq: 10

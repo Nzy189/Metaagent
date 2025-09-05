@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 class MathTestEnvState:
     problem: str = None
     ground_truth_answer: str = None
-    ground_truth_solution: str = None
     generated_solution: str = None
     extracted_answer: str = None
     is_correct: bool = None
@@ -69,8 +68,7 @@ class MathTestEnvBatch:
         for i, problem in enumerate(self.problem_list):
             state = MathTestEnvState(
                 problem=problem["problem"],
-                ground_truth_answer=problem["answer"],
-                ground_truth_solution=problem.get("solution", ""),
+                ground_truth_answer=problem["solution"],
                 difficulty=problem.get("difficulty", 0.0),
                 problem_type=problem.get("type", "unknown")
             )

@@ -17,6 +17,7 @@ import ray
 import shutil
 import tempfile
 import time
+import contextlib
 
 try:
     from datasets import load_dataset as hf_load_dataset
@@ -466,128 +467,42 @@ async def _worker_docker(
     timeout: float = 40.0,
     image: str = "python:3.11-slim"
 ) -> str:
-    tmpdir = tempfile.mkdtemp(prefix="pllm_exec_",dir="tmp")
+    tmpdir = tempfile.mkdtemp(prefix="pllm_exec_", dir="tmp")
     script_path = os.path.join(tmpdir, "script.py")
-    def cleanup_tmpdir():
-        if not os.path.exists(tmpdir):
-            return
-        
-        for attempt in range(3):
-            try:
-                shutil.rmtree(tmpdir, ignore_errors=False)
-                print(f"成功删除临时目录: {tmpdir}")
-                return
-            except OSError as e:
-                print(f"删除临时目录失败 (尝试 {attempt + 1}/3): {e}")
-                if attempt < 2:
-                    # 如果删除失败，尝试强制删除所有文件
-                    try:
-                        for root, dirs, files in os.walk(tmpdir):
-                            for file in files:
-                                file_path = os.path.join(root, file)
-                                try:
-                                    os.chmod(file_path, 0o777)
-                                    os.remove(file_path)
-                                except Exception:
-                                    pass
-                            for dir_name in dirs:
-                                dir_path = os.path.join(root, dir_name)
-                                try:
-                                    os.chmod(dir_path, 0o777)
-                                except Exception:
-                                    pass
-                        # 再次尝试删除目录
-                        os.rmdir(tmpdir)
-                        print(f"强制删除临时目录成功: {tmpdir}")
-                        return
-                    except Exception as force_e:
-                        print(f"强制删除也失败: {force_e}")
-                        time.sleep(0.1)  # 短暂等待后重试
-                else:
-                    # 最后一次尝试，使用 ignore_errors=True
-                    shutil.rmtree(tmpdir, ignore_errors=True)
-                    print(f"使用 ignore_errors 删除临时目录: {tmpdir}")
-    
-    stdout_file = None
-    stderr_file = None
-    printed_output = None
-    
+    stdout_path = os.path.join(tmpdir, "stdout.txt")
+
+    with open(script_path, "w", encoding="utf-8") as f:
+        f.write(script)
+
+    stdout_file = open(stdout_path, "wb")
     try:
-        with open(script_path, "w", encoding="utf-8") as f:
-            f.write(script)
-
-
-       
-        stdout_path = os.path.join(tmpdir, "stdout.txt")
-        stderr_path = os.path.join(tmpdir, "stderr.txt")
-        stdout_file = open(stdout_path, "wb")
-        stderr_file = open(stderr_path, "wb")
+        proc = await asyncio.create_subprocess_exec(
+            "python",
+            script_path,
+            stdout=stdout_file,
+            stderr=asyncio.subprocess.DEVNULL,
+            cwd=tmpdir,
+            start_new_session=True,
+        )
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "python", script_path,
-                stdout=stdout_file,
-                stderr=stderr_file,
-                cwd=tmpdir,
-                start_new_session=True,
-            )
-
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
             try:
-                await asyncio.wait_for(proc.wait(), timeout=timeout-10)
-                rc = proc.returncode
-            except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-                try:
+                proc.kill()
+            finally:
+                with contextlib.suppress(Exception):
                     await proc.wait()
-                except Exception:
-                    pass
-              
-                rc = None
-                printed_output = None
-                print("printed_output: None (timeout)")
+            return "timeout"
+    finally:
+        # 确保文件句柄被关闭
+        if not stdout_file.closed:
+            stdout_file.close()
 
-            if printed_output is None and rc is None:
-                pass
-            elif rc is not None:
-                try:
-                    with open(stdout_path, "rb") as f_out:
-                        out_bytes = f_out.read()
-                except Exception:
-                    out_bytes = b""
-                try:
-                    with open(stderr_path, "rb") as f_err:
-                        err_bytes = f_err.read()
-                except Exception:
-                    err_bytes = b""
-
-                if rc == 0:
-                    printed_output = out_bytes.decode(errors="replace")
-                else:
-                    err_text = (err_bytes or b"").decode(errors="replace").strip()
-                    out_text = (out_bytes or b"").decode(errors="replace").strip()
-                    combined = err_text or out_text
-                    if "Traceback (most recent call last):" in combined:
-                        last_line = combined.strip().splitlines()[-1]
-                        combined = last_line
-                    printed_output = f"error: exit {rc}: {combined}"
-        finally:
-            for file_handle, file_name in [(stdout_file, "stdout"), (stderr_file, "stderr")]:
-                if file_handle is not None:
-                    try:
-                        if not file_handle.closed:
-                            file_handle.close()
-                    except Exception as e:
-                        print(f"关闭 {file_name} 文件句柄失败: {e}")
-                        
-    except Exception as e:
-        # 顶层兜底，保持与原实现一致的行为：将异常转为可读字符串
-        printed_output = f"error: {e}"
-        print(f"_worker_docker 执行异常: {e}")
-
-    return printed_output
+    # 读取并返回标准输出内容（无论退出码）
+    with open(stdout_path, "rb") as f_out:
+        out_bytes = f_out.read()
+    return out_bytes.decode(errors="replace")
 
 
 _RAY_TASK_HANDLE = None  # 缓存 Ray 远程函数句柄
@@ -731,10 +646,10 @@ def get_ray_docker_worker_cls():
     try:
         _max_conc_env = os.getenv("RAY_ACTOR_MAX_CONCURRENCY")
         try:
-            _max_conc = int(_max_conc_env) if _max_conc_env else 8
+            _max_conc = int(_max_conc_env) if _max_conc_env else 20
         except (ValueError, TypeError):
-            print(f"Warning: invalid RAY_ACTOR_MAX_CONCURRENCY value: {_max_conc_env}, using default 8")
-            _max_conc = 8
+            print(f"Warning: invalid RAY_ACTOR_MAX_CONCURRENCY value: {_max_conc_env}, using default 20")
+            _max_conc = 20
 
         @ray.remote(num_cpus=0.02, max_concurrency=_max_conc)
         class _RayDockerWorker:
@@ -885,7 +800,7 @@ def extract_code_from_response(response: str) -> str:
 
 
 def load_math_problem_batch(
-    batch_size: int = 10,
+    env_indices: List[int],
     dataset_name: str = "train",
     split: str = "train",
     mode: str = "train",
@@ -926,10 +841,10 @@ def load_math_problem_batch(
         except Exception as e:
             raise Exception(f"❌ Failed to load local dataset: {e}")
         
-        if len(ds) < batch_size:
-            raise Exception(f"❌ Local dataset only has {len(ds)} samples, but batch_size is {batch_size}")
+        if len(ds) < len(env_indices):
+            raise Exception(f"❌ Local dataset only has {len(ds)} samples, but batch_size is {len(env_indices)}")
         
-        indices = random.sample(range(len(ds)), batch_size)
+        indices = random.sample(range(len(ds)), len(env_indices))
         batch_results = []
         
         for i, idx in enumerate(indices):
@@ -937,7 +852,7 @@ def load_math_problem_batch(
             problem_dict = _format_math_problem(example, idx, mode="train")
             if problem_dict:
                 batch_results.append(problem_dict)
-                print(f"✅ Loaded math train problem {i+1}/{batch_size} (index={idx})")
+                print(f"✅ Loaded math train problem {i+1}/{len(env_indices)} (index={idx})")
         
         print(f"✅ 成功返回 {len(batch_results)} 条数学训练样本")
         return batch_results
@@ -1003,7 +918,7 @@ def _format_math_problem(example: Dict, index: int, mode: str = "train") -> Opti
 
 
 
-async def evaluate_math_solution(
+def evaluate_math_solution(
     generated_solution: str,
     ground_truth_answer: str
 ) -> Tuple[bool, Optional[str]]:

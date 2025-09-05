@@ -185,7 +185,7 @@ def _format_math_problem(example: Dict, index: int, mode: str = "train") -> Opti
 
 
 
-async def evaluate_math_solution(
+def evaluate_math_solution(
     solution: str,
     ground_truth_answer: str
 ) -> Tuple[bool, Optional[str]]:

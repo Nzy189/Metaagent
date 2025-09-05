@@ -119,7 +119,7 @@ agent_policy_configs:
 
 # Logger configuration
 project_name: pettingllms
-experiment_name: code_test
+experiment_name: math_two_policies
 logger: [ 'console', 'wandb' ]
 
 trainer:
@@ -130,7 +130,7 @@ trainer:
   total_epochs: 1
   total_training_steps: 200
   project_name: pettingllms
-  experiment_name: code_eval
+  experiment_name: math_two_policies
   logger: [ 'console', 'wandb' ]
   log_val_generations: 0
   rollout_data_dir: null
@@ -143,7 +143,7 @@ trainer:
   critic_warmup: 0
   default_hdfs_dir: null
   del_local_ckpt_after_load: False
-  default_local_dir: checkpoints/pettingllms/code_eval
+  default_local_dir: checkpoints/pettingllms/math_two_policies
   max_actor_ckpt_to_keep: 3
   max_critic_ckpt_to_keep: null
   ray_wait_register_center_timeout: 300

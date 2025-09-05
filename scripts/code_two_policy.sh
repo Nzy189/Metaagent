@@ -35,12 +35,14 @@ model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/trai
 model_1_data="+$model_1_config_path.data.train_files=$model_1_data_dir/text/train.parquet +$model_1_config_path.data.val_files=$model_1_data_dir/text/test.parquet"
 python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_two_policies \
     experiment_name=code_eval_two_policies \
-    data.epoch_size=40\
-    data.resample_freq=1\
+    data.epoch_size=120\
+    data.resample_freq=4\
+    data.max_prompt_length=8192\
+    data.max_prompt_length=4096\
     $total_resource \
     $model_0_USE_GRPO $model_0_resource $model_0_data \
     $model_1_USE_GRPO $model_1_resource $model_1_data\
     sample_mode=tree \
     data.filter_ratio=0.5\
-    data.filter_method=mean\
+    data.filter_method=std\
     env.max_turns=3\

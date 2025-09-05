@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional, List
 from dataclasses import dataclass
 
 from pettingllms.multi_agent_env.base.env import MultiAgentsEnvironment
-from pettingllms.multi_agent_env.math_single_agent.math_utils import (
+from pettingllms.multi_agent_env.math.math_utils import (
     load_math_problem_batch,
 )
 

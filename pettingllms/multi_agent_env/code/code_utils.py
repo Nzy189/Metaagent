@@ -562,7 +562,7 @@ def get_ray_docker_worker_cls():
         return getattr(get_ray_docker_worker_cls, "_cls")
 
     try:
-        _max_conc = 800
+        _max_conc = 20
 
         @ray.remote(num_cpus=0.1, max_concurrency=_max_conc)
         class _RayDockerWorker:
