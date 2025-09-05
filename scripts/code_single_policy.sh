@@ -31,12 +31,12 @@ model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/trai
 
 python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_eval \
     experiment_name=code_eval_single_poliy \
-    data.epoch_size=100\
+    data.epoch_size=40\
     data.max_prompt_length=4096\
     data.max_response_length=4096\
     data.resample_freq=3\
     $model_0_USE_GRPO $model_0_resource $model_0_data\
-    data.filter_method=std\
+    data.filter_method=mean\
     data.filter_ratio=0.5\
     sample_mode=tree\
     env.max_turns=3\

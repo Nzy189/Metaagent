@@ -32,7 +32,11 @@ except ImportError:
     print("⚠️ The 'pandas' library is unavailable; some features are limited")
     PANDAS_AVAILABLE = False
 
-
+def extract_answer(solution_str):
+    solution = re.findall(r"####\s*(\d+)", solution_str)
+    if not solution:
+        return None
+    return solution[0]
 
 def extract_code(response: str) -> str:
     """
@@ -981,14 +985,7 @@ def _format_math_problem(example: Dict, index: int, mode: str = "train") -> Opti
     try:
         question = example.get("question", "")
         solution = example.get("solution", "")
-        
-        # 根据mode处理solution字段
-        if mode == "train":
-            # 训练模式：保留solution作为答案
-            answer = solution
-        else:  # validation mode
-            # 验证模式：solution设为空（因为是测试）
-            answer = ""
+        answer = solution
         
         # 验证必要字段
         if not question:
@@ -1024,7 +1021,7 @@ async def evaluate_math_solution(
     if generated_solution is None:
         return False
 
-    is_correct = generated_solution == ground_truth_answer
+    is_correct = int(generated_solution) == int(ground_truth_answer)
     return is_correct
      
 
@@ -1032,7 +1029,7 @@ async def evaluate_math_solution(
 # Test function
 def test_load_math_problems(batch_size: int = 5):
     """Test loading math problems"""
-    results = load_math_problem_batch(batch_size=batch_size)
+    results = load_math_problem_batch(batch_size=batch_size, mode="validate")
     for i, result in enumerate(results):
         print(f"\n--- Problem {i+1} ---")
         print(f"Problem: {result['question']}")

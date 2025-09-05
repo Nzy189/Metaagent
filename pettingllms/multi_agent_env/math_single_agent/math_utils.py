@@ -12,8 +12,11 @@ import asyncio
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, List, Union
 from dataclasses import dataclass
+import re
 
-from pettingllms.rewards.math_utils.utils import extract_answer, grade_answer_verl
+
+
+
 
 try:
     from datasets import load_dataset as hf_load_dataset
@@ -55,6 +58,7 @@ class MathEvaluationResult:
 
 
 def load_math_problem_batch(
+    env_indices: List[int],
     batch_size: int = 10,
     dataset_name: str = "train",
     split: str = "train",
@@ -101,10 +105,8 @@ def load_math_problem_batch(
         if len(ds) < batch_size:
             raise Exception(f"❌ Local dataset only has {len(ds)} samples, but batch_size is {batch_size}")
         
-        indices = random.sample(range(len(ds)), batch_size)
         batch_results = []
-        
-        for i, idx in enumerate(indices):
+        for i, idx in enumerate(env_indices):
             example = ds[idx]
             problem_dict = _format_math_problem(example, idx, mode="train")
             if problem_dict:
@@ -200,7 +202,12 @@ async def evaluate_math_solution(
     is_correct = solution == ground_truth_answer
     return is_correct, solution
 
-
+def extract_answer(solution_str):
+    solution = re.search("#### (\\-?[0-9\\.\\,]+)", solution_str)
+    assert solution is not None
+    final_solution = solution.group(0)
+    final_solution = final_solution.split("#### ")[1].replace(",", "")
+    return final_solution
 
 # Test function
 def test_load_math_problems(batch_size: int = 5):

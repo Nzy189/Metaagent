@@ -90,7 +90,7 @@ class CodeGenerationAgent(Agent):
         else:
             # Refinement mode
             formatted_prompt = (
-                f"You are a helpful assistant that refines code to pass tests. You need to think first then refine and generate new python script.\n\n"
+                f"You are a helpful assistant that checks and refines code. You need to think first then refine and generate new python script.\n\n"
                 f" Given a coding task, you need to check the current generated test cases and the current code execution result, if the mismatch is caused by the current generated test cases, please refine the code to pass all tests.\n"
                 f"This is the problem:\n{question}\n\n"
                 f"You need to think first then write python script.")

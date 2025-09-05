@@ -21,7 +21,7 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}
 model_0_config_path="models.model_0.ppo_trainer_config"
 train_data_size=32
 val_data_size=32
-model_0_data_dir=~/data/code/model_0
+model_0_data_dir=~/data/math/model_0
 
 
 model_0_USE_GRPO="$model_0_config_path.algorithm.adv_estimator=grpo $model_0_config_path.actor_rollout_ref.actor.use_kl_loss=False"

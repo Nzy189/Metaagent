@@ -5,7 +5,7 @@ from pettingllms.multi_agent_env.base.agent import Agent, AgentData
 from pettingllms.multi_agent_env.base.env import Env
 from pettingllms.utils.logger_config import get_multi_logger
 from typing import List
-from pettingllms.rewards.math_utils.utils import extract_answer
+from pettingllms.multi_agent_env.math.math_utils import extract_answer
 from pettingllms.multi_agent_env.math.math_utils import evaluate_math_solution
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,6 @@ class ReasoningAgent(Agent):
         for key, value in (kwargs or {}).items():
             setattr(self, key, value)
         
-        # 初始化多日志系统
         self.multi_logger = get_multi_logger()
 
     def update_from_env(self, turn_idx: int, env_data: Env):
@@ -94,9 +93,8 @@ class ReasoningAgent(Agent):
         
     
     def update_from_model(self, response: str):
-        # Parse the response and update agent_data
-        extracted_answer = extract_answer(response)
-        self.current_action = extracted_answer
+        
+        self.current_action = response
         return self.current_action
 
     async def step(self, env_data: Env, env_worker: Any = None):
@@ -119,10 +117,7 @@ class ReasoningAgent(Agent):
             try:
                 # use the utils in this project to evaluate consistently
                 is_correct = await evaluate_math_solution(extracted_answer, ground_truth_answer)
-                if not hasattr(env_data.state, 'reasoning_is_correct'):
-                    env_data.state.reasoning_is_correct = is_correct
-                else:
-                    env_data.state.reasoning_is_correct = is_correct
+                env_data.state.reasoning_is_correct = is_correct
                 
                 if is_correct:
                     self.done = True

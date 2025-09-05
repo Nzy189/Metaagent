@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, List, Union
 from dataclasses import dataclass
 import ray
-from pettingllms.rewards.math_utils.utils import extract_answer, grade_answer_verl
+from pettingllms.rewards.math_utils.utils import extract_answer, grade_answer
 import shutil
 import tempfile
 import time

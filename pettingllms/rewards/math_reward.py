@@ -5,7 +5,7 @@ validate answers when necessary.
 """
 
 from pettingllms.globals import OAI_RM_MODEL, THOUGHT_DELIMITER_END
-from pettingllms.rewards.math_utils.utils import extract_answer, grade_answer_mathd, grade_answer_sympy
+from pettingllms.rewards.math_utils.utils import extract_answer, grade_answer, grade_answer_sympy
 from pettingllms.rewards.reward_types import RewardConfig, RewardOutput, RewardType
 from pettingllms.system_prompts import ORM_PROMPT
 
@@ -84,7 +84,7 @@ class RewardMathFn:
 
         # Check against all possible correct answers
         for ground_truth in processed_ground_truths:
-            is_correct = grade_answer_mathd(model_answer, ground_truth) or grade_answer_sympy(model_answer, ground_truth)
+            is_correct = grade_answer(model_answer, ground_truth) or grade_answer_sympy(model_answer, ground_truth)
             if is_correct:
                 # Apply tool call bonus if applicable and answer is correct
                 reward = self.config.correct_reward

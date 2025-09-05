@@ -378,8 +378,7 @@ class MultiAgentsExecutionEngine:
                     extra_data={
                         "turn_idx": turn_idx,
                         "agent_rewards": agent_rewards,
-                        "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.ground_truth_test_vs_generated_code_match_ratio,
-                        "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.ground_truth_test_vs_generated_code_match_ratio,
+                       
                     }
                 )
                 break
@@ -389,9 +388,7 @@ class MultiAgentsExecutionEngine:
                 f"Rollout {rollout_idx} completed successfully",
                 extra_data={
                     "turn_idx": 4,
-                    "agent_rewards": agent_rewards,
-                    "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.ground_truth_test_vs_generated_code_match_ratio,
-                    "env_state.ground_truth_test_vs_generated_code_match_ratio": env.state.ground_truth_test_vs_generated_code_match_ratio,
+                    "agent_rewards": agent_rewards
                 }
             )
 

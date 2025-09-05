@@ -52,9 +52,9 @@ class MathTestEnv(MultiAgentsEnvironment):
 
 
 class MathTestEnvBatch:
-    def __init__(self, env_idx_list: List[int], rollout_idx_list: List[int], samples: int, max_turns: int, config: dict, mode="train", *, env_workers: List = None):
+    def __init__(self, env_idx_list: List[int],env_indices: List[int], rollout_idx_list: List[int], samples: int, max_turns: int, config: dict, mode="train", *, env_workers: List = None):
         
-        self.problem_list = load_math_problem_batch(len(env_idx_list), mode=mode, config=config)
+        self.problem_list = load_math_problem_batch(env_indices, mode=mode, config=config)
         self.env_list = []
         
         if mode == "validate":

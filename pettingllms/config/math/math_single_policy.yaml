@@ -1,5 +1,5 @@
-# Configuration for Code multi-agent training with TWO different policies
-# code_generator uses Qwen/Qwen2.5-Coder-3B, test_generator uses DeepSeek-R1-Distill
+# Configuration for Math multi-agent training with TWO different policies
+# reasoning_agent and tool_agent use Qwen3-4B-Instruct-2507
 mode: "validate"
 sample_mode: "tree"
 # Inherit from base configuration
@@ -12,7 +12,7 @@ defaults:
 data:
   filter_method: mean
   filter_ratio: 0.5
-  gen_batch_size: 64
+  gen_batch_size: 32
   gen_n_samples: 8
   sample_temperature: 1
   val_freq: 10
@@ -24,8 +24,8 @@ data:
   val_batch_size: 32
   
   # Sequence lengths
-  max_prompt_length: 4096
-  max_response_length: 2048
+  max_prompt_length: 8192
+  max_response_length: 8192
 
 resource:
   nnodes: 1
@@ -59,7 +59,7 @@ models:
   model_0:
     path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
     #path: "/home/lah003/models/Qwen3-4B"
-    name: "code_generator_model"
+    name: "reasoning_agent_model"
     ppo_trainer_config:
       data: 
         max_prompt_length: ${data.max_prompt_length}
@@ -77,11 +77,9 @@ models:
           n_gpus_per_node: ${resource.n_gpus_per_node}
           n_training_gpus_per_node: ${resource.n_gpus_per_node}
           default_local_dir: ${trainer.default_local_dir}
-          
-    # ppo_trainer_config is injected via defaults; the above settings override the defaults in base
-    
+ 
 project_name: pettingllms
-experiment_name: math_single_policy
+experiment_name: math_two_policies
 logger: [ 'console', 'wandb' ]
 
 # Multi-agent configuration for two policies
@@ -97,7 +95,7 @@ agent_policy_configs:
       
     agent_1:
       name: "tool_agent"
-      policy_name: "tool_agent_model"
+      policy_name: "reasoning_agent_model"
       sample_num: 4
 
 
@@ -109,7 +107,7 @@ trainer:
   total_epochs: 1
   total_training_steps: 200
   project_name: pettingllms
-  experiment_name: code_eval
+  experiment_name: math_two_policies
   logger: [ 'console', 'wandb' ]
   log_val_generations: 0
   rollout_data_dir: null
@@ -122,7 +120,7 @@ trainer:
   critic_warmup: 0
   default_hdfs_dir: null
   del_local_ckpt_after_load: False
-  default_local_dir: checkpoints/pettingllms/code_eval_single_agent
+  default_local_dir: checkpoints/pettingllms/math_two_policies
   max_actor_ckpt_to_keep: 3
   max_critic_ckpt_to_keep: null
   ray_wait_register_center_timeout: 300

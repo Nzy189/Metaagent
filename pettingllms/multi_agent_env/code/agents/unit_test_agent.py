@@ -66,7 +66,7 @@ class UnitTestGenerationAgent(Agent):
         question = getattr(state, "problem", None)
         current_code = getattr(state, "generated_code", None)
         mismatch_cases = getattr(state, "generated_test_vs_generated_code_mismatch_cases", None)
-        formatted_prompt_for_mismatch_cases = ""
+        formatted_prompt_for_mismatch_cases = "The previous history of mismatch cases between the current generated test cases and the current code execution result:\n"
         for idx, code in enumerate(state.generated_code_history):
             if state.generated_test_vs_generated_code_mismatch_cases_history[idx] is not None:
                 formatted_prompt_for_mismatch_cases += f"Code {idx+1}:\n{code}\n"
@@ -96,8 +96,8 @@ class UnitTestGenerationAgent(Agent):
            
             formatted_prompt =""
             formatted_prompt += (
-                f" You are a helpful assistant that refines or corrects test examples for coding tasks.  \n"
-                f" User: Given a coding task, instead of providing the final script, your task is to refine or correct test examples.\n"
+                f" You are a helpful assistant that checks and refines test examples for coding tasks.  \n"
+                f" User: Given a coding task, you need to check the current generated test cases and the current code execution result, if the mismatch is caused by the current generated test cases, please refine the test cases to pass all tests.\n"
                 f"This is the problem:\n{question}\n\n")
             formatted_prompt +=formatted_prompt_for_mismatch_cases + (
                 f"First, you need to judge the mismatch history between the current generated test cases and the current code execution result, if the mismatch is caused by the current generated test cases, please refine the test cases to pass all tests.\n"

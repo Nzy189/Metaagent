@@ -63,6 +63,7 @@ class ToolAgent(Agent):
         if turn_idx == 0:
             formatted_prompt = (
                 f"You are a helpful assistant that solves mathematical problems through step-by-step reasoning.\n\n"
+                f"Problem:\n{problem}\n\n"
                 f"You need to think step by step and provide a complete solution using python code with clear mathematical reasoning.\n"
                 f"Please write Python code to solve this problem.\n And you need to print the final answer in the code. Like if the final anwer is the variable x, you need to write ```print(x)```.\n"
                 f"Respond in the format:\n\n"
