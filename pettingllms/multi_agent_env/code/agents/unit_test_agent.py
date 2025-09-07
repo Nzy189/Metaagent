@@ -86,10 +86,14 @@ class UnitTestGenerationAgent(Agent):
                 f"Before providing a test example, you must think carefully and reason step by step to derive an input and output you are very confident are correct. For example, start by designing an input you can reliably handle, then compute the output step by step. If you're unsure about the output, revise or re-design the input to ensure accuracy. Directly providing input/output pairs without this process is discouraged, as it often results in low accuracy.\n"
                 f"Finally, after completing these previous thinking and derivation steps (you should not write the final test example unless you have gone through these steps very thoroughly), you MUST put your final test example in the following format:\n\n"
                 f"**Test Cases:**\n"
-                f"**Test Input:**\n```input here```\n\n**Test Output:**\n```output here```\n\n"
+                f"1. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
+                f"2. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
+                f"3. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
                 f"**Format Example:**\n"
                 f"**Test Cases:**\n"
-                f"**Test Input:**\n```3\n0\n9\n1\n-1\n```\n\n**Test Output:**\n```1\n```\n\n"
+                f"1. **Test Input:**\n```3\n0\n9\n1\n-1\n```\n\n**Test Output:**\n```1\n```\n\n"
+                f"2. **Test Input:**\n```3\n0\n9\n1\n-3\n```\n\n**Test Output:**\n```2\n```\n\n"
+                f"3. **Test Input:**\n```3\n0\n6\n1\n-2\n```\n\n**Test Output:**\n```3\n```\n\n"
                 
             )
         else:
@@ -104,10 +108,14 @@ class UnitTestGenerationAgent(Agent):
                 f"Then, you need to refine the code to pass all tests.\n"
                 f"Finally, you MUST put your final test example in the following format:\n\n"
                 f"**Test Cases:**\n"
-                f"**Test Input:**\n```input here```\n\n**Test Output:**\n```output here```\n\n"
+                f"1. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
+                f"2. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
+                f"3. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
                 f"**Format Example:**\n"
                 f"**Test Cases:**\n"
-                f"**Test Input:**\n```3\n0\n9\n1\n-1\n```\n\n**Test Output:**\n```1\n```\n\n"
+                f"1. **Test Input:**\n```3\n0\n9\n1\n-1\n```\n\n**Test Output:**\n```1\n```\n\n"
+                f"2. **Test Input:**\n```3\n0\n9\n1\n-3\n```\n\n**Test Output:**\n```2\n```\n\n"
+                f"3. **Test Input:**\n```3\n0\n6\n1\n-2\n```\n\n**Test Output:**\n```3\n```\n\n"
                 
             )
 
@@ -184,13 +192,7 @@ class UnitTestGenerationAgent(Agent):
                     self.is_pass = True
                 else:
                     passed_ratio=0.0
-            else:
-                if env_passed_ratio>=1.0:
-                    passed_ratio=0.0
-                else:
-                    passed_ratio=1.0
-                    self.is_pass = True
-      
+            
         
         self.agent_reward = passed_ratio
         self.reward_history.append(passed_ratio)

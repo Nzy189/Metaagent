@@ -7,15 +7,7 @@ import shutil
 # 设置临时目录环境变量，确保 Python 可以找到可用的临时目录
 def setup_temp_dir():
     """设置临时目录环境变量"""
-    temp_dirs = ['tmp']
-    if not os.path.exists('tmp'):
-        try:
-            os.makedirs('tmp', mode=0o777, exist_ok=True)
-            print("Created tmp directory")
-        except Exception as e:
-            print(f"Failed to create tmp: {e}")
-    
-    # 设置权限
+    temp_dirs = ['./tmp']
     for temp_dir in temp_dirs:
         if os.path.exists(temp_dir):
             try:
@@ -83,84 +75,55 @@ def force_kill_pllm_processes():
 
 
 def cleanup_ray_directory():
-    """清理 /tmp/ray/ 目录下的所有文件和子目录"""
-    ray_tmp_dir = "/tmp/ray"
-    
+    # 自动检测项目根目录中的tmp文件夹
+    # 当前工作目录应该是项目根目录
+    ray_tmp_dir = os.path.join(os.getcwd(), "tmp")
     try:
-        print(f"Cleaning up Ray directory: {ray_tmp_dir}")
+        # 对于大量文件，最快的方法是重新创建目录
+        print(f"开始超快速清理: {ray_tmp_dir}")
         
-        if not os.path.exists(ray_tmp_dir):
-            print(f"Ray directory {ray_tmp_dir} does not exist, nothing to clean")
-            return
-        
-        # 首先尝试使用 lsof 查找并杀死占用 /tmp/ray 的进程
-        try:
-            print("Killing processes using /tmp/ray...")
-            subprocess.run(['bash', '-c', f"lsof +D {ray_tmp_dir} 2>/dev/null | awk 'NR>1 {{print $2}}' | sort -u | xargs -r -n1 kill -9"], 
-                         capture_output=True, timeout=10)
-            time.sleep(1)  # 等待进程完全退出
-        except Exception:
-            pass
-        
-        # 递归删除所有文件和目录
-        try:
-            # 使用 shutil.rmtree 删除整个目录树
-            if os.path.exists(ray_tmp_dir):
-                shutil.rmtree(ray_tmp_dir, ignore_errors=True)
-                print(f"✓ Removed {ray_tmp_dir} directory tree")
+        # 方法1: 重新创建目录（最快）
+        if os.path.exists(ray_tmp_dir):
+            # 创建临时目录名
+            temp_name = ray_tmp_dir + "_temp_" + str(int(time.time()))
             
-            # 如果 shutil.rmtree 失败，使用系统命令强制删除
-            if os.path.exists(ray_tmp_dir):
-                subprocess.run(['rm', '-rf', ray_tmp_dir], capture_output=True, timeout=30)
-                print(f"✓ Force removed {ray_tmp_dir} using rm -rf")
+            # 重命名原目录（瞬间完成）
+            os.rename(ray_tmp_dir, temp_name)
             
-        except Exception as e:
-            print(f"✗ Failed to remove {ray_tmp_dir}: {e}")
-            # 最后尝试：逐个删除文件
-            try:
-                for root, dirs, files in os.walk(ray_tmp_dir, topdown=False):
-                    for file in files:
-                        try:
-                            os.remove(os.path.join(root, file))
-                        except:
-                            pass
-                    for dir in dirs:
-                        try:
-                            os.rmdir(os.path.join(root, dir))
-                        except:
-                            pass
-                try:
-                    os.rmdir(ray_tmp_dir)
-                except:
-                    pass
-                print(f"✓ Cleaned up {ray_tmp_dir} file by file")
-            except Exception as e2:
-                print(f"✗ Final cleanup attempt failed: {e2}")
-        
-        # 验证清理结果
-        if not os.path.exists(ray_tmp_dir):
-            print(f"✓ Successfully cleaned {ray_tmp_dir}")
+            # 立即创建新的空目录
+            os.makedirs(ray_tmp_dir, exist_ok=True)
+            
+            # 在后台异步删除旧目录
+            subprocess.Popen(['rm', '-rf', temp_name], 
+                           stdout=subprocess.DEVNULL, 
+                           stderr=subprocess.DEVNULL)
+            
+            print(f"超快速清理完成: {ray_tmp_dir} (旧文件在后台删除中)")
         else:
-            remaining_items = []
-            try:
-                for item in os.listdir(ray_tmp_dir):
-                    remaining_items.append(item)
-                if remaining_items:
-                    print(f"⚠ Some items remain in {ray_tmp_dir}: {remaining_items[:5]}...")
-                else:
-                    print(f"✓ {ray_tmp_dir} is empty")
-            except Exception:
-                print(f"⚠ Cannot access {ray_tmp_dir} after cleanup")
-                
+            # 如果目录不存在，直接创建
+            os.makedirs(ray_tmp_dir, exist_ok=True)
+            print(f"目录不存在，已创建: {ray_tmp_dir}")
+            
     except Exception as e:
-        print(f"Error cleaning Ray directory: {e}")
-
-
+        print(f"超快速清理失败，使用备用方法: {e}")
+        try:
+            # 备用方法1: 使用系统命令
+            subprocess.run(f'rm -rf {ray_tmp_dir}/*', shell=True, capture_output=True, timeout=30)
+            subprocess.run(f'rm -rf {ray_tmp_dir}/.*', shell=True, capture_output=True, timeout=30)
+            print(f"备用方法1完成: {ray_tmp_dir}")
+        except Exception as e2:
+            print(f"备用方法1失败: {e2}")
+            # 备用方法2: 使用shutil
+            shutil.rmtree(ray_tmp_dir, ignore_errors=True)
+            os.makedirs(ray_tmp_dir, exist_ok=True)
+            print(f"备用方法2完成: {ray_tmp_dir}")
+    
 def cleanup_ray():
     """清理 Ray 资源 - 强制版本"""
     print("\n" + "="*50)
     print("STARTING RAY CLEANUP...")
     print("="*50)
+    cleanup_ray_directory()
     
     try:
         # 方法1: 正常关闭
@@ -185,13 +148,6 @@ def cleanup_ray():
     except Exception as e:
         print(f"Error in force kill: {e}")
     
-    # 方法2b: 强制杀死 /tmp/pllm 相关进程
-    try:
-        print("Step 2b: Force killing /tmp/pllm related processes...")
-        force_kill_pllm_processes()
-        time.sleep(1)
-    except Exception as e:
-        print(f"Error in force kill /tmp/pllm: {e}")
     
     # 方法3: 清理 /tmp/ray/ 目录
     try:

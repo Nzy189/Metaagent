@@ -38,7 +38,7 @@ python3 -m pettingllms.trainer.train --config-path ../config/code --config-name 
     data.epoch_size=120\
     data.resample_freq=4\
     data.max_prompt_length=8192\
-    data.max_prompt_length=4096\
+    data.max_response_length=4096\
     $total_resource \
     $model_0_USE_GRPO $model_0_resource $model_0_data \
     $model_1_USE_GRPO $model_1_resource $model_1_data\

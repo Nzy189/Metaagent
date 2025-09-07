@@ -549,8 +549,9 @@ class MultiAgentsExecutionEngine:
             for idx in range(len(rollout_idx_list)):
                 result_score=0
                 for agent_idx in range(len(self.turn_order)):
-                    current_agent = agent_groups[idx][agent_idx]
-                    result_score += current_agent.agent_reward
+                    if agent_idx==0:
+                        current_agent = agent_groups[idx][agent_idx]
+                        result_score += current_agent.agent_reward
                 rollout_score_idx.append(result_score)
             try:
                 best_i = int(np.argmax(np.asarray(rollout_score_idx)))
@@ -560,7 +561,7 @@ class MultiAgentsExecutionEngine:
             selected_agent_group = agent_groups[best_i]
             
             # check if any agent has completed the task
-            agent_done = selected_agent_group[-1].done
+            agent_done = selected_agent_group[0].done
             envs_list = [copy.deepcopy(selected_env) for _ in envs_list]
             agent_groups = [copy.deepcopy(selected_agent_group) for _ in agent_groups]
             

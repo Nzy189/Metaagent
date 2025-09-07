@@ -25,15 +25,15 @@ model_0_data_dir=~/data/code/model_0
 
 model_0_USE_GRPO="$model_0_config_path.algorithm.adv_estimator=grpo $model_0_config_path.actor_rollout_ref.actor.use_kl_loss=False"
 
-model_0_resource="resource.n_gpus_per_node=2  $model_0_config_path.trainer.n_gpus_per_node=2 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=1"
+model_0_resource="resource.n_gpus_per_node=2  $model_0_config_path.trainer.n_gpus_per_node=2 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=2"
 
 model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/train.parquet +$model_0_config_path.data.val_files=$model_0_data_dir/text/test.parquet"
 
 python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_eval \
     experiment_name=code_eval_single_poliy \
     data.epoch_size=120\
-    data.max_prompt_length=8192\
-    data.max_response_length=4096\
+    data.max_prompt_length=4096\
+    data.max_response_length=2048\
     data.resample_freq=4\
     $model_0_USE_GRPO $model_0_resource $model_0_data\
     data.filter_method=mean\
