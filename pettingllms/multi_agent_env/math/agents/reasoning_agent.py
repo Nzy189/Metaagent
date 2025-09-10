@@ -5,7 +5,7 @@ from pettingllms.multi_agent_env.base.agent import Agent, AgentData
 from pettingllms.multi_agent_env.base.env import Env
 from pettingllms.utils.logger_config import get_multi_logger
 from typing import List
-from pettingllms.multi_agent_env.math.math_utils import extract_answer
+from pettingllms.multi_agent_env.math.math_utils import extract_answer, extract_reasoning_steps
 from pettingllms.multi_agent_env.math.math_utils import evaluate_math_solution
 
 logger = logging.getLogger(__name__)
@@ -63,15 +63,19 @@ class ReasoningAgent(Agent):
         
         
         if turn_idx == 0:
-            formatted_prompt = (
-                f"You are a helpful assistant that solves mathematical problems through step-by-step reasoning.\n\n"
-                f"You need to think step by step and provide a complete solution with clear mathematical reasoning.\n"
-                f"Please provide your final answer in #### format.\n\n"
-                f"Problem:\n{problem}\n\n"
-                f"Put your final answer in the format of `#### <answer>`.\n"
-                f"For the final answer, only output the answer after ####, no other text.\n"
-                f"Example: `#### 123`\n\n"
-            )
+           formatted_prompt = (
+        f"You are a helpful assistant that solves mathematical problems through step-by-step reasoning.\n\n"
+        f"You need to think step by step and provide a complete solution with clear mathematical reasoning.\n"
+        f"Before giving the full reasoning, please summarize the key reasoning steps clearly.\n"
+        f"Output them in the following format:\n\n"
+        f"**Reasoning Steps:**\n```reasoning steps here```\n\n"
+        f"After summarizing, continue with the detailed step-by-step reasoning and explanation.\n\n"
+        f"Finally, please provide your final answer in #### format.\n\n"
+        f"Problem:\n{problem}\n\n"
+        f"Put your final answer in the format of `#### <answer>`.\n"
+        f"For the final answer, only output the answer after ####, no other text.\n"
+        f"Example: `#### 123`\n\n"
+    )
         else:
             formatted_prompt = (
                 f"You are a helpful assistant that refines mathematical solutions through reasoning.\n\n"
@@ -84,9 +88,12 @@ class ReasoningAgent(Agent):
             )
             
             formatted_prompt += (
-                f"Put your final answer in the format of `#### <answer>`.\n"
+               f"Before giving the full reasoning, please summarize the key reasoning steps clearly.\n"
+                f"Output them in the following format:\n\n"
+                f"**Reasoning Steps:**\n```reasoning steps here```\n\n"
+                f"Put your final answer in the format of `#### <answer>\n"
                 f"For the final answer, only output the answer after ####, no other text.\n"
-                f"Example: `#### 123`\n\n"
+                f"Example: `#### 123\n\n"
             )
         
         self.current_prompt = {"text": formatted_prompt, "image": None}
@@ -102,11 +109,11 @@ class ReasoningAgent(Agent):
         Process the generated reasoning solution and evaluate it against the ground truth.
         """
        
-        generated_solution = self.current_action
+        generated_solution = extract_reasoning_steps(self.current_action)
         env_data.state.reasoning_generated_solution = generated_solution
 
         # 2) Extract answer from the reasoning solution
-        extracted_answer = extract_answer(generated_solution)
+        extracted_answer = extract_answer(self.current_action)
         env_data.state.reasoning_extracted_answer = extracted_answer
 
         # 3) Evaluate correctness
@@ -116,7 +123,7 @@ class ReasoningAgent(Agent):
         if extracted_answer is not None and ground_truth_answer is not None:
             try:
                 # use the utils in this project to evaluate consistently
-                is_correct = await evaluate_math_solution(extracted_answer, ground_truth_answer)
+                is_correct =evaluate_math_solution(extracted_answer, ground_truth_answer)
                 env_data.state.reasoning_is_correct = is_correct
                 
                 if is_correct:
@@ -132,18 +139,22 @@ class ReasoningAgent(Agent):
             except Exception as e:
                 print(f"Warning: Failed to evaluate reasoning solution: {e}")
                 is_correct = False
+                self.agent_reward = 0.0
                 if not hasattr(env_data.state, 'reasoning_is_correct'):
                     env_data.state.reasoning_is_correct = False
                 else:
                     env_data.state.reasoning_is_correct = False
         else:
+            self.agent_reward = 0.0
             if not hasattr(env_data.state, 'reasoning_is_correct'):
                 env_data.state.reasoning_is_correct = False
             else:
                 env_data.state.reasoning_is_correct = False
 
-        self.agent_reward = float(is_correct)
-        self.reward_history.append(float(is_correct))
+        # Ensure agent_reward is not None before converting to float
+        if self.agent_reward is None:
+            self.agent_reward = 0.0
+        self.reward_history.append(float(self.agent_reward))
 
     def reset(self):
         """

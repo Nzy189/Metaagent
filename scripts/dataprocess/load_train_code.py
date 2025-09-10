@@ -11,7 +11,6 @@ from datetime import datetime
 
 # ============================================================
 # 公共：把任意“参数/字面量说明”规约为 stdin 风格的多行文本
-#（参考你提供的 transform_* / replace_* 思路）
 # ============================================================
 
 def _find_matching_bracket(s: str, start: int) -> Optional[int]:
@@ -26,14 +25,6 @@ def _find_matching_bracket(s: str, start: int) -> Optional[int]:
     return None
 
 def transform_tokens(s: str) -> str:
-    """
-    把输入串 s 规约为 stdin 多行：
-      • 2D 数组 [[...], ...] → 每行 “x y …”
-      • 1D 数组 [a,b,c]      → “a b c”
-      • 引号字符串           → 去引号
-      • 其它 token           → 原样
-    输出以 '\n' 结尾。
-    """
     events = []
     masked = s
 
@@ -79,9 +70,6 @@ def transform_tokens(s: str) -> str:
     return "\n".join(out) + "\n"
 
 def transform_input_block(spec: str) -> str:
-    """
-    “key = value / 裸 value”的自然语言块 → stdin 多行。
-    """
     events: List[Tuple[int, str, object]] = []
     token_re = re.compile(
         r"""
@@ -167,18 +155,34 @@ def _normalize_cell(s: str) -> str:
         s += "\n"
     return s
 
+def _clean_solution(sol: Any) -> str:
+    """去掉三引号/markdown 代码围栏，确保字符串"""
+    if sol is None:
+        return ""
+    s = str(sol).strip()
+    # 去除 ```python ... ``` 或 ``` ... ```
+    s = re.sub(r"^```(?:\w+)?\s*", "", s)
+    s = re.sub(r"\s*```$", "", s)
+    return s.strip()
+
+def _filter_nonempty_io(df: pd.DataFrame) -> pd.DataFrame:
+    """只保留 test_input 和 test_output 都非空的样本"""
+    def _len_list(x):
+        try:
+            return len(x)
+        except Exception:
+            return 0
+    mask = (df["test_input"].apply(_len_list) > 0) & (df["test_output"].apply(_len_list) > 0)
+    return df.loc[mask].reset_index(drop=True)
+
 # ============================================================
 # 断言 → (input, output) 抽取（MBPP / HumanEval 用）
 # ============================================================
 
 _ASSERT_PATTERNS: List[re.Pattern] = [
-    # assert f(a,b,...) == expected
     re.compile(r'^\s*assert\s+(?P<call>\w+\s*\(.*\))\s*==\s*(?P<exp>.+?)\s*$', re.S),
-    # assert expected == f(a,b,...)
     re.compile(r'^\s*assert\s+(?P<exp>.+?)\s*==\s*(?P<call>\w+\s*\(.*\))\s*$', re.S),
-    # check(f(a,b,...), expected) / check_equal( ... )
     re.compile(r'^\s*(?:assert\s+)?(?:check|check_equal|check_solution)\s*\(\s*(?P<call>\w+\s*\(.*\))\s*,\s*(?P<exp>.+?)\s*\)\s*$', re.S),
-    # check(expected, f(a,b,...))
     re.compile(r'^\s*(?:assert\s+)?(?:check|check_equal|check_solution)\s*\(\s*(?P<exp>.+?)\s*,\s*(?P<call>\w+\s*\(.*\))\s*\)\s*$', re.S),
 ]
 
@@ -186,23 +190,13 @@ def _strip_trailing_comment(s: str) -> str:
     return re.split(r'#(?![^\'"]*["\'])', s, maxsplit=1)[0].strip()
 
 def _extract_args_from_call(call: str, prefer_fn: Optional[str] = None) -> Optional[str]:
-    """
-    给定 'foo(1, [2,3], "x")' → 返回括号内的原始参数串。
-    若 prefer_fn 提供且 call 不是该函数，仍然接受（匹配不到再退化为任何函数）。
-    """
     m = re.match(r'(?P<fn>\w+)\s*\((?P<args>.*)\)\s*$', call.strip(), re.S)
     if not m:
         return None
-    fn = m.group("fn")
-    if prefer_fn and fn != prefer_fn:
-        # 允许其它函数（有些测试包装器内部仍会传被测函数）
-        pass
+    # 若 prefer_fn 提供且不匹配，仍接受（一些包装器内部转发）
     return m.group("args")
 
 def parse_asserts_to_io(lines: List[str], prefer_fn: Optional[str] = None) -> Tuple[List[str], List[str]]:
-    """
-    从断言行里抽取 (stdin 化的 input, stdin 化的 output) 列表。
-    """
     ins, outs = [], []
     for raw in lines:
         line = _strip_trailing_comment(raw)
@@ -220,7 +214,6 @@ def parse_asserts_to_io(lines: List[str], prefer_fn: Optional[str] = None) -> Tu
         args = _extract_args_from_call(call, prefer_fn=prefer_fn)
         if args is None:
             continue
-        # 规约：把参数串 / 期望值串转为 stdin 风格
         in_text  = _normalize_cell(transform_tokens(args))
         out_text = _normalize_cell(transform_tokens(exp))
         ins.append(in_text); outs.append(out_text)
@@ -246,11 +239,44 @@ def _pick_first_py(solutions: Dict[str, Any], k: int = 1) -> List[str]:
 def _has_py(solutions: Dict[str, Any]) -> bool:
     return any((l in PY_LANG_IDS) for l in (solutions.get("language") or []))
 
+def _parse_cc_difficulty(ex: Dict[str, Any]) -> Optional[int]:
+    """尽量从样本中解析出难度为整数。
+    返回 None 表示无法确定难度。
+    可识别：数值/数字字符串/"easy|medium|hard"。
+    """
+    val: Any = None
+    # 常见直出字段
+    for key in ("difficulty", "difficulty_level", "level"):
+        if key in ex and ex.get(key) is not None:
+            val = ex.get(key)
+            break
+    # 可能存在于 metadata
+    if val is None:
+        meta = ex.get("metadata")
+        if isinstance(meta, dict):
+            for key in ("difficulty", "difficulty_level", "level"):
+                if key in meta and meta.get(key) is not None:
+                    val = meta.get(key)
+                    break
+
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return int(val)
+    if isinstance(val, str):
+        s = val.strip().lower()
+        if s.isdigit():
+            return int(s)
+        mapping = {"easy": 1, "e": 1, "medium": 2, "m": 2, "hard": 3, "h": 3}
+        return mapping.get(s)
+    return None
+
 def process_code_contests(split: str) -> pd.DataFrame:
     print(f"🔄 加载 deepmind/code_contests split={split} ...")
     ds = load_dataset("deepmind/code_contests", split=split)
     rows = []
     for ex in ds:
+
         tests = (ex.get("public_tests") or {}) if split == "test" else (ex.get("private_tests") or {})
         test_in = tests.get("input") or []
         test_out = tests.get("output") or []
@@ -258,11 +284,10 @@ def process_code_contests(split: str) -> pd.DataFrame:
             continue
         solutions = ex.get("solutions") or {}
         if not _has_py(solutions):
-            # 即便没有 Python 参考解，也允许；solution 置空
             solution = ""
         else:
             py = _pick_first_py(solutions, k=1)
-            solution = py[0] if py else ""
+            solution = _clean_solution(py[0]) if py else ""
         rows.append({
             "question": (ex.get("description") or "").strip(),
             "solution": solution,
@@ -270,6 +295,7 @@ def process_code_contests(split: str) -> pd.DataFrame:
             "test_output": [ _normalize_cell(str(x)) for x in (test_out or []) ],
         })
     df = pd.DataFrame(rows, columns=["question","test_input","test_output","solution"])
+    df = _filter_nonempty_io(df)
     print(f"✅ code_contests/{split}: {len(df)}")
     return df
 
@@ -279,66 +305,122 @@ def process_code_contests(split: str) -> pd.DataFrame:
 
 def process_mbpp() -> pd.DataFrame:
     print("🔄 加载 MBPP（优先 sanitized/test）...")
-    try:
-        ds = load_dataset("mbpp", name="sanitized", split="test")
-    except Exception:
-        ds = load_dataset("mbpp", split="test")
+    ds = load_dataset("Gen-Verse/MBPP-ReasonFlux", split="test")
     rows = []
     for ex in ds:
         question = (ex.get("text") or ex.get("prompt") or ex.get("description") or "").strip()
-        solution = (ex.get("code") or ex.get("solution") or "")
+        # 修复：确保 solution 获取并清洗
+        solution_raw = ex.get("code", None)
+        if not solution_raw:
+            solution_raw = ex.get("solution", "")
+        solution = _clean_solution(solution_raw)
 
-        # tests: list[str] 或单串
-        test_list = ex.get("test_list") or ex.get("test") or []
-        if isinstance(test_list, str):
-            test_lines = [ln for ln in test_list.splitlines() if ln.strip()]
-        elif isinstance(test_list, list):
-            # 普遍为断言字符串列表
-            test_lines = []
-            for t in test_list:
-                test_lines += [ln for ln in str(t).splitlines() if ln.strip()]
-        else:
-            test_lines = []
-
-        # 解析断言 → I/O
-        inputs, outputs = parse_asserts_to_io(test_lines, prefer_fn=None)
+        inputs=ex.get("test_input") 
+        outputs=ex.get("test_output")
         rows.append({
             "question": question,
-            "solution": solution or "",
+            "solution": solution,
             "test_input": inputs,
             "test_output": outputs,
         })
     df = pd.DataFrame(rows, columns=["question","test_input","test_output","solution"])
+    df = _filter_nonempty_io(df)
     print(f"✅ mbpp: {len(df)}")
     return df
 
 # ============================================================
 # HumanEval
 # ============================================================
+def process_apps() -> pd.DataFrame:
+    print("🔄 加载 apps ...")
+    ds = load_dataset(
+        "json",
+        data_files={"test": "hf://datasets/codeparrot/apps/test.jsonl"},
+        split="test",
+    )
+    ds = list(ds)
+    rows = []
+    
+    for ex in ds[:500]:
+        # 解析 solutions 和 input_output 字段
+        try:
+            solutions = json.loads(ex.get("solutions", "[]"))
+            input_output = json.loads(ex.get("input_output", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+            
+        # 获取问题描述
+        question = (ex.get("question") or "").strip()
+        if not question:
+            continue
+            
+        # 处理解决方案
+        if not solutions:
+            solution = ""
+        else:
+            # apps 数据集的 solutions 是字符串列表，直接取第一个
+            solution = _clean_solution(solutions[0]) if solutions else ""
+            
+        # 处理测试输入输出
+        test_input = []
+        test_output = []
+        
+        if input_output:
+            inputs = input_output.get("inputs", [])
+            outputs = input_output.get("outputs", [])
+            
+            if isinstance(inputs, list) and isinstance(outputs, list):
+                test_input = [_normalize_cell(str(x)) for x in inputs]
+                test_output = [_normalize_cell(str(x)) for x in outputs]
+        
+        # 只保留有测试用例的样本
+        if not (test_input and test_output):
+            continue
+            
+        rows.append({
+            "question": question,
+            "solution": solution,
+            "test_input": test_input,
+            "test_output": test_output,
+        })
+    
+    df = pd.DataFrame(rows, columns=["question", "test_input", "test_output", "solution"])
+    df = _filter_nonempty_io(df)
+    print(f"✅ apps: {len(df)}")
+    return df
 
+    
 def process_humaneval() -> pd.DataFrame:
     print("🔄 加载 openai_humaneval/test ...")
     ds = load_dataset("openai_humaneval", split="test")
     rows = []
     for ex in ds:
         question = (ex.get("prompt") or "").strip()
-        solution = (ex.get("canonical_solution") or ex.get("solution") or "")
+        # 修复：优先 canonical_solution
+        sol_raw = ex.get("canonical_solution", None)
+        if not sol_raw:
+            sol_raw = ex.get("solution", "")
+        solution = _clean_solution(sol_raw)
+
         entry_point = ex.get("entry_point") or None
         test_str = ex.get("test") or ""
         test_lines = [ln for ln in str(test_str).splitlines() if ln.strip()]
         inputs, outputs = parse_asserts_to_io(test_lines, prefer_fn=entry_point)
         rows.append({
             "question": question,
-            "solution": solution or "",
+            "solution": solution,
             "test_input": inputs,
             "test_output": outputs,
         })
     df = pd.DataFrame(rows, columns=["question","test_input","test_output","solution"])
+    df = _filter_nonempty_io(df)
     print(f"✅ human_eval: {len(df)}")
     return df
 
+
+
 # ============================================================
-# LiveCodeBench（使用你提供的 code_generation_lite + 规约）
+# LiveCodeBench（使用 code_generation_lite v6）
 # ============================================================
 
 class Platform(Enum):
@@ -380,10 +462,8 @@ class _LCB_Problem:
         self.platform = Platform(self.platform)
         self.difficulty = Difficulty(self.difficulty)
         self.contest_date = datetime.fromisoformat(self.contest_date)
-        # public
         pts = json.loads(self.public_test_cases)
         self.public_test_cases = [_LCB_Test(**t) for t in pts]
-        # private 可能是 json 或 zlib+pickle+base64
         try:
             pr = json.loads(self.private_test_cases)
         except Exception:
@@ -397,51 +477,61 @@ class _LCB_Problem:
         self.private_test_cases = [_LCB_Test(**t) for t in pr]
         self.metadata = json.loads(self.metadata)
 
-def _load_lcb_lite(release_version: str = "release_v2",
-                   start_date: Optional[str] = None,
-                   end_date: Optional[str] = None) -> List[_LCB_Problem]:
-    raw = load_dataset(
-        "livecodebench/code_generation_lite",
-        split="test",
-        version_tag=release_version,
-    )
-    problems = [_LCB_Problem(**p) for p in raw]
-    if start_date:
-        p0 = datetime.strptime(start_date, "%Y-%m-%d")
-        problems = [p for p in problems if p.contest_date >= p0]
-    if end_date:
-        p1 = datetime.strptime(end_date, "%Y-%m-%d")
-        problems = [p for p in problems if p.contest_date <= p1]
-    print(f"LCB loaded: {len(problems)}")
-    return problems
-
-def process_livecodebench(release_version: str = "release_v2",
-                          start_date: Optional[str] = None,
-                          end_date: Optional[str] = None) -> pd.DataFrame:
-    print(f"🔄 加载 LiveCodeBench/code_generation_lite ({release_version}) ...")
-    probs = _load_lcb_lite(release_version, start_date, end_date)
+def _load_lcb_lite_v6() -> pd.DataFrame:
+    HF_PREFIX = "hf://datasets/livecodebench/code_generation_lite/"
+    V6_FILES = [f"{HF_PREFIX}test6.jsonl"]
+    ds = load_dataset("json", data_files=V6_FILES, split="train")
     rows = []
-    for p in probs:
-        # 规范化题面中的 Input/Output 叙述（如果有）
-        qtext = p.question_content.strip()
-        qtext = replace_input_block(qtext)
-        qtext = replace_output_block(qtext)
+    for ex in ds:
+        title = ex.get("question_title") or ""
+        content = ex.get("question_content") or ""
+        question = (title + ("\n\n" if title and content else "") + content).strip()
 
-        if p.private_test_cases and p.private_test_cases[0].testtype.value == "functional":
-            ins  = [_normalize_cell(transform_tokens(t.input))  for t in p.private_test_cases]
-            outs = [_normalize_cell(transform_tokens(t.output)) for t in p.private_test_cases]
-        else:
-            ins  = [_normalize_cell(t.input)  for t in p.private_test_cases]
-            outs = [_normalize_cell(t.output) for t in p.private_test_cases]
+        def _parse_simple_tests(raw):
+            if not raw:
+                return [], []
+            try:
+                data = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(data, dict) and "input" in data and "output" in data:
+                    ins = data.get("input") or []
+                    outs = data.get("output") or []
+                    ins = ins if isinstance(ins, list) else [ins]
+                    outs = outs if isinstance(outs, list) else [outs]
+                    return [str(x) for x in ins], [str(x) for x in outs]
+                elif isinstance(data, list):
+                    ins, outs = [], []
+                    for item in data:
+                        if isinstance(item, dict):
+                            ins.append(str(item.get("input", "")))
+                            outs.append(str(item.get("output", "")))
+                    return ins, outs
+            except Exception:
+                pass
+            return [str(raw)], [""]
+
+        pub_raw = ex.get("public_test_cases") or ""
+        pri_raw = ex.get("private_test_cases") or ""
+        pub_in, pub_out = _parse_simple_tests(pub_raw)
+        pri_in, pri_out = _parse_simple_tests(pri_raw)
+        test_input = pub_in if pub_in else pri_in
+        test_output = pub_out if pub_out else pri_out
 
         rows.append({
-            "question": qtext,
-            "solution": "",  # LCB 官方通常不提供完整参考解，这里留空
-            "test_input": ins,
-            "test_output": outs,
+            "question": question,
+            "solution": "",  # LCB 无参考实现
+            "test_input": [ _normalize_cell(x) for x in test_input ],
+            "test_output": [ _normalize_cell(x) for x in test_output ],
         })
-    df = pd.DataFrame(rows, columns=["question","test_input","test_output","solution"])
-    print(f"✅ livecodebench: {len(df)}")
+
+    df = pd.DataFrame(rows, columns=["question", "solution", "test_input", "test_output"])
+    df = _filter_nonempty_io(df)
+    print(f"LCB v6 loaded: {len(df)}")
+    return df
+
+def process_livecodebench() -> pd.DataFrame:
+    print(f"🔄 加载 LiveCodeBench v6 ...")
+    df = _load_lcb_lite_v6()
+    print(f"✅ livecodebench v6: {len(df)}")
     return df
 
 # ============================================================
@@ -449,19 +539,25 @@ def process_livecodebench(release_version: str = "release_v2",
 # ============================================================
 
 def main():
-    # 输出目录：datasets/code/train/
+    
+
+
     project_root = Path(__file__).resolve().parents[2]
     out_dir = project_root / "datasets" / "code" / "train"
     os.makedirs(out_dir, exist_ok=True)
     print(f"📁 输出目录: {out_dir}")
 
-    # 1) 训练集：CodeContests(train) → train.parquet
+    df_apps = process_apps()
+    (out_dir / "apps.parquet").unlink(missing_ok=True)
+    df_apps.to_parquet(out_dir / "apps.parquet", index=False)
+    print(f"💾 保存: {out_dir / 'apps.parquet'}")
+
+    # 1) CodeContests(train)
     df_train = process_code_contests(split="train")
     (out_dir / "train.parquet").unlink(missing_ok=True)
     df_train.to_parquet(out_dir / "train.parquet", index=False)
     print(f"💾 保存: {out_dir / 'train.parquet'}")
 
-    # 2) 测试集四份：各自名字.parquet（仅含 4 列）
     # 2.1 CodeContests(test)
     df_cc_test = process_code_contests(split="test")
     (out_dir / "code_contests.parquet").unlink(missing_ok=True)
@@ -480,8 +576,11 @@ def main():
     df_he.to_parquet(out_dir / "human_eval.parquet", index=False)
     print(f"💾 保存: {out_dir / 'human_eval.parquet'}")
 
-    # 2.4 LiveCodeBench（使用 lite）
-    df_lcb = process_livecodebench(release_version="release_v2")
+    # 2.4 Apps
+    
+
+    # 2.4 LiveCodeBench v6
+    df_lcb = process_livecodebench()
     (out_dir / "livecodebench.parquet").unlink(missing_ok=True)
     df_lcb.to_parquet(out_dir / "livecodebench.parquet", index=False)
     print(f"💾 保存: {out_dir / 'livecodebench.parquet'}")

@@ -117,16 +117,15 @@ class CodeTestEnv(MultiAgentsEnvironment):
 class CodeTestEnvBatch:
     def __init__(self, env_idx_list: List[int], env_indices: List[int], rollout_idx_list: List[int], samples: int, max_turns: int, config: dict, mode="train", *, env_workers: List=None):
         if mode=="train":
-            self.problem_list=load_problem_batch(env_indices)
+            self.problem_list=load_problem_batch(env_indices,benchmark_name="train",mode="train")
         else:
-            self.problem_list=load_problem_batch(env_indices,mode=mode)
+            benchmark_name=getattr(config,"benchmark") if hasattr(config,"benchmark") else "test"
+            self.problem_list=load_problem_batch(env_indices,mode=mode,benchmark_name=benchmark_name)
             samples=1
         self.env_list=[]
         if mode=="validate":
             rollout_idx_list=range(len(self.problem_list)*samples)
    
-        if not self.problem_list:
-            raise ValueError(f"Failed to load problems from benchmark: {config.env.benchmark}. Please check if the dataset is available and accessible.")
 
         for i,problem in enumerate(self.problem_list):
             ground_truth_test_input=problem["test_input"]

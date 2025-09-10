@@ -94,6 +94,7 @@ except ImportError:
 def load_problem_batch( 
     indices: List[int],
     dataset_name: str="train",
+    benchmark_name: str="test",
     split: str = "train",
     mode: str = "train"
 ) -> List[Dict[str, Any]]:
@@ -121,7 +122,7 @@ def load_problem_batch(
     # 获取本地数据集路径
     current_dir = Path(__file__).parent.parent.parent.parent  # 回到 pettingllms 根目录
     local_datasets_dir = current_dir / "datasets" / "code" / dataset_name.lower().replace("/", "_")
-    split_name = "train" if mode == "train" else "test"
+    split_name = "train" if mode == "train" else benchmark_name
     parquet_file = local_datasets_dir / f"{split_name}.parquet"
     if mode == "train":
         if not parquet_file.exists():
@@ -195,7 +196,7 @@ def _format_competition_problem(example: Dict, index: int, mode: str = "train") 
         if mode == "train":
             solution = example.get("solution", "")
         else:  # validation mode
-            solution = ""  
+            solution = example.get("solution", "")
         
         if not question or not test_input or not test_output:
             print(f"⚠️ Skipping example {index}: missing required fields")
@@ -222,6 +223,11 @@ async def _worker_docker(
     timeout: float = 40.0,
     image: str = "python:3.11-slim"
 ):
+    # Ensure base tmp directory exists
+    try:
+        os.makedirs("tmp", exist_ok=True)
+    except Exception:
+        pass
     tmpdir = tempfile.mkdtemp(prefix="pllm_exec_",dir="tmp")
     script_path = os.path.join(tmpdir, "script.py")
     def cleanup_tmpdir():
@@ -230,8 +236,10 @@ async def _worker_docker(
         try:
             shutil.rmtree(tmpdir, ignore_errors=False)
         except Exception:
-            print(f"failed to remove tmpdir: {tmpdir}")
-            return
+            try:
+                subprocess.run(["rm", "-rf", tmpdir], timeout=5, capture_output=True)
+            except Exception:
+                pass
     stdin_file = None
     stdout_file = None
     stderr_file = None
@@ -798,16 +806,17 @@ def print_evaluation_summary(metrics: Dict[str, Any]) -> None:
 
 def test_load_problem(batch_size: int):
     # Get problems
-    results= load_problem_batch(
-        batch_size=batch_size,
-
-    )
-    for result in results:
-        print("--------------------------------Here is the solution--------------------------------")
-        print(result["solution"])
-       
+    for benchmark in ["human_eval","livecodebench","test","mbpp"]:
+        results= load_problem_batch(
+            indices=list(range(batch_size)),
+            benchmark_name="train",
+            mode="validate"
+        )
+        print(f"--------------------------------Here is the benchmark--------------------------------")
+        print(len(results))
+        
 
 if __name__ == "__main__":
-    for benchmark in ["CodeContests"]:
-        print(f"test load {benchmark}")
-        test_load_problem(5)
+    
+
+    test_load_problem(5)

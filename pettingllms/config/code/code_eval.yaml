@@ -2,12 +2,13 @@
 # code_generator uses Qwen/Qwen2.5-Coder-3B, test_generator uses DeepSeek-R1-Distill
 mode: "validate"
 sample_mode: "tree"
+enable_thinking: false
 # Inherit from base configuration
 defaults:
   # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently
   - ppo_trainer@models.model_0.ppo_trainer_config: eval
   - _self_
-
+benchmark: "livecodebench" #"human_eval","livecodebench","mbpp","test"
 # dataset config (shared by all agents)
 data:
   filter_method: mean
@@ -57,7 +58,9 @@ multi_agent_interaction:
 models:
   model_0:
     path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
+    #path: "/home/lah003/models/Qwen2.5-Coder-1.5B-Instruct"
     #path: "/home/lah003/models/Qwen3-4B"
+    #path: "/home/lah003/models/Qwen2.5-7B-Instruct"
     name: "code_generator_model"
     ppo_trainer_config:
       data: 

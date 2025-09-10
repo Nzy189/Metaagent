@@ -179,8 +179,9 @@ class MultiAgentsExecutionEngine:
                 for env in self.envs:
                     env.reset()
             else:
-                epoch_size=getattr(self.config.data, "epoch_size", 20)
-                step_in_epoch_idx=step_idx%epoch_size
+                resample_freq=self.config.data.get("resample_freq",10)
+                epoch_size=self.config.data.get("epoch_size", 100)
+                step_in_epoch_idx=(step_idx%epoch_size)//resample_freq
                 env_indices=range(step_in_epoch_idx*self.gen_batch_size, (step_in_epoch_idx+1)*self.gen_batch_size)
                 self.envs_batch=self.env_batch_class(
                     env_idx_list=range(self.gen_batch_size),
@@ -265,18 +266,19 @@ class MultiAgentsExecutionEngine:
                 f"Starting turn {turn_idx + 1}",
                 {"turn_idx": turn_idx + 1}
             )
-            
+            enable_thinking=getattr(self.config, 'enable_thinking', False)
             for agent_idx, agent_name in enumerate(self.turn_order):
                 current_agent = agent_group[agent_idx]
                 current_agent.update_from_env(turn_idx,env)
                 prompt = current_agent.current_prompt
-                policy_name = self.agent_policy_mapping.get(agent_name) if self.agent_policy_mapping else None
+                policy_name = self.agent_policy_mapping.get(agent_name) 
                 # Convert to DataProto format
                 format_prompt =convert_prompt_to_dpr( self.tokenizer_dict[policy_name], 
                         self.processor_dict.get(policy_name), 
                         prompt, 
                         self.max_prompt_length,
-                        multi_modal=False
+                        multi_modal=False,
+                        enable_thinking=enable_thinking
                    )
                 if format_prompt is None:
                     return None
@@ -289,7 +291,6 @@ class MultiAgentsExecutionEngine:
                 print(f"DEBUG: begin tp generate response for {agent_name} with model {model_name} using llm_async_generate")
                 
                 try:
-                    # 随机选择一个可用的 server address（兼容字符串/列表）
                     _addresses = self.server_address_dict.get(policy_name)
                     if isinstance(_addresses, (list, tuple)):
                         _address = random.choice(_addresses) if len(_addresses) > 0 else _addresses[0]
@@ -446,12 +447,14 @@ class MultiAgentsExecutionEngine:
                 current_agent = agent_groups[idx][agent_idx]
                 current_agent.update_from_env(turn_idx,env)
                 prompt = current_agent.current_prompt
+                enable_thinking=getattr(self.config, 'enable_thinking', False)
                 policy_name = self.agent_policy_mapping.get(agent_name) 
                 format_prompt =convert_prompt_to_dpr( self.tokenizer_dict[policy_name], 
                         self.processor_dict.get(policy_name), 
                         prompt, 
                         self.max_prompt_length,
-                        multi_modal=False
+                        multi_modal=False,
+                        enable_thinking=enable_thinking
                 )
                 if format_prompt.batch is None:
                     return None
@@ -561,7 +564,11 @@ class MultiAgentsExecutionEngine:
             selected_agent_group = agent_groups[best_i]
             
             # check if any agent has completed the task
-            agent_done = selected_agent_group[0].done
+            agent_done=False
+            for agent in selected_agent_group:
+                if agent.done:
+                    agent_done=True
+                    break
             envs_list = [copy.deepcopy(selected_env) for _ in envs_list]
             agent_groups = [copy.deepcopy(selected_agent_group) for _ in agent_groups]
             

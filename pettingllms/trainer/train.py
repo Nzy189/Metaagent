@@ -115,8 +115,27 @@ def run_ppo(config):
     try:
         if not ray.is_initialized():
             ppo_timer.checkpoint("Initializing Ray cluster")
+            # Prepare Ray temp and spill directories under project root
+            try:
+                from pathlib import Path as _Path
+                _project_root = _Path(__file__).resolve().parents[2]
+                _ray_tmp_dir = os.path.join(str(_project_root), "tmp", "ray_tmp")
+                _ray_spill_dir = os.path.join(str(_project_root), "tmp", "ray_spill")
+                os.makedirs(_ray_tmp_dir, exist_ok=True)
+                os.makedirs(_ray_spill_dir, exist_ok=True)
+                _spilling_conf = {"type": "filesystem", "params": {"directory_path": [_ray_spill_dir]}}
+                _system_config = {"object_spilling_config": json.dumps(_spilling_conf)}
+            except Exception as _e:
+                print(f"Warning: failed to prepare Ray temp/spill dirs in trainer: {_e}")
+                _ray_tmp_dir = None
+                _system_config = None
+
             # this is for local ray cluster
-            ray.init(runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}})
+            ray.init(
+                runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}},
+                **({"_temp_dir": _ray_tmp_dir} if _ray_tmp_dir else {}),
+                **({"_system_config": _system_config} if _system_config else {})
+            )
             ppo_timer.checkpoint("Ray cluster initialized")
 
         ppo_timer.checkpoint("Starting remote multi-agent training")

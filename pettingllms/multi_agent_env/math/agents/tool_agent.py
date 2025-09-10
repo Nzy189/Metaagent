@@ -129,7 +129,7 @@ class ToolAgent(Agent):
                 env_data.state.code_is_correct = bool(is_correct)
                 
                 if is_correct:
-                
+                    self.done = True
                     self.is_pass = True
                     self.agent_reward = 1.0
                 else:

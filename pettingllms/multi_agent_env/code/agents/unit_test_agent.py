@@ -62,7 +62,18 @@ class UnitTestGenerationAgent(Agent):
                 return "\n".join([str(v) for v in value])
             return str(value)
 
-
+        text_format=(
+            f"**Test Cases:**\n"
+                f"1. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
+                f"2. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
+                f"3. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
+                f"**Format Example:**\n"
+                f"**Test Cases:**\n"
+                f"1. **Test Input:**\n```3\n0\n9\n1\n-1\n```\n\n**Test Output:**\n```1\n```\n\n"
+                f"2. **Test Input:**\n```3\n0\n9\n1\n-3\n```\n\n**Test Output:**\n```2\n```\n\n"
+                f"3. **Test Input:**\n```3\n0\n6\n1\n-2\n```\n\n**Test Output:**\n```3\n```\n\n"
+            )
+        text_format_single=f"**Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
         question = getattr(state, "problem", None)
         current_code = getattr(state, "generated_code", None)
         mismatch_cases = getattr(state, "generated_test_vs_generated_code_mismatch_cases", None)
@@ -85,16 +96,8 @@ class UnitTestGenerationAgent(Agent):
                 f"You need to provide some new test examples as much as possible. For coverage, you should provide at least 3 test examples. A good test example should be completely accurate and conform to the problem's format requirements, while also possessing enough discriminative power to distinguish correct code from incorrect code.\n"
                 f"Before providing a test example, you must think carefully and reason step by step to derive an input and output you are very confident are correct. For example, start by designing an input you can reliably handle, then compute the output step by step. If you're unsure about the output, revise or re-design the input to ensure accuracy. Directly providing input/output pairs without this process is discouraged, as it often results in low accuracy.\n"
                 f"Finally, after completing these previous thinking and derivation steps (you should not write the final test example unless you have gone through these steps very thoroughly), you MUST put your final test example in the following format:\n\n"
-                f"**Test Cases:**\n"
-                f"1. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
-                f"2. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
-                f"3. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
-                f"**Format Example:**\n"
-                f"**Test Cases:**\n"
-                f"1. **Test Input:**\n```3\n0\n9\n1\n-1\n```\n\n**Test Output:**\n```1\n```\n\n"
-                f"2. **Test Input:**\n```3\n0\n9\n1\n-3\n```\n\n**Test Output:**\n```2\n```\n\n"
-                f"3. **Test Input:**\n```3\n0\n6\n1\n-2\n```\n\n**Test Output:**\n```3\n```\n\n"
-                
+                +text_format
+               
             )
         else:
            
@@ -106,16 +109,7 @@ class UnitTestGenerationAgent(Agent):
             formatted_prompt +=formatted_prompt_for_mismatch_cases + (
                 f"First, you need to judge the mismatch history between the current generated test cases and the current code execution result, if the mismatch is caused by the current generated test cases, please refine the test cases to pass all tests.\n"
                 f"Then, you need to refine the code to pass all tests.\n"
-                f"Finally, you MUST put your final test example in the following format:\n\n"
-                f"**Test Cases:**\n"
-                f"1. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
-                f"2. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
-                f"3. **Test Input:**\n```input here```\n\n **Test Output:**\n```output here```\n\n"
-                f"**Format Example:**\n"
-                f"**Test Cases:**\n"
-                f"1. **Test Input:**\n```3\n0\n9\n1\n-1\n```\n\n**Test Output:**\n```1\n```\n\n"
-                f"2. **Test Input:**\n```3\n0\n9\n1\n-3\n```\n\n**Test Output:**\n```2\n```\n\n"
-                f"3. **Test Input:**\n```3\n0\n6\n1\n-2\n```\n\n**Test Output:**\n```3\n```\n\n"
+                +text_format
                 
             )
 
@@ -147,7 +141,7 @@ class UnitTestGenerationAgent(Agent):
         if gen_inputs and gen_outputs and getattr(env_data.state, "generated_code", None):
             try:
                 env_passed_ratio, env_passed_cases, env_failed_cases = await evaluate_code_against_tests(
-                    env_data.state.generated_code, gen_inputs, gen_outputs, timeout=20.0,ray_actor=env_worker,rollout_idx=self.rollout_idx
+                    env_data.state.generated_code, gen_inputs, gen_outputs, timeout=30.0,ray_actor=env_worker,rollout_idx=self.rollout_idx
                 )
                
 
@@ -155,7 +149,7 @@ class UnitTestGenerationAgent(Agent):
                 env_data.state.generated_test_vs_generated_code_mismatch_cases = env_failed_cases
                 env_data.state.generated_test_vs_generated_code_match_ratio = env_passed_ratio
                 if env_passed_ratio >= 1.0 and len(gen_inputs) > 0:
-                    self.done = True
+                    pass
                 else:
                     env_data.state.generated_code_history.append(env_data.state.generated_code)
                     env_data.state.generated_test_vs_generated_code_mismatch_cases_history.append(env_failed_cases)
@@ -177,6 +171,7 @@ class UnitTestGenerationAgent(Agent):
                 env_data.state.generated_test_vs_golden_code_match_ratio = passed_ratio
                 if passed_ratio >= 1.0 and len(gen_inputs) > 0:
                     self.is_pass = True
+                    self.done = True
         
         
                     

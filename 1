@@ -1,0 +1,701 @@
++ export CUDA_VISIBLE_DEVICES=2,3
++ CUDA_VISIBLE_DEVICES=2,3
++ export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
++ TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
++ export VLLM_ATTENTION_BACKEND=FLASH_ATTN
++ VLLM_ATTENTION_BACKEND=FLASH_ATTN
++ export VLLM_USE_FLASHINFER_SAMPLER=0
++ VLLM_USE_FLASHINFER_SAMPLER=0
++ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
++ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
++ export VLLM_USE_V1=1
++ VLLM_USE_V1=1
++ export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
++ VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
++ export VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
++ VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
++ export HYDRA_FULL_ERROR=1
++ HYDRA_FULL_ERROR=1
++ export NCCL_IB_DISABLE=1
++ NCCL_IB_DISABLE=1
++ export NCCL_NET_GDR_LEVEL=0
++ NCCL_NET_GDR_LEVEL=0
++ export CUDA_HOME=/usr/local/cuda
++ CUDA_HOME=/usr/local/cuda
++ export LD_LIBRARY_PATH=/usr/local/cuda/targets/x86_64-linux/lib:
++ LD_LIBRARY_PATH=/usr/local/cuda/targets/x86_64-linux/lib:
++ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib:
++ LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib:
++ config_path=../config/math
++ config_name=math_single_policy
++ train_data_size=32
++ val_data_size=32
++ data_dir=/home/lah003/data/math/model_0
++ USE_GRPO='models.model_0.ppo_trainer_config.algorithm.adv_estimator=grpo models.model_0.ppo_trainer_config.actor_rollout_ref.actor.use_kl_loss=False'
++ RESOURCE='resource.n_gpus_per_node=2 models.model_0.ppo_trainer_config.trainer.n_gpus_per_node=2 models.model_0.ppo_trainer_config.trainer.nnodes=1 models.model_0.ppo_trainer_config.actor_rollout_ref.rollout.tensor_model_parallel_size=2'
++ DATA='+models.model_0.ppo_trainer_config.data.train_files=/home/lah003/data/math/model_0/text/train.parquet +models.model_0.ppo_trainer_config.data.val_files=/home/lah003/data/math/model_0/text/test.parquet'
++ '
+'
+scripts/validate.sh: line 31: $'\n': command not found
++ models=("Qwen/Qwen3-1.7B")
++ for model in "${models[@]}"
++ echo '=== Evaluating model: Qwen/Qwen3-1.7B ==='
+=== Evaluating model: Qwen/Qwen3-1.7B ===
++ python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen3-1.7B --host 127.0.0.1 --port 8100 --gpu-memory-utilization 0.9 --tensor-parallel-size 1 --max-model-len 32768
+INFO 09-08 22:42:35 [__init__.py:235] Automatically detected platform cuda.
+INFO 09-08 22:42:37 [api_server.py:1755] vLLM API server version 0.10.0
+INFO 09-08 22:42:37 [cli_args.py:261] non-default args: {'host': '127.0.0.1', 'port': 8100, 'model': 'Qwen/Qwen3-1.7B', 'max_model_len': 32768}
+INFO 09-08 22:42:44 [config.py:1604] Using max model len 32768
+INFO 09-08 22:42:44 [config.py:2434] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 09-08 22:42:48 [__init__.py:235] Automatically detected platform cuda.
+INFO 09-08 22:42:50 [core.py:572] Waiting for init message from front-end.
+INFO 09-08 22:42:50 [core.py:71] Initializing a V1 LLM engine (v0.10.0) with config: model='Qwen/Qwen3-1.7B', speculative_config=None, tokenizer='Qwen/Qwen3-1.7B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, override_neuron_config={}, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=32768, download_dir=None, load_format=LoadFormat.AUTO, tensor_parallel_size=1, pipeline_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto,  device_config=cuda, decoding_config=DecodingConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_backend=''), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None), seed=0, served_model_name=Qwen/Qwen3-1.7B, num_scheduler_steps=1, multi_step_stream_outputs=True, enable_prefix_caching=True, chunked_prefill_enabled=True, use_async_output_proc=True, pooler_config=None, compilation_config={"level":3,"debug_dump_path":"","cache_dir":"","backend":"","custom_ops":[],"splitting_ops":["vllm.unified_attention","vllm.unified_attention_with_output","vllm.mamba_mixer2"],"use_inductor":true,"compile_sizes":[],"inductor_compile_config":{"enable_auto_functionalized_v2":false},"inductor_passes":{},"use_cudagraph":true,"cudagraph_num_of_warmups":1,"cudagraph_capture_sizes":[512,504,496,488,480,472,464,456,448,440,432,424,416,408,400,392,384,376,368,360,352,344,336,328,320,312,304,296,288,280,272,264,256,248,240,232,224,216,208,200,192,184,176,168,160,152,144,136,128,120,112,104,96,88,80,72,64,56,48,40,32,24,16,8,4,2,1],"cudagraph_copy_inputs":false,"full_cuda_graph":false,"max_capture_size":512,"local_cache_dir":null}
+ERROR 09-08 22:42:52 [core.py:632] EngineCore failed to start.
+ERROR 09-08 22:42:52 [core.py:632] Traceback (most recent call last):
+ERROR 09-08 22:42:52 [core.py:632]   File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 623, in run_engine_core
+ERROR 09-08 22:42:52 [core.py:632]     engine_core = EngineCoreProc(*args, **kwargs)
+ERROR 09-08 22:42:52 [core.py:632]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 09-08 22:42:52 [core.py:632]   File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 441, in __init__
+ERROR 09-08 22:42:52 [core.py:632]     super().__init__(vllm_config, executor_class, log_stats,
+ERROR 09-08 22:42:52 [core.py:632]   File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 77, in __init__
+ERROR 09-08 22:42:52 [core.py:632]     self.model_executor = executor_class(vllm_config)
+ERROR 09-08 22:42:52 [core.py:632]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 09-08 22:42:52 [core.py:632]   File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/executor/executor_base.py", line 53, in __init__
+ERROR 09-08 22:42:52 [core.py:632]     self._init_executor()
+ERROR 09-08 22:42:52 [core.py:632]   File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/executor/uniproc_executor.py", line 48, in _init_executor
+ERROR 09-08 22:42:52 [core.py:632]     self.collective_rpc("init_device")
+ERROR 09-08 22:42:52 [core.py:632]   File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/executor/uniproc_executor.py", line 58, in collective_rpc
+ERROR 09-08 22:42:52 [core.py:632]     answer = run_method(self.driver_worker, method, args, kwargs)
+ERROR 09-08 22:42:52 [core.py:632]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 09-08 22:42:52 [core.py:632]   File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/utils/__init__.py", line 2985, in run_method
+ERROR 09-08 22:42:52 [core.py:632]     return func(*args, **kwargs)
+ERROR 09-08 22:42:52 [core.py:632]            ^^^^^^^^^^^^^^^^^^^^^
+ERROR 09-08 22:42:52 [core.py:632]   File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/worker/worker_base.py", line 603, in init_device
+ERROR 09-08 22:42:52 [core.py:632]     self.worker.init_device()  # type: ignore
+ERROR 09-08 22:42:52 [core.py:632]     ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 09-08 22:42:52 [core.py:632]   File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 168, in init_device
+ERROR 09-08 22:42:52 [core.py:632]     raise ValueError(
+ERROR 09-08 22:42:52 [core.py:632] ValueError: Free memory on device (15.73/178.36 GiB) on startup is less than desired GPU memory utilization (0.9, 160.53 GiB). Decrease GPU memory utilization or reduce GPU memory used by other processes.
+Process EngineCore_0:
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 636, in run_engine_core
+    raise e
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 623, in run_engine_core
+    engine_core = EngineCoreProc(*args, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 441, in __init__
+    super().__init__(vllm_config, executor_class, log_stats,
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 77, in __init__
+    self.model_executor = executor_class(vllm_config)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/executor/executor_base.py", line 53, in __init__
+    self._init_executor()
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/executor/uniproc_executor.py", line 48, in _init_executor
+    self.collective_rpc("init_device")
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/executor/uniproc_executor.py", line 58, in collective_rpc
+    answer = run_method(self.driver_worker, method, args, kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/utils/__init__.py", line 2985, in run_method
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/worker/worker_base.py", line 603, in init_device
+    self.worker.init_device()  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 168, in init_device
+    raise ValueError(
+ValueError: Free memory on device (15.73/178.36 GiB) on startup is less than desired GPU memory utilization (0.9, 160.53 GiB). Decrease GPU memory utilization or reduce GPU memory used by other processes.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/entrypoints/openai/api_server.py", line 1856, in <module>
+    uvloop.run(run_server(args))
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/uvloop/__init__.py", line 109, in run
+    return __asyncio.run(
+           ^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/uvloop/__init__.py", line 61, in wrapper
+    return await main
+           ^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/entrypoints/openai/api_server.py", line 1791, in run_server
+    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/entrypoints/openai/api_server.py", line 1811, in run_server_worker
+    async with build_async_engine_client(args, client_config) as engine_client:
+  File "/usr/lib/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/entrypoints/openai/api_server.py", line 158, in build_async_engine_client
+    async with build_async_engine_client_from_engine_args(
+  File "/usr/lib/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/entrypoints/openai/api_server.py", line 194, in build_async_engine_client_from_engine_args
+    async_llm = AsyncLLM.from_vllm_config(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 163, in from_vllm_config
+    return cls(
+           ^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 117, in __init__
+    self.engine_core = EngineCoreClient.make_async_mp_client(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 98, in make_async_mp_client
+    return AsyncMPClient(*client_args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 677, in __init__
+    super().__init__(
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 408, in __init__
+    with launch_core_engines(vllm_config, executor_class,
+  File "/usr/lib/python3.12/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/utils.py", line 697, in launch_core_engines
+    wait_for_engine_startup(
+  File "/home/lah003/workspace/PettingLLMs/pettingllms-venv/lib/python3.12/site-packages/vllm/v1/engine/utils.py", line 750, in wait_for_engine_startup
+    raise RuntimeError("Engine core initialization failed. "
+RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}
++ python3 -m pettingllms.scripts.async_vllm_code_eval --config-path ../config/math --config-name math_single_policy models.model_0.ppo_trainer_config.algorithm.adv_estimator=grpo models.model_0.ppo_trainer_config.actor_rollout_ref.actor.use_kl_loss=False resource.n_gpus_per_node=2 models.model_0.ppo_trainer_config.trainer.n_gpus_per_node=2 models.model_0.ppo_trainer_config.trainer.nnodes=1 models.model_0.ppo_trainer_config.actor_rollout_ref.rollout.tensor_model_parallel_size=2 +models.model_0.ppo_trainer_config.data.train_files=/home/lah003/data/math/model_0/text/train.parquet +models.model_0.ppo_trainer_config.data.val_files=/home/lah003/data/math/model_0/text/test.parquet models.model_0.path=Qwen/Qwen3-1.7B data.epoch_size=120 data.max_prompt_length=8192 data.max_response_length=6144 data.resample_freq=4 data.filter_method=std data.filter_ratio=0.5 sample_mode=tree env.max_turns=3
+INFO 09-08 22:42:58 [__init__.py:235] Automatically detected platform cuda.
+[MultiAgentsExecutionEngine] Initializing MultiAgentsExecutionEngine at 22:43:02
+[MultiAgentsExecutionEngine] Loading config parameters | +0.00s | Total: 0.00s
+env_name: math_env
+sample_num: 5
+agent_config_dict keys: ['reasoning_agent', 'tool_agent']
+[MultiAgentsExecutionEngine] MultiAgentsExecutionEngine initialization completed | +0.00s | Total: 0.00s
+[MultiAgentsExecutionEngine] Starting init_agents_and_envs | +0.00s | Total: 0.00s
+[MultiAgentsExecutionEngine] Creating environment batch | +0.00s | Total: 0.00s
+📄 目标文件: /home/lah003/workspace/PettingLLMs/datasets/math/train/AIME25.parquet
+📁 从本地加载数学测试集: /home/lah003/workspace/PettingLLMs/datasets/math/train
+✅ 数学测试集加载成功，共 30 条
+🔄 Loaded math validation problem 1/30
+✅ 成功返回 30 条数学验证样本
+[MultiAgentsExecutionEngine] Starting batched env initialization | +0.29s | Total: 0.29s
+[2025-09-08 22:43:02,943][summary][WARNING] - {
+  "event_type": "ray_status_check",
+  "context": "test_ray_log_function ",
+  "timestamp": "2025-09-08T22:43:02.943646",
+  "ray_status": {
+    "ray_available": true,
+    "ray_initialized": false,
+    "ray_address": null,
+    "ray_namespace": null,
+    "ray_cluster_resources": null,
+    "ray_nodes": null,
+    "ray_error": null
+  }
+}
+[2025-09-08 22:43:02,943][summary][WARNING] - {
+  "event_type": "ray_status_check",
+  "context": "before_code_utils_ray_init",
+  "timestamp": "2025-09-08T22:43:02.943864",
+  "ray_status": {
+    "ray_available": true,
+    "ray_initialized": false,
+    "ray_address": null,
+    "ray_namespace": null,
+    "ray_cluster_resources": null,
+    "ray_nodes": null,
+    "ray_error": null
+  }
+}
+[2025-09-08 22:43:05,001][root][INFO] - Failed to auto-detect TPU type.
+[2025-09-08 22:43:05,008][root][INFO] - Failed to configure TPU pod. Got: tpu_name: None, worker_id: None, accelerator_type: None
+[2025-09-08 22:43:06,456][summary][INFO] - {
+  "event_type": "ray_status_check",
+  "context": "after_code_utils_ray_init",
+  "timestamp": "2025-09-08T22:43:06.456220",
+  "ray_status": {
+    "ray_available": true,
+    "ray_initialized": true,
+    "ray_address": "169.228.33.163:64950",
+    "ray_namespace": "9cbb151e-432c-42dd-9a80-f28ebaa5fd5a",
+    "ray_cluster_resources": {
+      "node:169.228.33.163": 1.0,
+      "node:__internal_head__": 1.0,
+      "accelerator_type:B200": 1.0,
+      "TPU": 2.0,
+      "CPU": 224.0,
+      "memory": 1685783941120.0,
+      "object_store_memory": 200000000000.0,
+      "GPU": 2.0
+    },
+    "ray_nodes": 1,
+    "ray_error": null
+  }
+}
+begin to create Ray docker workers
+[MultiAgentsExecutionEngine] Creating 30 Ray docker workers | +3.51s | Total: 3.81s
+[2025-09-08 22:43:06,474][summary][INFO] - {
+  "env_idx": -1,
+  "rollout_idx": -1,
+  "agent_rewards": "env_workers",
+  "termination_reason": "init 30 env workers",
+  "timestamp": "2025-09-08T22:43:06.474370",
+  "extra_data": {}
+}
+[MultiAgentsExecutionEngine] Environment batch created | +0.02s | Total: 3.82s
+[MultiAgentsExecutionEngine] Agent groups initialization completed | +0.00s | Total: 3.82s
+[ConcurrentRollouts] Starting concurrent rollouts for 30 rollouts at 22:43:06
+[ConcurrentRollouts] Creating async tasks | +0.00s | Total: 0.00s
+[ConcurrentRollouts] Created 30 async tasks | +0.00s | Total: 0.00s
+
+Rollouts:   0%|          | 0/30 [00:00<?, ?it/s][A
+Rollouts:   3%|▎         | 1/30 [00:01<00:47,  1.63s/it][A
+Rollouts (0/30, 1 failed):   3%|▎         | 1/30 [00:01<00:47,  1.63s/it][A[ConcurrentRollouts] Starting task execution | +0.00s | Total: 0.00s
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+DEBUG: begin tp generate response for reasoning_agent with model Qwen/Qwen3-1.7B using llm_async_generate
+[2025-09-08 22:43:08,106][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:08.106766",
+  "extra_data": {
+    "failed_count": 1,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 1 failed):   7%|▋         | 2/30 [00:02<00:31,  1.11s/it][A
+Rollouts (0/30, 2 failed):   7%|▋         | 2/30 [00:02<00:31,  1.11s/it][A[2025-09-08 22:43:08,861][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:08.861040",
+  "extra_data": {
+    "failed_count": 2,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 2 failed):  10%|█         | 3/30 [00:02<00:18,  1.46it/s][A
+Rollouts (0/30, 3 failed):  10%|█         | 3/30 [00:02<00:18,  1.46it/s][A[2025-09-08 22:43:09,034][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:09.033386",
+  "extra_data": {
+    "failed_count": 3,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 4 failed):  13%|█▎        | 4/30 [00:02<00:17,  1.46it/s][A[2025-09-08 22:43:09,129][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:09.129474",
+  "extra_data": {
+    "failed_count": 4,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 4 failed):  17%|█▋        | 5/30 [00:02<00:08,  3.03it/s][A
+Rollouts (0/30, 5 failed):  17%|█▋        | 5/30 [00:02<00:08,  3.03it/s][A[2025-09-08 22:43:09,148][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:09.148625",
+  "extra_data": {
+    "failed_count": 5,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 6 failed):  20%|██        | 6/30 [00:02<00:07,  3.03it/s][A[2025-09-08 22:43:09,210][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:09.210584",
+  "extra_data": {
+    "failed_count": 6,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 6 failed):  23%|██▎       | 7/30 [00:02<00:04,  4.84it/s][A
+Rollouts (0/30, 7 failed):  23%|██▎       | 7/30 [00:02<00:04,  4.84it/s][A[2025-09-08 22:43:09,257][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:09.257885",
+  "extra_data": {
+    "failed_count": 7,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 8 failed):  27%|██▋       | 8/30 [00:02<00:04,  4.84it/s][A[2025-09-08 22:43:09,471][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:09.471756",
+  "extra_data": {
+    "failed_count": 8,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 8 failed):  30%|███       | 9/30 [00:03<00:03,  5.84it/s][A
+Rollouts (0/30, 9 failed):  30%|███       | 9/30 [00:03<00:03,  5.84it/s][A[2025-09-08 22:43:09,489][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:09.489555",
+  "extra_data": {
+    "failed_count": 9,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 10 failed):  33%|███▎      | 10/30 [00:03<00:03,  5.84it/s][A[2025-09-08 22:43:09,683][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:09.683509",
+  "extra_data": {
+    "failed_count": 10,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 10 failed):  37%|███▋      | 11/30 [00:03<00:03,  5.71it/s][A
+Rollouts (0/30, 11 failed):  37%|███▋      | 11/30 [00:03<00:03,  5.71it/s][A[2025-09-08 22:43:09,853][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:09.853450",
+  "extra_data": {
+    "failed_count": 11,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 11 failed):  40%|████      | 12/30 [00:04<00:05,  3.10it/s][A
+Rollouts (0/30, 12 failed):  40%|████      | 12/30 [00:04<00:05,  3.10it/s][A[2025-09-08 22:43:10,753][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:10.753119",
+  "extra_data": {
+    "failed_count": 12,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 13 failed):  43%|████▎     | 13/30 [00:04<00:05,  3.10it/s][A[2025-09-08 22:43:10,829][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:10.829820",
+  "extra_data": {
+    "failed_count": 13,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 13 failed):  47%|████▋     | 14/30 [00:04<00:04,  3.56it/s][A
+Rollouts (0/30, 14 failed):  47%|████▋     | 14/30 [00:04<00:04,  3.56it/s][A[2025-09-08 22:43:11,171][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:11.171050",
+  "extra_data": {
+    "failed_count": 14,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 14 failed):  50%|█████     | 15/30 [00:04<00:04,  3.67it/s][A
+Rollouts (0/30, 15 failed):  50%|█████     | 15/30 [00:04<00:04,  3.67it/s][A[2025-09-08 22:43:11,412][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:11.412324",
+  "extra_data": {
+    "failed_count": 15,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 15 failed):  53%|█████▎    | 16/30 [00:05<00:04,  2.84it/s][A
+Rollouts (0/30, 16 failed):  53%|█████▎    | 16/30 [00:05<00:04,  2.84it/s][A[2025-09-08 22:43:12,030][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:12.030545",
+  "extra_data": {
+    "failed_count": 16,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 16 failed):  57%|█████▋    | 17/30 [00:05<00:04,  2.98it/s][A
+Rollouts (0/30, 17 failed):  57%|█████▋    | 17/30 [00:05<00:04,  2.98it/s][A[2025-09-08 22:43:12,314][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:12.314600",
+  "extra_data": {
+    "failed_count": 17,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 17 failed):  60%|██████    | 18/30 [00:08<00:09,  1.23it/s][A
+Rollouts (0/30, 18 failed):  60%|██████    | 18/30 [00:08<00:09,  1.23it/s][A[2025-09-08 22:43:14,481][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:14.481648",
+  "extra_data": {
+    "failed_count": 18,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 18 failed):  63%|██████▎   | 19/30 [00:08<00:08,  1.30it/s][A
+Rollouts (0/30, 19 failed):  63%|██████▎   | 19/30 [00:08<00:08,  1.30it/s][A[2025-09-08 22:43:15,129][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:15.129732",
+  "extra_data": {
+    "failed_count": 19,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 20 failed):  67%|██████▋   | 20/30 [00:08<00:07,  1.30it/s][A[2025-09-08 22:43:15,144][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:15.144385",
+  "extra_data": {
+    "failed_count": 20,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 20 failed):  70%|███████   | 21/30 [00:09<00:04,  1.92it/s][A
+Rollouts (0/30, 21 failed):  70%|███████   | 21/30 [00:09<00:04,  1.92it/s][A[2025-09-08 22:43:15,537][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:15.537812",
+  "extra_data": {
+    "failed_count": 21,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 21 failed):  73%|███████▎  | 22/30 [00:09<00:04,  1.98it/s][A
+Rollouts (0/30, 22 failed):  73%|███████▎  | 22/30 [00:09<00:04,  1.98it/s][A[2025-09-08 22:43:15,991][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:15.991025",
+  "extra_data": {
+    "failed_count": 22,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 22 failed):  77%|███████▋  | 23/30 [00:10<00:03,  1.98it/s][A
+Rollouts (0/30, 23 failed):  77%|███████▋  | 23/30 [00:10<00:03,  1.98it/s][A[2025-09-08 22:43:16,496][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:16.496688",
+  "extra_data": {
+    "failed_count": 23,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 23 failed):  80%|████████  | 24/30 [00:12<00:06,  1.05s/it][A
+Rollouts (0/30, 24 failed):  80%|████████  | 24/30 [00:12<00:06,  1.05s/it][A[2025-09-08 22:43:19,051][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:19.051149",
+  "extra_data": {
+    "failed_count": 24,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 24 failed):  83%|████████▎ | 25/30 [00:14<00:05,  1.20s/it][A
+Rollouts (0/30, 25 failed):  83%|████████▎ | 25/30 [00:14<00:05,  1.20s/it][A[2025-09-08 22:43:20,639][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:20.639043",
+  "extra_data": {
+    "failed_count": 25,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 25 failed):  87%|████████▋ | 26/30 [00:28<00:19,  4.87s/it][A
+Rollouts (0/30, 26 failed):  87%|████████▋ | 26/30 [00:28<00:19,  4.87s/it][A[2025-09-08 22:43:34,830][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:34.829937",
+  "extra_data": {
+    "failed_count": 26,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 27 failed):  90%|█████████ | 27/30 [00:28<00:14,  4.87s/it][A[2025-09-08 22:43:34,830][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:34.830764",
+  "extra_data": {
+    "failed_count": 27,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 28 failed):  93%|█████████▎| 28/30 [00:28<00:09,  4.87s/it][A[2025-09-08 22:43:34,838][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:34.838519",
+  "extra_data": {
+    "failed_count": 28,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 29 failed):  97%|█████████▋| 29/30 [00:28<00:04,  4.87s/it][A[2025-09-08 22:43:34,839][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:34.839266",
+  "extra_data": {
+    "failed_count": 29,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+Rollouts (0/30, 30 failed): 100%|██████████| 30/30 [00:28<00:00,  4.87s/it][A[2025-09-08 22:43:34,840][summary][INFO] - {
+  "event_type": "task_error",
+  "message": "Task failed with error: expected string or bytes-like object, got 'NoneType'",
+  "timestamp": "2025-09-08T22:43:34.840887",
+  "extra_data": {
+    "failed_count": 30,
+    "error": "expected string or bytes-like object, got 'NoneType'",
+    "error_type": "TypeError",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 633, in generate_multiple_rollouts_concurrent\n    rollout_result = await completed_task\n                     ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 631, in _wait_for_one\n    return f.result()  # May raise f.exception().\n           ^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/trainer/multi_agents_execution_engine.py\", line 328, in generate_single_rollout\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/agents/reasoning_agent.py\", line 112, in step\n    generated_solution = extract_reasoning_steps(self.current_action)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lah003/workspace/PettingLLMs/pettingllms/multi_agent_env/math/math_utils.py\", line 53, in extract_reasoning_steps\n    match = re.search(r\"\\*\\*Reasoning Steps:\\*\\*\\s*```(.*?)```\", response, re.DOTALL)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/re/__init__.py\", line 177, in search\n    return _compile(pattern, flags).search(string)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n"
+  }
+}
+
+                                                                           [A[ConcurrentRollouts] All tasks completed | +28.36s | Total: 28.37s
+[2025-09-08 22:43:34,841][summary][INFO] - {
+  "event_type": "concurrent_batch_complete",
+  "message": "Concurrent execution completed",
+  "timestamp": "2025-09-08T22:43:34.841585",
+  "extra_data": {
+    "successfully_processed": 0,
+    "total_env_groups": 30,
+    "total_rollouts": 30,
+    "failed": 30,
+    "success_rate": "0/30",
+    "aggregated_policies": [
+      "reasoning_agent_model"
+    ]
+  }
+}
+[2025-09-08 22:43:34,843][summary][INFO] - {
+  "event_type": "ray_status_check",
+  "context": "after_concurrent_batch",
+  "timestamp": "2025-09-08T22:43:34.843018",
+  "ray_status": {
+    "ray_available": true,
+    "ray_initialized": true,
+    "ray_address": "169.228.33.163:64950",
+    "ray_namespace": "9cbb151e-432c-42dd-9a80-f28ebaa5fd5a",
+    "ray_cluster_resources": {
+      "node:169.228.33.163": 1.0,
+      "node:__internal_head__": 1.0,
+      "TPU": 2.0,
+      "accelerator_type:B200": 1.0,
+      "CPU": 224.0,
+      "object_store_memory": 200000000000.0,
+      "memory": 1685783941120.0,
+      "GPU": 2.0
+    },
+    "ray_nodes": 1,
+    "ray_error": null
+  }
+}
+[ConcurrentRollouts] Starting UID assignment and filtering | +0.00s | Total: 28.37s
+[ConcurrentRollouts] Concurrent rollouts completed successfully | Total: 28.37s

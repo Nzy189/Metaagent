@@ -148,7 +148,7 @@ actor_rollout_ref:
     log_prob_micro_batch_size: 4 # will be deprecated, use log_prob_micro_batch_size_per_gpu
     log_prob_micro_batch_size_per_gpu: null
     log_prob_use_dynamic_bsz: False
-    log_prob_max_token_len_per_gpu: 16384
+    log_prob_max_token_len_per_gpu: 24576
     disable_log_stats: True
     enable_chunked_prefill: True # may get higher throughput when set to True. When activated, Please increase max_num_batched_tokens or decrease max_model_len.
     # for hf rollout
@@ -389,7 +389,7 @@ trainer:
   log_val_generations: 0
   rollout_data_dir: null # directory for logging the rollout data, no dump if null
   validation_data_dir: null # directory for logging the validation data, no dump if null
-  save_freq: 20
+  save_freq: -1
   # auto: find the last ckpt to resume. If can't find, start from scratch
   resume_mode: auto # or disable or resume_path if resume_from_path is set
   resume_from_path: null

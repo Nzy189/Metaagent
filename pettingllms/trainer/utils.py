@@ -258,7 +258,7 @@ class RequestState:
 
     
 
-def convert_prompt_to_format(tokenizer, prompts,**kwargs):
+def convert_prompt_to_format(tokenizer, enable_thinking, prompts,**kwargs):
     """
     Convert prompt dict to veRL's DataProto.
     
@@ -290,7 +290,7 @@ def convert_prompt_to_format(tokenizer, prompts,**kwargs):
         chat,
         add_generation_prompt=True,
         tokenize=False,
-        enable_thinking=False
+        enable_thinking=True
     )
 
     return prompt_with_chat_template
@@ -298,7 +298,7 @@ def convert_prompt_to_format(tokenizer, prompts,**kwargs):
 
     
 
-def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, multi_modal=False, **kwargs):
+def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, multi_modal=False, enable_thinking=False, **kwargs):
     """
     Convert prompt dict to veRL's DataProto.
     
@@ -335,7 +335,7 @@ def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, mult
             chat,
             add_generation_prompt=True,
             tokenize=False,
-            enable_thinking=False
+            enable_thinking=enable_thinking
         )
         
 

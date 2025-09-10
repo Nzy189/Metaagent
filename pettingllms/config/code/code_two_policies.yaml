@@ -8,7 +8,7 @@ defaults:
   - ppo_trainer@models.model_0.ppo_trainer_config: eval
   - ppo_trainer@models.model_1.ppo_trainer_config: eval
   - _self_
-
+benchmark: "mbpp" #"human_eval","livecodebench","mbpp","test"
 # dataset config (shared by all agents)
 data:
   filter_method: mean # mean, uid, dapo, std
@@ -57,8 +57,9 @@ multi_agent_interaction:
 models:
   model_0:
     # TODO: make configurable
-    path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
-    #path: "/home/lah003/models/Qwen2.5-7B-Instruct"
+    #path: "Qwen/Qwen2.5-Coder-7B"
+    #path: "/home/lah003/models/Qwen2.5-Coder-1.5B-Instruct"
+    path: "Qwen/Qwen2.5-Coder-7B-Instruct"
     #path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
     name: "code_generator_model"
     ppo_trainer_config:
@@ -79,7 +80,7 @@ models:
           n_training_gpus_per_node: ${resource.n_gpus_per_node}
   model_1:
     # TODO: make configurable
-    path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
+    path: "Qwen/Qwen2.5-Coder-7B-Instruct"
     #path: "/home/lah003/models/Qwen2.5-7B-Instruct"
     name: "test_generator_model"
     ppo_trainer_config:

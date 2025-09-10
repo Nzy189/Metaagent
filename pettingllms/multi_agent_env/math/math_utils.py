@@ -10,6 +10,8 @@ import json
 import random
 import asyncio
 import re
+import subprocess
+import signal
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, List, Union
 from dataclasses import dataclass
@@ -38,6 +40,55 @@ def extract_answer(solution_str):
     if not solution:
         return None
     return solution[0]
+
+def extract_reasoning_steps(response: str):
+    """
+    Extract reasoning steps from agent response.
+    
+    Args:
+        response: Agent response string
+        
+    Returns:
+        Extracted reasoning steps
+    """
+    # Use regex to match Reasoning Steps part in ```
+    match = re.search(r"\*\*Reasoning Steps:\*\*\s*```(.*?)```", response, re.DOTALL)
+    if not match:
+        return []
+    
+    steps_block = match.group(1).strip()
+    
+    # 按行分割并去除空行
+    steps = [line.strip() for line in steps_block.split("\n") if line.strip()]
+    return steps
+
+def extract_code(response: str) -> str:
+    """
+    Extract code from agent response.
+    
+    Args:
+        response: Agent response string
+        
+    Returns:
+        Extracted code string
+    """
+    # Look for Python code block
+    python_pattern = r'```python\s*(.*?)```'
+    matches = re.findall(python_pattern, response, re.DOTALL)
+    
+    if matches:
+        return matches[-1].strip()  # Return the last code block
+    
+    # Look for generic code block
+    code_pattern = r'```\s*(.*?)```'
+    matches = re.findall(code_pattern, response, re.DOTALL)
+    
+    if matches:
+        return matches[-1].strip()
+    
+    # If no code block found, return entire response
+    return response.strip()
+
 
 def extract_code(response: str) -> str:
     """
@@ -191,6 +242,22 @@ def _ensure_ray_initialized() -> bool:
                         print(f"Warning: RAY_NUM_CPUS must be positive, got {num_cpus_env}")
                 except (ValueError, TypeError):
                     print(f"Warning: invalid RAY_NUM_CPUS value: {num_cpus_env}, using default")
+
+            # Ensure Ray temp and spill directories
+            try:
+                project_root = Path(__file__).resolve().parents[3]
+                ray_tmp_dir = os.path.join(project_root, "tmp", "ray_tmp")
+                ray_spill_dir = os.path.join(project_root, "tmp", "ray_spill")
+                os.makedirs(ray_tmp_dir, exist_ok=True)
+                os.makedirs(ray_spill_dir, exist_ok=True)
+
+                init_kwargs["_temp_dir"] = ray_tmp_dir
+                spilling_conf = {"type": "filesystem", "params": {"directory_path": [ray_spill_dir]}}
+                init_kwargs["_system_config"] = {
+                    "object_spilling_config": json.dumps(spilling_conf)
+                }
+            except Exception as _e:
+                print(f"Warning: failed to prepare Ray temp/spill dirs: {_e}")
 
             ray.init(**init_kwargs)
 
@@ -422,6 +489,22 @@ def _ensure_ray_initialized() -> bool:
                 except (ValueError, TypeError):
                     print(f"Warning: invalid RAY_NUM_CPUS value: {num_cpus_env}, using default")
 
+            # Ensure Ray temp and spill directories
+            try:
+                project_root = Path(__file__).resolve().parents[3]
+                ray_tmp_dir = os.path.join(project_root, "tmp", "ray_tmp")
+                ray_spill_dir = os.path.join(project_root, "tmp", "ray_spill")
+                os.makedirs(ray_tmp_dir, exist_ok=True)
+                os.makedirs(ray_spill_dir, exist_ok=True)
+
+                init_kwargs["_temp_dir"] = ray_tmp_dir
+                spilling_conf = {"type": "filesystem", "params": {"directory_path": [ray_spill_dir]}}
+                init_kwargs["_system_config"] = {
+                    "object_spilling_config": json.dumps(spilling_conf)
+                }
+            except Exception as _e:
+                print(f"Warning: failed to prepare Ray temp/spill dirs: {_e}")
+
             ray.init(**init_kwargs)
 
             try:
@@ -467,6 +550,11 @@ async def _worker_docker(
     timeout: float = 40.0,
     image: str = "python:3.11-slim"
 ) -> str:
+    # Ensure base tmp directory exists
+    try:
+        os.makedirs("tmp", exist_ok=True)
+    except Exception:
+        pass
     tmpdir = tempfile.mkdtemp(prefix="pllm_exec_", dir="tmp")
     script_path = os.path.join(tmpdir, "script.py")
     stdout_path = os.path.join(tmpdir, "stdout.txt")
@@ -489,20 +577,70 @@ async def _worker_docker(
             await asyncio.wait_for(proc.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             try:
-                proc.kill()
+                # 强制终止进程及其子进程
+                if proc.pid:
+                    # 终止整个进程组
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError, OSError):
+                        pass
+                    
+                    # 强制终止主进程
+                    proc.kill()
+                    
+                    # 等待进程确实结束，但设置短超时
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=2.0)
+                    except asyncio.TimeoutError:
+                        # 如果还没结束，再次尝试强制终止
+                        try:
+                            proc.terminate()
+                            await asyncio.wait_for(proc.wait(), timeout=1.0)
+                        except:
+                            pass
+            except Exception:
+                pass
             finally:
-                with contextlib.suppress(Exception):
-                    await proc.wait()
+                # 强制清理临时文件，即使进程可能还在运行
+                try:
+                    if not stdout_file.closed:
+                        stdout_file.close()
+                    if os.path.exists(tmpdir):
+                        try:
+                            shutil.rmtree(tmpdir)
+                        except Exception:
+                            try:
+                                subprocess.run(['rm', '-rf', tmpdir], timeout=5, capture_output=True)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+                
             return "timeout"
     finally:
         # 确保文件句柄被关闭
         if not stdout_file.closed:
             stdout_file.close()
 
-    # 读取并返回标准输出内容（无论退出码）
-    with open(stdout_path, "rb") as f_out:
-        out_bytes = f_out.read()
-    return out_bytes.decode(errors="replace")
+    try:
+        with open(stdout_path, "rb") as f_out:
+            out_bytes = f_out.read()
+        result = out_bytes.decode(errors="replace")
+    finally:
+        # 正常执行完成后强制清理临时文件
+        try:
+            if os.path.exists(tmpdir):
+                try:
+                    shutil.rmtree(tmpdir)
+                except Exception:
+                    try:
+                        subprocess.run(['rm', '-rf', tmpdir], timeout=5, capture_output=True)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    
+    return result
 
 
 _RAY_TASK_HANDLE = None  # 缓存 Ray 远程函数句柄
@@ -594,6 +732,22 @@ def _ensure_ray_initialized() -> bool:
                         print(f"Warning: RAY_NUM_CPUS must be positive, got {num_cpus_env}")
                 except (ValueError, TypeError):
                     print(f"Warning: invalid RAY_NUM_CPUS value: {num_cpus_env}, using default")
+
+            # Ensure Ray temp and spill directories
+            try:
+                project_root = Path(__file__).resolve().parents[3]
+                ray_tmp_dir = os.path.join(project_root, "tmp", "ray_tmp")
+                ray_spill_dir = os.path.join(project_root, "tmp", "ray_spill")
+                os.makedirs(ray_tmp_dir, exist_ok=True)
+                os.makedirs(ray_spill_dir, exist_ok=True)
+
+                init_kwargs["_temp_dir"] = ray_tmp_dir
+                spilling_conf = {"type": "filesystem", "params": {"directory_path": [ray_spill_dir]}}
+                init_kwargs["_system_config"] = {
+                    "object_spilling_config": json.dumps(spilling_conf)
+                }
+            except Exception as _e:
+                print(f"Warning: failed to prepare Ray temp/spill dirs: {_e}")
 
             ray.init(**init_kwargs)
 
@@ -804,7 +958,8 @@ def load_math_problem_batch(
     dataset_name: str = "train",
     split: str = "train",
     mode: str = "train",
-    config: dict = None
+    config: dict = None,
+    benchmark_name: str = "MATH500"
 ) -> List[Dict[str, Any]]:
     """
     Load a batch of mathematical problems.
@@ -827,7 +982,10 @@ def load_math_problem_batch(
     current_dir = Path(__file__).parent.parent.parent.parent  # 回到 pettingllms 根目录
     local_datasets_dir = current_dir / "datasets" / "math" / dataset_name.lower().replace("/", "_")
     split_name = "train" if mode == "train" else "test"
-    parquet_file = local_datasets_dir / f"{split_name}.parquet"
+    if mode == "train":
+        parquet_file = local_datasets_dir / f"train.parquet"
+    else:
+        parquet_file = local_datasets_dir / f"{benchmark_name}.parquet"
     print(f"📄 目标文件: {parquet_file}")
     
     if mode == "train":
@@ -936,7 +1094,53 @@ def evaluate_math_solution(
     if generated_solution is None:
         return False
 
-    is_correct = int(generated_solution) == int(ground_truth_answer)
+    import re
+    
+    def extract_number(text: str) -> float:
+        """Extract the first number from text, handling various formats"""
+        if text is None:
+            return None
+        
+        # Clean the text - remove newlines and extra whitespace
+        text = text.strip().replace('\n', ' ')
+        
+        # Try to find numbers in the text using regex
+        # This pattern matches integers, floats, fractions, and scientific notation
+        number_pattern = r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?'
+        matches = re.findall(number_pattern, text)
+        
+        if matches:
+            # Take the last number found (often the final answer)
+            try:
+                return float(matches[-1])
+            except ValueError:
+                pass
+        
+        # If regex fails, try to convert the whole string
+        try:
+            return float(text)
+        except ValueError:
+            # As last resort, try to extract just digits and decimal points
+            cleaned = re.sub(r'[^\d.-]', '', text)
+            if cleaned:
+                try:
+                    return float(cleaned)
+                except ValueError:
+                    pass
+        
+        return None
+    
+    # Extract numbers from both solutions
+    generated_num = extract_number(generated_solution)
+    ground_truth_num = extract_number(ground_truth_answer)
+    
+    if generated_num is None or ground_truth_num is None:
+        return False
+    
+    # Compare with tolerance for floating point precision
+    tolerance = 1e-6
+    is_correct = abs(generated_num - ground_truth_num) < tolerance
+    
     return is_correct
      
 
@@ -944,7 +1148,7 @@ def evaluate_math_solution(
 # Test function
 def test_load_math_problems(batch_size: int = 5):
     """Test loading math problems"""
-    results = load_math_problem_batch(batch_size=batch_size, mode="validate")
+    results = load_math_problem_batch(env_indices=list(range(batch_size)), mode="validate")
     for i, result in enumerate(results):
         print(f"\n--- Problem {i+1} ---")
         print(f"Problem: {result['question']}")

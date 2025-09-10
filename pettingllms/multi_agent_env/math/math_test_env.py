@@ -43,7 +43,6 @@ class MathTestEnv(MultiAgentsEnvironment):
         self.state = MathTestEnvState()
 
     def reset(self):
-        super().reset()
         self.state.reasoning_generated_solution = None
         self.state.code_generated_solution = None
         self.state.reasoning_extracted_answer = None
@@ -53,10 +52,9 @@ class MathTestEnv(MultiAgentsEnvironment):
 
 class MathTestEnvBatch:
     def __init__(self, env_idx_list: List[int],env_indices: List[int], rollout_idx_list: List[int], samples: int, max_turns: int, config: dict, mode="train", *, env_workers: List = None):
-        
-        self.problem_list = load_math_problem_batch(env_indices, mode=mode, config=config)
+        benchmark_name=getattr(config,"benchmark") if hasattr(config,"benchmark") else "MATH500"
+        self.problem_list = load_math_problem_batch(env_indices, mode=mode, config=config,benchmark_name=benchmark_name)
         self.env_list = []
-        
         if mode == "validate":
             rollout_idx_list = range(len(self.problem_list) * samples)
    

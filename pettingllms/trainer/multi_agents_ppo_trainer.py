@@ -138,7 +138,6 @@ class MultiAgentsPPOTrainer:
             self.tokenizer_dict[model_name] = trainer.tokenizer
             rollout_engine = trainer.async_rollout_manager
             server_address_list = getattr(rollout_engine, "server_addresses", [])
-            # 保存全部可用的 server addresses，以便下游进行随机选择/负载均衡
             self.server_address_dict[model_name] = server_address_list
  
             # Construct an independent Router for each model
@@ -169,9 +168,7 @@ class MultiAgentsPPOTrainer:
     def _update_parameters(self, batch, ppo_trainer, timing_raw):
         #TODO: uid
         ppo_trainer.global_steps += 1
-        batch.non_tensor_batch["uid"] = np.array(
-                        [str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object
-                    )
+        
         
         # Initialize metrics dictionary if not exists
         if not hasattr(batch, 'meta_info'):
@@ -183,11 +180,13 @@ class MultiAgentsPPOTrainer:
         #batch = batch.union(gen_batch_output)
 
         # padding the batch to the same length
+        # prompts: left padding
         prompts_batch = torch.nn.utils.rnn.pad_sequence(
             [torch.flip(i, dims=[0]) for i in batch.batch["prompts"]],
             batch_first=True,
             padding_value=ppo_trainer.tokenizer.pad_token_id,
         ).flip(dims=[1])
+        # responses: right padding
         responses_batch = torch.nn.utils.rnn.pad_sequence(
             [i for i in batch.batch["responses"]],
             batch_first=True,
@@ -203,14 +202,17 @@ class MultiAgentsPPOTrainer:
         else:
             response_mask_batch = None
         #TODO: try if not pad to the max length, the performance is better
+        # prompts: left padding
         prompts_batch = pad_sequence_to_length(prompts_batch, ppo_trainer.config.data.max_prompt_length, ppo_trainer.tokenizer.pad_token_id, left_pad=True)
-        responses_batch = pad_sequence_to_length(responses_batch, ppo_trainer.config.data.max_response_length, ppo_trainer.tokenizer.pad_token_id, left_pad=True)
+        # responses: right padding  
+        responses_batch = pad_sequence_to_length(responses_batch, ppo_trainer.config.data.max_response_length, ppo_trainer.tokenizer.pad_token_id, left_pad=False)
         if response_mask_batch is not None:
+            # response_mask: right padding (same as responses)
             response_mask_batch = pad_sequence_to_length(
                 response_mask_batch,
                 ppo_trainer.config.data.max_response_length,
                 0,
-                left_pad=True,
+                left_pad=False,
             )
         input_ids_batch=torch.cat([prompts_batch, responses_batch], dim=1)
         attention_mask_batch = torch.where(input_ids_batch != ppo_trainer.tokenizer.pad_token_id, 1, 0)
@@ -222,51 +224,38 @@ class MultiAgentsPPOTrainer:
         batch.batch["input_ids"] = input_ids_batch
         batch.batch["attention_mask"] = attention_mask_batch
         batch.batch["position_ids"] = position_ids
-        # If response_mask is absent, generate a right-side mask based on non-padding tokens in responses
+        # If response_mask is absent, generate mask based on non-padding tokens in responses
+        # Since responses use right padding, valid tokens are on the left side
         if response_mask_batch is None:
             # Valid tokens in responses are 1; padding tokens are 0
             response_mask_batch = (responses_batch != ppo_trainer.tokenizer.pad_token_id).to(attention_mask_batch.dtype)
         batch.batch["response_mask"] = response_mask_batch
-        
-
-
-        
-
         # compute global_valid tokens
         batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
 
-        #add reward tensor calculation
+        # Add reward tensor calculation
         reward_tensor = torch.zeros_like(batch.batch["responses"], dtype=torch.float32)
         
-        # 正确计算response mask，基于responses_batch本身而不是拼接后的input_ids
-        # responses_batch 使用了左填充，所以需要找到每个序列的最后一个有效token位置
+        # Since responses_batch now uses right padding, valid tokens are on the left
+        # We need to find the last valid token position for each sequence
         response_attention_mask = (responses_batch != ppo_trainer.tokenizer.pad_token_id)
         
-        # 找到每行的最后一个有效token位置（从右往左第一个非填充token）
-        # 由于是左填充，有效内容在右侧
-        batch_size = response_attention_mask.shape[0]
-        batch_indices = torch.arange(batch_size)
-        
-        # 计算每行有效token数量
+        # Calculate valid token counts for each sequence
         valid_token_counts = response_attention_mask.sum(dim=-1)
-        
-        # 使用更高效的向量化方式找到最后一个有效token位置
-        # 对于左填充的序列，我们需要找到每行最右边的有效token
         valid_sequences_mask = valid_token_counts > 0
         
         if valid_sequences_mask.any():
-            # 找到每行最后一个有效token的位置
-            # 翻转mask，找到第一个True的位置，然后转换回原始索引
-            flipped_mask = response_attention_mask.flip(dims=[1]).float()  # 转换为float以支持argmax
-            last_valid_positions_from_right = flipped_mask.argmax(dim=1)  # 从右边开始的位置
-            last_valid_positions = response_attention_mask.shape[1] - 1 - last_valid_positions_from_right
-            
-            # 只对有效序列设置奖励
+            # For right-padded sequences, find the last valid token position
+            # This is much simpler: last_valid_position = valid_token_count - 1
             valid_batch_indices = torch.where(valid_sequences_mask)[0]
+            last_valid_positions = valid_token_counts[valid_batch_indices] - 1
+            
+            # Get rewards for valid sequences
             rewards_tensor = torch.tensor([batch.non_tensor_batch["reward"][i] for i in valid_batch_indices.tolist()], 
                                         dtype=torch.float32, device=reward_tensor.device)
             
-            reward_tensor[valid_batch_indices, last_valid_positions[valid_batch_indices]] = rewards_tensor
+            # Place rewards at the last valid token position for each sequence
+            reward_tensor[valid_batch_indices, last_valid_positions] = rewards_tensor
 
         batch.batch["token_level_scores"] = reward_tensor
         batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]

@@ -79,24 +79,44 @@ class CodeGenerationAgent(Agent):
             # Generation mode
             formatted_prompt = (
                 f"You are a helpful assistant that generates code to solve programming problems.\n\n"
-                f"You need to think first then write python script."
-                f"You should use input() to input and print() to output in your script.\n```"
+                f"⚠️ Important: Your solution MUST read input using input() and write output using print().\n\n"
+                f"The input values will be provided externally when the program runs, so do NOT hardcode or generate inputs yourself.\n\n"
+                f"Here is a simple example (just for illustration, do NOT reuse this code):\n"
+                f"Example Problem:\nRead one integer and print it.\n\n"
+                f"**Code:**\n```python\nx = int(input())\nprint(x)\n```\n\n"
+                f"---\n"
+                f"Now solve the following problem:\n\n"
                 f"Problem:\n{question}\n\n"
                 f"Please generate correct, efficient, and readable code that solves the problem and can pass comprehensive tests.\n\n"
                 f"Respond in the format:\n\n"
                 f"**Code:**\n```python\n# your code here\n```\n\n"
-               
+
             )
         else:
             # Refinement mode
             formatted_prompt = (
-                f"You are a helpful assistant that checks and refines code. You need to think first then refine and generate new python script.\n\n"
-                f" Given a coding task, you need to check the current generated test cases and the current code execution result, if the mismatch is caused by the current generated test cases, please refine the code to pass all tests.\n"
-                f"This is the problem:\n{question}\n\n"
-                f"You need to think first then write python script.")
+                f"You are a helpful assistant that generates code to solve programming problems.\n\n"
+                f"⚠️ Important: Your solution MUST read input using input() and write output using print().\n\n"
+                f"The input values will be provided externally when the program runs, so do NOT hardcode or generate inputs yourself.\n\n"
+                f"Here is a simple example (just for illustration, do NOT reuse this code):\n"
+                f"Example Problem:\nRead one integer and print it.\n\n"
+                f"**Code:**\n```python\nx = int(input())\nprint(x)\n```\n\n"
+                f"---\n"
+                f"Now solve the following problem:\n\n"
+                f"Problem:\n{question}\n\n"
+                f"Please generate correct, efficient, and readable code that solves the problem and can pass comprehensive tests.\n\n"
+                f"Respond in the format:\n\n"
+                f"**Code:**\n```python\n# your code here\n```\n\n")
             formatted_prompt += formatted_prompt_for_mismatch_cases + (
                 f"Please first judge the mismatch between the current generated test cases history and the current code execution result history, if the mismatch is caused by the current code, please refine the code to pass all tests. If the mismatch is not caused by the current code, please answer the original code.\n"
                 f"Refine the code to pass all tests.\n\n"
+                f"Here is an example:\n"
+                f"Problem:\nGiven two integers, output their sum.\n\n"
+                f"**Code:**\n```python\n"
+                f"a = int(input())\n"
+                f"b = int(input())\n"
+                f"print(a + b)\n"
+                f"```\n\n"
                 f"Respond in the format:\n\n"
                 f"**Code:**\n```python\n# corrected code here\n```\n\n"
             )
@@ -140,7 +160,7 @@ class CodeGenerationAgent(Agent):
         if isinstance(ground_truth_test_input, list) and isinstance(ground_truth_test_output, list) and ground_truth_test_input and ground_truth_test_output:
             try:
                 passed_ratio, passed_cases, failed_cases = await evaluate_code_against_tests(
-                    gen_code, ground_truth_test_input, ground_truth_test_output, timeout=15.0, ray_actor=env_worker,rollout_idx=self.rollout_idx
+                    gen_code, ground_truth_test_input, ground_truth_test_output, timeout=30.0, ray_actor=env_worker,rollout_idx=self.rollout_idx
                 )
                 env_data.state.ground_truth_test_vs_generated_code_match_cases = passed_cases
                 env_data.state.ground_truth_test_vs_generated_code_mismatch_cases = failed_cases

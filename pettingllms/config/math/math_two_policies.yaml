@@ -8,13 +8,13 @@ defaults:
   - ppo_trainer@models.model_0.ppo_trainer_config: eval
   - ppo_trainer@models.model_1.ppo_trainer_config: eval
   - _self_
-
+benchmark: "MATH500"
 # dataset config (shared by all agents)
 data:
   filter_method: mean # mean, uid, dapo, std
-  filter_ratio: 0.5
+  filter_ratio: 0.2
   gen_batch_size: 64
-  gen_n_samples: 8
+  gen_n_samples: 5
   sample_temperature: 1
   val_freq: 10
   resample_freq: 1
@@ -135,7 +135,7 @@ trainer:
   log_val_generations: 0
   rollout_data_dir: null
   validation_data_dir: null
-  save_freq: 20
+  save_freq: -1
   resume_mode: auto
   resume_from_path: null
   val_before_train: True

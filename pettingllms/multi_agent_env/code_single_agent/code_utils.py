@@ -285,6 +285,11 @@ async def _worker_docker(
     timeout: float = 40.0,
     image: str = "python:3.11-slim"
 ):
+    # Ensure base tmp directory exists
+    try:
+        os.makedirs("tmp", exist_ok=True)
+    except Exception:
+        pass
     tmpdir = tempfile.mkdtemp(prefix="pllm_exec_", dir="tmp")
     script_path = os.path.join(tmpdir, "script.py")
     
@@ -629,6 +634,22 @@ def _ensure_ray_initialized() -> bool:
                 except (ValueError, TypeError):
                     print(f"Warning: invalid RAY_NUM_CPUS value: {num_cpus_env}, using default")
 
+            # Ensure Ray temp and spill directories
+            try:
+                project_root = Path(__file__).resolve().parents[3]
+                ray_tmp_dir = os.path.join(project_root, "tmp", "ray_tmp")
+                ray_spill_dir = os.path.join(project_root, "tmp", "ray_spill")
+                os.makedirs(ray_tmp_dir, exist_ok=True)
+                os.makedirs(ray_spill_dir, exist_ok=True)
+
+                init_kwargs["_temp_dir"] = ray_tmp_dir
+                spilling_conf = {"type": "filesystem", "params": {"directory_path": [ray_spill_dir]}}
+                init_kwargs["_system_config"] = {
+                    "object_spilling_config": json.dumps(spilling_conf)
+                }
+            except Exception as _e:
+                print(f"Warning: failed to prepare Ray temp/spill dirs: {_e}")
+
             ray.init(**init_kwargs)
 
             try:
@@ -681,10 +702,10 @@ def get_ray_docker_worker_cls():
         # 允许通过环境变量覆盖并发：RAY_ACTOR_MAX_CONCURRENCY
         _max_conc_env = os.getenv("RAY_ACTOR_MAX_CONCURRENCY")
         try:
-            _max_conc = int(_max_conc_env) if _max_conc_env else 8
+            _max_conc = int(_max_conc_env) if _max_conc_env else 20
         except (ValueError, TypeError):
             print(f"Warning: invalid RAY_ACTOR_MAX_CONCURRENCY value: {_max_conc_env}, using default 8")
-            _max_conc = 8
+            _max_conc = 20
 
         @ray.remote(num_cpus=0.02, max_concurrency=_max_conc)
         class _RayDockerWorker:

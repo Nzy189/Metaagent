@@ -3,10 +3,11 @@ import argparse
 import os
 import re
 from pathlib import Path
-
+import pandas as pd
+from pathlib import Path
 import datasets
 from verl.utils.hdfs_io import copy, makedirs
-
+from huggingface_hub import hf_hub_download
 
 # ---------- 答案抽取：覆盖常见数学基准的标注习惯 ----------
 def extract_solution(answer_text: str) -> str:
@@ -107,74 +108,67 @@ def choose_available_split(ds_dict, prefer_splits):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Download math benchmarks from Hugging Face and save unified test.parquet."
-    )
-    parser.add_argument(
-        "--benchmark",
-        type=str,
-        default="GSM8K",
-        choices=list(DATASETS.keys()),
-        help="Choose from AIME24, AIME25, MATH500, GSM8K, MATH",
-    )
-    parser.add_argument(
-        "--out_dir",
-        type=str,
-        default=None,
-        help="Output root. Default: <repo_root>/datasets/math/<BENCHMARK>",
-    )
-    parser.add_argument("--hdfs_dir", type=str, default=None, help="Optional HDFS dst dir.")
-    args = parser.parse_args()
-
-    conf = DATASETS[args.benchmark]
-    path = conf["path"]
-    subset = conf.get("subset", None)
-
-    # 工程根与默认输出目录（与你原始脚本保持一致的层级）
     project_root = Path(__file__).resolve().parents[2]
-    out_dir = Path(args.out_dir) if args.out_dir else (project_root / "datasets" / "math" / "train")
+    out_dir = project_root / "datasets" / "math" / "train"
+    train_path = out_dir / "train.parquet"
     os.makedirs(out_dir, exist_ok=True)
-    print(f"📁 输出目录: {out_dir}")
+    in_path = project_root / "openthought2_mathsubset" / "extracted_answers_capped_at_2k.parquet"
+    alt = Path("openthought2_mathsubset/extracted_answers_capped_at_2k.parquet")
+    df_raw = pd.read_parquet(alt)
 
-    # 加载数据集
-    print(f"🔄 从 Hugging Face 加载 {path}" + (f" (subset={subset})" if subset else "") + " ...")
-    ds_dict = datasets.load_dataset(path, subset) if subset else datasets.load_dataset(path)
+    # 只保留 question 和 answer_boxed 两列，并重命名
+    df = df_raw[["question", "answer_boxed"]].rename(
+        columns={"answer_boxed": "solution"}
+    )
 
-    # 选择一个可用 split 作为“测试集”
-    split = choose_available_split(ds_dict, conf["prefer_splits"])
-    dataset = ds_dict[split]
-    print(f"✅ 使用 split: {split}（作为测试集）")
+    # 保存为 train.parquet
+    df.to_parquet(train_path, index=False)
+    
 
-    q_keys = conf["q_keys"]
-    a_keys = conf["a_keys"]
+    for benchmark in ["AIME24", "AIME25", "MATH500", "GSM8K", "MATH"]:
+        conf = DATASETS[benchmark]
+        path = conf["path"]
+        subset = conf.get("subset", None)
 
-    def map_fn(example):
-        q_raw = get_first_key(example, q_keys)
-        a_raw = get_first_key(example, a_keys)
-        return {
-            "question": str(q_raw).strip(),
-            "solution": extract_solution(a_raw),
-        }
+        # 工程根与默认输出目录（与你原始脚本保持一致的层级）
+        
+        os.makedirs(out_dir, exist_ok=True)
+        print(f"📁 输出目录: {out_dir}")
 
-    print("🔧 统一映射为 {question, solution} ...")
-    dataset_std = dataset.map(map_fn, remove_columns=[c for c in dataset.column_names if c not in []])
+        # 加载数据集
+        print(f"🔄 从 Hugging Face 加载 {path}" + (f" (subset={subset})" if subset else "") + " ...")
+        ds_dict = datasets.load_dataset(path, subset) if subset else datasets.load_dataset(path)
 
-    test_path = out_dir / "test.parquet"
-    dataset_std.to_parquet(str(test_path))
-    print(f"💾 测试集已保存到: {test_path}（{len(dataset_std)} 条）")
+        # 选择一个可用 split 作为“测试集”
+        split = choose_available_split(ds_dict, conf["prefer_splits"])
+        dataset = ds_dict[split]
+        print(f"✅ 使用 split: {split}（作为测试集）")
 
-    # 可选：同步到 HDFS
-    if args.hdfs_dir:
-        print(f"📤 拷贝到 HDFS: {args.hdfs_dir}")
-        makedirs(args.hdfs_dir)
-        copy(src=str(out_dir), dst=args.hdfs_dir)
+        q_keys = conf["q_keys"]
+        a_keys = conf["a_keys"]
 
-    # 打印一个样本
-    if len(dataset_std) > 0:
-        ex = dataset_std[0]
-        print("\n=== 样本示例 ===")
-        print(f"问题: {ex['question']}")
-        print(f"答案: {ex['solution']}")
+        def map_fn(example):
+            q_raw = get_first_key(example, q_keys)
+            a_raw = get_first_key(example, a_keys)
+            return {
+                "question": str(q_raw).strip(),
+                "solution": extract_solution(a_raw),
+            }
+
+        print("🔧 统一映射为 {question, solution} ...")
+        dataset_std = dataset.map(map_fn, remove_columns=[c for c in dataset.column_names if c not in []])
+        
+        test_path = out_dir / f"{benchmark}.parquet"
+        dataset_std.to_parquet(str(test_path))
+        print(f"💾 测试集已保存到: {test_path}（{len(dataset_std)} 条）")
+
+
+        # 打印一个样本
+        if len(dataset_std) > 0:
+            ex = dataset_std[0]
+            print("\n=== 样本示例 ===")
+            print(f"问题: {ex['question']}")
+            print(f"答案: {ex['solution']}")
 
 
 if __name__ == "__main__":

@@ -32,5 +32,15 @@ model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/trai
 
 python3 -m pettingllms.trainer.train --config-path ../config/math --config-name math_single_policy \
     $model_0_USE_GRPO $model_0_resource $model_0_data\
-    data.max_prompt_length=16384 \
-    data.epoch_size=100 \
+    models.model_0.path=Qwen/Qwen3-4B\
+    benchmark=AIME24\
+    data.epoch_size=200\
+    data.gen_batch_size=64\
+    data.gen_n_samples=5\
+    data.max_prompt_length=8192\
+    data.max_response_length=4096\
+    data.resample_freq=3\
+    data.filter_method=std\
+    data.filter_ratio=0.2\
+    sample_mode=tree\
+    env.max_turns=3\
