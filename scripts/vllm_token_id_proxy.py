@@ -16,7 +16,13 @@ class TokenizerCache:
 
     def get(self, model_name: str):
         if model_name not in self._cache:
-            tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+            # 如果model_name是相对路径（如models/Qwen3-1.7B），转换为完整路径
+            if model_name.startswith("models/") and not model_name.startswith("/"):
+                actual_model_path = f"/home/lah003/{model_name}"
+            else:
+                actual_model_path = model_name
+            
+            tokenizer = AutoTokenizer.from_pretrained(actual_model_path, use_fast=True)
             self._cache[model_name] = tokenizer
         return self._cache[model_name]
 
@@ -49,8 +55,17 @@ def build_app() -> FastAPI:
         if not model_name:
             return JSONResponse(content={"error": "model is required"}, status_code=400)
 
+        # 转换模型名称：如果是相对路径，转换为完整路径
+        actual_model_name = model_name
+        if model_name.startswith("models/") and not model_name.startswith("/"):
+            actual_model_name = f"/home/lah003/{model_name}"
+        
+        # 修改请求中的模型名称
+        req_json_copy = req_json.copy()
+        req_json_copy["model"] = actual_model_name
+
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(f"{backend_base}/completions", json=req_json) as resp:
+            async with session.post(f"{backend_base}/completions", json=req_json_copy) as resp:
                 data = await resp.json()
                 if resp.status != 200:
                     return JSONResponse(content=data, status_code=resp.status)

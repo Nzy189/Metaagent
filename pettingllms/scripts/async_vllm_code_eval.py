@@ -202,6 +202,7 @@ def test(config: DictConfig, address: str):
         rollout_idx=0,
         turn_idx=0,
         agent_idx=0,
+        enable_thinking=False,
         prompt_dpr=prompt_dpr,
         address=address,
         model_name=model_path,
@@ -213,13 +214,50 @@ def test(config: DictConfig, address: str):
 
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
 def main(config: DictConfig):
-    address = "127.0.0.1:8100"
+    # 支持通过多种方式指定服务地址，优先级：命令行参数 > 环境变量 > 端口管理器 > 默认值
+    address = None
+    
+    # 1. 检查是否通过 Hydra 配置传入了 vllm_address
+    if hasattr(config, 'vllm_address') and config.vllm_address:
+        address = config.vllm_address
+        print(f"📡 使用配置文件中的服务地址: {address}")
+    
+    # 2. 检查环境变量
+    elif os.environ.get("VLLM_SERVICE_ADDRESS"):
+        address = os.environ.get("VLLM_SERVICE_ADDRESS")
+        print(f"📡 使用环境变量中的服务地址: {address}")
+    
+    # 3. 尝试使用端口管理器
+    else:
+        try:
+            import sys
+            sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
+            from vllm_port_manager import VLLMPortManager
+            manager = VLLMPortManager()
+            address = manager.get_proxy_address()
+            print(f"📡 通过端口管理器获取服务地址: {address}")
+        except Exception as e:
+            # 回退到默认地址
+            address = "127.0.0.1:8100"
+            print(f"⚠️ 端口管理器获取地址失败，使用默认地址: {address}")
+    
+    print(f"🚀 最终使用的服务地址: {address}")
     test(config, address)
     success_rollout_idx_list_dict,success_rollout_rate_dict = validate(config, address)
     with open("success_rollout_idx_list_dict.json", "a") as f:
         json.dump(success_rollout_idx_list_dict, f)
     with open("success_rollout_rate_dict.json", "a") as f:
         json.dump(success_rollout_rate_dict, f)
+    with open("success_rollout_idx_list_dict.txt", "a") as f:
+        for agent_name, idx_list in success_rollout_idx_list_dict.items():
+            f.write(f"{agent_name}: {idx_list}\n")
+    with open("success_rollout_rate_dict.txt", "a") as f:
+        text=f"the model is {config.models.model_0.path}\n"
+        text+=f"the enable thinking is {config.enable_thinking}\n"
+        text+=f"the max turns is {config.env.max_turns}\n"
+        text+=f"the benchmark is {config.benchmark}\n"
+        for agent_name, rate in success_rollout_rate_dict.items():
+            f.write(f"{agent_name}: {rate}\n")
 
 if __name__ == "__main__":
     main()

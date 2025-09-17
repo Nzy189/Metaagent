@@ -112,11 +112,13 @@ agent_policy_configs:
       name: "code_generator"
       policy_name: "code_generator_model"
       sample_num: 4
+      enable_thinking: false
       
     agent_1:
       name: "test_generator"
       policy_name: "test_generator_model"
       sample_num: 4
+      enable_thinking: true
 
 # Logger configuration
 project_name: pettingllms
@@ -136,7 +138,7 @@ trainer:
   log_val_generations: 0
   rollout_data_dir: null
   validation_data_dir: null
-  save_freq: 20
+  save_freq: -1
   resume_mode: auto
   resume_from_path: null
   val_before_train: True

@@ -63,6 +63,8 @@ class MultiAgentsPPOTrainer:
         self.config = config
         self.processor_dict = processor_dict or {}
         
+        
+        
         # Initialize agent_policy_mapping from agent_policy_configs
         self.agent_policy_mapping = {}
         if hasattr(config, 'agent_policy_configs') and hasattr(config.agent_policy_configs, 'agent_configs'):
@@ -88,6 +90,16 @@ class MultiAgentsPPOTrainer:
                     self.ppo_trainer_config_dict[model_name] = ppo_config
                     ppo_config.data["train_batch_size"]=self.config.data.train_batch_size
                     ppo_config.data["val_batch_size"]=self.config.data.val_batch_size
+                    # 确保experiment_name传递给子trainer，并为每个policy创建独立的experiment name - 使用OmegaConf.set_struct临时允许添加新键
+                    if hasattr(self.config, 'experiment_name'):
+                        from omegaconf import OmegaConf
+                        OmegaConf.set_struct(ppo_config, False)  # 临时禁用结构化模式
+                        # 为每个policy创建独立的experiment name，避免checkpoint覆盖
+                        base_experiment_name = self.config.experiment_name
+                        policy_experiment_name = f"{base_experiment_name}_policy_{model_name}"
+                        ppo_config.experiment_name = policy_experiment_name
+                        colorful_print(f"Set experiment name for model {model_name}: {policy_experiment_name}", "cyan")
+                        OmegaConf.set_struct(ppo_config, True)   # 重新启用结构化模式
                     print(f"ppo_config: {ppo_config}")
                     model_tokenizer = self.tokenizer_dict[model_name]
                     #reward_fn = load_reward_manager(ppo_config,model_tokenizer, num_examine=0)
@@ -347,18 +359,60 @@ class MultiAgentsPPOTrainer:
 
     
 
+    def _initialize_logger_safely(self):
+        """安全地初始化logger，处理wandb超时问题"""
+        from verl.utils.tracking import Tracking
+        import time
+        import os
+        
+        # 设置wandb环境变量以改善连接稳定性
+        os.environ.setdefault("WANDB_INIT_TIMEOUT", "60")  # 60秒超时
+        os.environ.setdefault("WANDB_HTTP_TIMEOUT", "30")   # HTTP超时
+        
+        max_retries = 3
+        retry_delay = 5  # 秒
+        
+        for attempt in range(max_retries):
+            try:
+                pprint(f"Initializing logger (attempt {attempt + 1}/{max_retries})...")
+                
+                logger = Tracking(
+                    project_name=self.config.project_name,
+                    experiment_name=self.config.experiment_name,
+                    default_backend=self.config.logger,
+                    config=OmegaConf.to_container(self.config, resolve=True),
+                )
+                pprint("Logger initialized successfully!")
+                return logger
+                
+            except (TimeoutError, Exception) as e:
+                pprint(f"Logger initialization failed (attempt {attempt + 1}): {type(e).__name__}: {e}")
+                if attempt < max_retries - 1:
+                    pprint(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数退避
+                else:
+                    # 如果所有重试都失败，使用console logger作为fallback
+                    pprint("All logger initialization attempts failed. Using console logger as fallback.")
+                    try:
+                        logger = Tracking(
+                            project_name=self.config.project_name,
+                            experiment_name=self.config.experiment_name,
+                            default_backend=["console"],  # 只使用console logger
+                            config=OmegaConf.to_container(self.config, resolve=True),
+                        )
+                        pprint("Console logger initialized successfully.")
+                        return logger
+                    except Exception as fallback_e:
+                        pprint(f"Even console logger failed: {fallback_e}")
+                        raise RuntimeError("Failed to initialize any logger") from fallback_e
+
     def fit(self):
         """
         The training loop of PPO. Adapted to train the underlying model of agent.
         """
-        from verl.utils.tracking import Tracking
-
-        logger = Tracking(
-            project_name=self.config.project_name,
-            experiment_name=self.config.experiment_name,
-            default_backend=self.config.logger,
-            config=OmegaConf.to_container(self.config, resolve=True),
-        )
+        logger = self._initialize_logger_safely()
+        
 
         self.global_steps = 0
         
@@ -401,22 +455,28 @@ class MultiAgentsPPOTrainer:
             # load checkpoint before doing anything
             if i==0:
                 
-                colorful_print(f"Loading checkpoint for trainer {model_name}", "cyan")
+                colorful_print(f"Starting initial validation for multi-agent system", "cyan")
                 start_time = time.time()
                 # validation before training
                 val_metrics = self._validate()
-                last_resample_mode="validate"
-                pprint(f"Initial validation metrics: {val_metrics}")
-                logger.log(data=val_metrics, step=self.global_steps)
-                print(f"Time taken to validate agent_{model_name}: {time.time() - start_time}")
-                for agent_name, success_rate in val_metrics.items():
-                    metrics[f"validation/agent_{agent_name}/success_rate"] = success_rate
-                    validation_summary[agent_name] = success_rate
-                if val_metrics:
-                    success_rates = list(val_metrics.values())
-                    metrics["validation/overall/avg_success_rate"] = sum(success_rates) / len(success_rates)
-
-
+                last_resample_mode = "validate"
+                
+                # 将验证指标添加到主metrics字典中
+                metrics.update(val_metrics)
+                
+                # 初始化最佳性能跟踪
+                current_avg_success_rate = val_metrics.get('validation/average/success_rate', 0.0)
+                pprint(f"Initial validation metrics logged")
+                print(f"Time taken to validate: {time.time() - start_time}")
+                
+                # 打印验证摘要
+                agent_summary = {}
+                for key, value in val_metrics.items():
+                    if "/success_rate" in key and "/agent_" in key:
+                        agent_name = key.split("/agent_")[1].split("/")[0]
+                        agent_summary[agent_name] = value
+                
+             
 
                 # Process each trainer's batch
 
@@ -498,10 +558,11 @@ class MultiAgentsPPOTrainer:
                 
 
                 #save checkpoint done
-                if self.config.trainer.save_freq > 0 and self.global_steps % self.config.trainer.save_freq == 0:
+                if self.config.trainer.save_freq > 0 and self.global_steps % self.config.trainer.save_freq == 0 and self.global_steps != 1:
                     with simple_timer("save_checkpoint", timing_raw):
                         for model_name, trainer in self.ppo_trainer_dict.items():
-                            colorful_print(f"Saving checkpoint for trainer {model_name}", "cyan")
+                            experiment_name = getattr(trainer.config, 'experiment_name', 'default_experiment')
+                            colorful_print(f"Saving checkpoint for trainer {model_name} to experiment: {experiment_name}", "cyan")
                             trainer._save_checkpoint()
 
             # TODO: collect metrics
@@ -530,34 +591,30 @@ class MultiAgentsPPOTrainer:
 
             if self.global_steps % self.config.data.val_freq == 0:
                 val_metrics = self._validate()
-                last_resample_mode="validate"
-                # val_metrics是success_rollout_rate_dict，包含每个agent的成功率
-                validation_summary = {}
+                last_resample_mode = "validate"
                 
-                for agent_name, success_rate in val_metrics.items():
-                    metrics[f"validation/agent_{agent_name}/success_rate"] = success_rate
-                    validation_summary[agent_name] = success_rate
-                
-                # 计算总体统计信息
-                if val_metrics:
-                    success_rates = list(val_metrics.values())
-                    metrics["validation/overall/avg_success_rate"] = sum(success_rates) / len(success_rates)
-                
-                pprint(f"Validation Summary - Step {self.global_steps}: {validation_summary}")
-                pprint(f"Overall avg success rate: {metrics.get('validation/overall/avg_success_rate', 0.0):.4f}")
-            
+                # 将验证指标添加到主metrics字典中
+                metrics.update(val_metrics)
+        
+                # 打印验证摘要
+                agent_summary = {}
+                for key, value in val_metrics.items():
+                    if "/success_rate" in key and "/agent_" in key:
+                        agent_name = key.split("/agent_")[1].split("/")[0]
+                        agent_summary[agent_name] = value
+         
             # TODO: make a canonical logger that supports various backend
-            logger.log(data=metrics, step=self.global_steps)
+            try:
+                logger.log(data=metrics, step=self.global_steps)
+            except Exception as e:
+                pprint(f"Warning: Failed to log metrics to logger: {type(e).__name__}: {e}")
+                pprint(f"Metrics that failed to log: {list(metrics.keys())}")
             # Check if any trainer has reached its total training steps
             if self.global_steps >= self.total_training_steps:
                 progress_bar.close()
                 
-                # perform validation after training
-                first_trainer = next(iter(self.ppo_trainer_dict.values()))
-                if first_trainer.val_reward_fn is not None:
-                    #val_metrics = first_trainer._validate()
-                    pprint(f"Final validation metrics: skip")
-                    #logger.log(data=val_metrics, step=self.global_steps)
+                # perform final validation and print summary
+               
                 return
         
         progress_bar.close()
@@ -587,19 +644,47 @@ class MultiAgentsPPOTrainer:
         for model_name,rollout_engine in self.rollout_engine_dict.items():
             rollout_engine.sleep()
                 
-        # 统计成功率
+
         total_rollout_num = len(self.agent_execution_engine.rollout_idx_list)
         success_rollout_rate_dict: Dict[str, float] = {}
+        success_turn_ave_dict: Dict[str, float] = {}
         for agent_name in self.agent_execution_engine.turn_order:
             success_rollout_num = len(
-                self.agent_execution_engine.success_rollout_idx_list_dict.get(agent_name, [])
+                set(self.agent_execution_engine.success_rollout_idx_list_dict.get(agent_name, []))
             )
+            if success_rollout_num > 0:
+                success_ave_turn = self.agent_execution_engine.success_ave_turn_dict.get(agent_name, 0)/success_rollout_num
+            else:
+                success_ave_turn = self.agent_execution_engine.config.env.max_turns
             success_rollout_rate_dict[agent_name] = (
                 success_rollout_num / total_rollout_num if total_rollout_num > 0 else 0.0
             )
-        # 可选：保存验证样本到本地目录
+            success_turn_ave_dict[agent_name] = success_ave_turn
+        
         save_dir = getattr(self.config.trainer, "validation_data_dir", None)
-        return success_rollout_rate_dict
+        
+        # 构建验证指标字典 - 只包含每个agent的成功率和平均turn数，以及总体平均值
+        validation_metrics = {}
+        
+        # 添加每个agent的success rate和avg_turns
+        for agent_name in self.agent_execution_engine.turn_order:
+            success_rate = success_rollout_rate_dict.get(agent_name, 0.0)
+            avg_turns = success_turn_ave_dict.get(agent_name, 0.0)
+            
+            validation_metrics[f"validation/agent_{agent_name}/success_rate"] = success_rate
+            validation_metrics[f"validation/agent_{agent_name}/avg_turns"] = avg_turns
+        
+        # 计算总体平均值
+        if success_rollout_rate_dict:
+            success_rates = list(success_rollout_rate_dict.values())
+            avg_turns_list = list(success_turn_ave_dict.values())
+            
+            validation_metrics["validation/average/success_rate"] = sum(success_rates) / len(success_rates)
+            validation_metrics["validation/average/avg_turns"] = sum(avg_turns_list) / len(avg_turns_list)
+            
+        return validation_metrics
+    
+
 
     def visualize_trajectory(self, tensor_batch, sample_idx=0, max_samples=1, mask_key="traj_mask"):
         """

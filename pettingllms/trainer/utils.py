@@ -169,13 +169,15 @@ async def llm_async_generate(
     address: Optional[str] = None,
     model_name: Optional[str] = None,
     tokenizer: Optional[AutoTokenizer] = None,
+    enable_thinking: Optional[bool] = False,
     image_data: Optional[list[Any]] = None,
     application_id: Optional[str] = None,
     env_idx: Optional[int] = None,
     #rollout_idx: Optional[int] = None,
     policy_name: Optional[str] = None,
     timeout: Optional[float] = 60.0,    
-    mode: Optional[str] = "train"
+    mode: Optional[str] = "train",
+    override_temperature: Optional[float] = None
 ) -> DataProto:
     """Generate tokens from prompt ids or DataProto.
 
@@ -191,18 +193,25 @@ async def llm_async_generate(
     unique_request_id = f"{application_id}_{uuid.uuid4().hex[:8]}"
 
     if mode == "train":
+        temperature = override_temperature if override_temperature is not None else ppo_trainer_config.actor_rollout_ref.rollout.temperature
         kwargs={
             "n":1,
-            "temperature":ppo_trainer_config.actor_rollout_ref.rollout.temperature,
+            "temperature":temperature,
             "top_p":ppo_trainer_config.actor_rollout_ref.rollout.top_p,
             "max_tokens":ppo_trainer_config.data.max_response_length,
             "top_k":ppo_trainer_config.actor_rollout_ref.rollout.top_k,
             "logprobs":1,
         }
     if mode == "validate":
+        if override_temperature is not None:
+            temp = override_temperature
+        elif enable_thinking:
+            temp=0.6
+        else:
+            temp=0.0
         kwargs={
             "n":1,
-            "temperature":0.0,
+            "temperature":temp,
             "top_p":1.0,
             "max_tokens":ppo_trainer_config.data.max_response_length,
             "top_k":-1,

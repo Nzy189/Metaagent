@@ -36,10 +36,29 @@ except ImportError:
     PANDAS_AVAILABLE = False
 
 def extract_answer(solution_str):
-    solution = re.findall(r"####\s*(\d+)", solution_str)
-    if not solution:
-        return None
-    return solution[0]
+    """
+    Extract answer from solution string using \\boxed{} format.
+    
+    Args:
+        solution_str: Solution text containing \\boxed{answer}
+        
+    Returns:
+        Extracted answer string or None if not found
+    """
+    # Look for \\boxed{...} pattern
+    boxed_pattern = r"\\boxed\s*\{([^{}]+(?:\{[^{}]*\}[^{}]*)*)\}"
+    matches = re.findall(boxed_pattern, solution_str)
+    
+    if matches:
+        # Return the last boxed answer found
+        return matches[-1].strip()
+    
+    # Fallback: look for the old #### format for backward compatibility
+    solution = re.findall(r"####\s*(.+?)(?:\n|$)", solution_str)
+    if solution:
+        return solution[-1].strip()
+    
+    return None
 
 def extract_reasoning_steps(response: str):
     """
@@ -323,145 +342,6 @@ async def test_if_eq(x, y):
 
 
 
-async def evaluate_code(
-    code: str, 
-    test_inputs: List[str], 
-    test_outputs: List[str],
-    timeout: float = 40.0,
-    *,
-    backend: str = "ray_docker",
-    image: str = "python:3.11-slim",
-    ray_actor: Any | None = None,
-    rollout_idx: int | None = None,
-) -> Tuple[float, List, List]:
-    """
-    Evaluate code against test cases and return detailed results.
-    Uses async execution for improved performance.
-    
-    Args:
-        code: Code to evaluate
-        test_inputs: List of test inputs
-        test_outputs: List of expected outputs
-        timeout: Execution timeout
-        
-    Returns:
-        (passed_ratio, passed_cases, failed_cases)
-    """
-    if not test_inputs or not test_outputs:
-        return 0.0, [], []
-    
-    
-    total_tests = len(test_inputs)
-    results: List[Dict[str, Any]] = []
-    if backend == "ray_docker" and _ensure_ray_initialized():
-        try:
-            actors = [ray_actor]
-
-            obj_refs = []
-  
-
-            actor_idx = ray.get(ray_actor.get_idx.remote())
-            for i in range(total_tests):
-                safe_rollout_idx = rollout_idx if rollout_idx is not None else 0
-                actor = actors[safe_rollout_idx % len(actors)]
-                obj_refs.append(
-                    actor.run.remote(code, test_inputs[i], test_outputs[i], timeout, image)
-                )
-            
-            async_tasks = [
-                _await_ray_object_ref(obj_ref, timeout + 5.0)
-                for obj_ref in obj_refs
-            ]        
-            results_or_exc = await asyncio.gather(*async_tasks, return_exceptions=True)
-
-
-            processed_results: List[Dict[str, Any]] = []
-            for i, item in enumerate(results_or_exc):
-                if isinstance(item, Exception):
-                    processed_results.append({
-                        "test_input": test_inputs[i],
-                        "code_execution_output": f"error: {item}",
-                        "test_output": test_outputs[i],
-                        "passed": False,
-                    })
-                    print(f"item code_execution_output: {item}")
-                else:
-                    #print(f"item code_execution_output: {item.get('code_execution_output')}")
-                    processed_results.append(item)
-            results = processed_results
-        except Exception as e:
-                total_tests = max(len(test_inputs), len(test_outputs))
-                if len(test_inputs) < total_tests:
-                    test_inputs.extend([""] * (total_tests - len(test_inputs)))
-                if len(test_outputs) < total_tests:
-                    test_outputs.extend([""] * (total_tests - len(test_outputs)))
-                
-                tasks = [
-                    asyncio.create_task(
-                        _worker_docker(code, test_inputs[i], test_outputs[i], timeout, image)
-                    ) for i in range(total_tests)
-                ]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # 处理可能的异常结果
-                processed_results = []
-                for i, result in enumerate(results):
-                    if isinstance(result, Exception):
-                        print(f"Docker worker {i} failed: {result}")
-                        processed_results.append({
-                            "test_input": test_inputs[i] if i < len(test_inputs) else "",
-                            "code_execution_output": f"error: {result}",
-                            "test_output": test_outputs[i] if i < len(test_outputs) else "",
-                            "passed": False,
-                        })
-                    else:
-                        processed_results.append(result)
-                
-                results = processed_results
-                
-    
-        # 非 ray 分支：使用 docker 后端
-        tasks = [
-            asyncio.create_task(
-                _worker_docker(code, timeout, image)
-            ) for i in range(total_tests)
-        ]
-        results = await asyncio.gather(*tasks)
-
-  
-    passed_tests = 0
-    passed_cases: List[Dict[str, Any]] = []
-    failed_cases: List[Dict[str, Any]] = []
-
-    for i, result in enumerate(results):
-        actual_output = result.get("code_execution_output")
-        expected_output = result.get("test_output")
-        if_passed = result.get("passed", False)
-        test_case_info = {
-            "test_input": test_inputs[i],
-            "code_execution_output": actual_output,
-            "generated_test_output": expected_output,
-            "passed": if_passed,
-        }
-
-        if actual_output is None:
-            if_passed = False
-        elif isinstance(actual_output, str) and actual_output.startswith("error:"):
-            if_passed = False
-        else:
-            if_passed = await test_if_eq(actual_output, str(expected_output))
-
-        if if_passed:
-            passed_tests += 1
-            passed_cases.append(test_case_info)
-        else:
-            failed_cases.append(test_case_info)
-
-    passed_ratio = passed_tests / total_tests if total_tests > 0 else 0.0
-    return passed_ratio, passed_cases, failed_cases
-
-
-
 def _ensure_ray_initialized() -> bool:
     from pettingllms.utils.logger_config import get_multi_logger
     multi_logger = get_multi_logger()
@@ -646,23 +526,6 @@ async def _worker_docker(
 _RAY_TASK_HANDLE = None  # 缓存 Ray 远程函数句柄
 
 
-async def _await_ray_object_ref(obj_ref, timeout_seconds: float = 10.0):
-    import ray
-    import time
-    
-    start_time = time.time()
-    while True:
-        ready, _ = ray.wait([obj_ref], timeout=0.1)
-        if ready:
-            return ray.get(obj_ref)
-        
-        elapsed = time.time() - start_time
-        if elapsed > timeout_seconds:
-            raise asyncio.TimeoutError(f"Ray task timed out after {timeout_seconds}s")
-        
-
-        await asyncio.sleep(0.01)
-
 
 async def test_if_eq(x, y):
     """
@@ -682,7 +545,7 @@ async def get_code_execution_output(
 ) -> str:
     """
     Execute Python code and return the output.
-    Uses Ray worker for execution.
+    Uses Ray worker for execution with proper timeout handling for concurrent rollouts.
     
     Args:
         code: Python code to execute
@@ -696,13 +559,32 @@ async def get_code_execution_output(
         if ray_actor is None:
             raise ValueError("ray_actor is required")
         
-        # 使用 Ray actor 执行代码
-        result = await ray_actor.run.remote(code, timeout)
+        # 为大规模并发增加超时缓冲时间
+        # 对于500个rollout，Ray调度和执行需要更多时间
+        timeout_buffer = max(timeout * 2.0, 30.0)  # 至少30秒缓冲
+        total_timeout = timeout + timeout_buffer
+        
+        #print(f"🔧 执行代码，超时设置: {total_timeout}s (原始: {timeout}s + 缓冲: {timeout_buffer}s)")
+        
+        # 使用 Ray actor 执行代码，并用 _await_ray_object_ref 处理超时
+        obj_ref = ray_actor.run.remote(code, timeout)
+        result = await _await_ray_object_ref(obj_ref, total_timeout)
+        
+        if isinstance(result, str) and result.startswith("error:"):
+            print(f"⚠️ Ray执行返回错误: {result}")
+        else:
+            print(f"✅ Ray执行成功，输出长度: {len(str(result))} 字符")
+            
         return result
         
+    except asyncio.TimeoutError as e:
+        error_msg = f"Ray execution timed out after {total_timeout}s"
+        print(f"❌ {error_msg}")
+        return f"error: {error_msg}"
     except Exception as e:
-        print(f"Ray execution failed: {e}")
-        return f"error: {e}"
+        error_msg = f"Ray execution failed: {e}"
+        print(f"❌ {error_msg}")
+        return f"error: {error_msg}"
 
 
 
@@ -805,7 +687,9 @@ def get_ray_docker_worker_cls():
             print(f"Warning: invalid RAY_ACTOR_MAX_CONCURRENCY value: {_max_conc_env}, using default 20")
             _max_conc = 20
 
-        @ray.remote(num_cpus=0.02, max_concurrency=_max_conc)
+        # 优化配置：支持500个rollout，每个rollout可能有多个测试用例
+        # 使用极少的CPU资源但支持大量并发
+        @ray.remote(num_cpus=0.001, max_concurrency=2000)
         class _RayDockerWorker:
             def __init__(self, idx):
                 if not isinstance(idx, (int, float)):
@@ -828,12 +712,12 @@ def get_ray_docker_worker_cls():
                 image: str = "python:3.11-slim",
             ) -> str:
                 """
-                Execute Python script using Docker and return output.
+                Execute Python script and return output.
                 
                 Args:
                     script: Python script to execute
                     timeout: Execution timeout
-                    image: Docker image to use
+                    image: Docker image to use (not used in current implementation)
                     
                 Returns:
                     Script execution output as string
@@ -959,7 +843,9 @@ def load_math_problem_batch(
     split: str = "train",
     mode: str = "train",
     config: dict = None,
-    benchmark_name: str = "MATH500"
+    difficulty: str = "difficult",
+    benchmark_name: str = "MATH500",
+    validate_samples: int = 8
 ) -> List[Dict[str, Any]]:
     """
     Load a batch of mathematical problems.
@@ -983,7 +869,12 @@ def load_math_problem_batch(
     local_datasets_dir = current_dir / "datasets" / "math" / dataset_name.lower().replace("/", "_")
     split_name = "train" if mode == "train" else "test"
     if mode == "train":
-        parquet_file = local_datasets_dir / f"train.parquet"
+        # 检查config.difficulty是否为train_polaris
+        config_difficulty = getattr(config, "difficulty", None) if config else None
+        if difficulty == "train_polaris" or config_difficulty == "train_polaris":
+            parquet_file = local_datasets_dir / f"train_polaris.parquet"
+        else:
+            parquet_file = local_datasets_dir / f"train.parquet"
     else:
         parquet_file = local_datasets_dir / f"{benchmark_name}.parquet"
     print(f"📄 目标文件: {parquet_file}")
@@ -1031,13 +922,18 @@ def load_math_problem_batch(
         
         # 加载所有验证数据
         batch_results = []
+        if benchmark_name == "AIME24" or benchmark_name == "AIME25":
+            validate_samples = 2
+        else:
+            validate_samples = 1
         for i, example in enumerate(ds):
             problem_dict = _format_math_problem(example, i, mode="validate")
             if problem_dict:
-                batch_results.append(problem_dict)
-                if i % 100 == 0:  # 每100个打印一次进度
-                    print(f"🔄 Loaded math validation problem {i+1}/{len(ds)}")
-        
+                for _ in range(validate_samples):
+                    batch_results.append(problem_dict)
+                    if i % 100 == 0:  # 每100个打印一次进度
+                        print(f"🔄 Loaded math validation problem {i+1}*{validate_samples}")
+            
         print(f"✅ 成功返回 {len(batch_results)} 条数学验证样本")
         return batch_results
 
@@ -1076,79 +972,391 @@ def _format_math_problem(example: Dict, index: int, mode: str = "train") -> Opti
 
 
 
-def evaluate_math_solution(
-    generated_solution: str,
-    ground_truth_answer: str
-) -> Tuple[bool, Optional[str]]:
-    """
-    Evaluate a mathematical solution against the ground truth answer.
-    
-    Args:
-        solution: Generated solution string
-        ground_truth_answer: Ground truth answer
-        
-    Returns:
-        (is_correct, extracted_answer)
-    """
-   
-    if generated_solution is None:
-        return False
+"""
+Math answer matcher:
+- extract_answer: 从文本中抽取候选答案（优先 boxed）
+- float_close: 浮点数近似判断（相对/绝对误差）
+- symbolic_equal: 符号表达式等价（化简、equals、数值采样兜底）
+- math_equal: 统一入口（先解析，再根据类型选择比较策略）
+"""
 
-    import re
+import re
+import math
+from typing import Optional, Tuple, Union, Iterable
+import random
+
+import sympy as sp
+
+
+# ---------------------------
+# 1) 简易“答案抽取器”
+# ---------------------------
+
+_BOXED_RE = re.compile(r"\\boxed\s*\{(?P<inner>[^{}]+|\{[^{}]*\})+\}", re.S)
+
+def extract_answer_eval(text: str) -> str:
+    """
+    从自由文本中抽取一个"最可能"的答案字符串。
+    规则：
+      - 若存在 \boxed{...}，取最后一个 boxed 内的内容（支持嵌套）
+      - 寻找 "答案是"、"答案："、"答案为" 等标记词
+      - 寻找数学表达式模式（分数、根号、等式等）
+      - 否则取最后一行的最后一个数学片段（简单启发式）
+    """
+    if not text:
+        return ""
+
+    # 1) 优先 \boxed{...} - 取最后一个出现的
+    matches = list(_BOXED_RE.finditer(text))
+    if matches:
+        m = matches[-1]  # 取最后一个匹配
+        boxed = m.group(0)
+        # 去掉 \boxed{ ... }
+        inner = boxed[boxed.find("{")+1: boxed.rfind("}")]
+        return inner.strip()
+
+    # 2) 寻找答案标记词
+    answer_patterns = [
+        r"答案是[:：]\s*([^\n。．.!]+)",
+        r"答案为[:：]\s*([^\n。．.!]+)", 
+        r"答案[:：]\s*([^\n。．.!]+)",
+        r"最终答案[:：]\s*([^\n。．.!]+)",
+        r"因此[:：]\s*([^\n。．.!]+)",
+        r"所以[:：]\s*([^\n。．.!]+)",
+        r"answer\s*[:=]\s*([^\n。．.!]+)",
+        r"solution\s*[:=]\s*([^\n。．.!]+)",
+        r"result\s*[:=]\s*([^\n。．.!]+)"
+    ]
     
-    def extract_number(text: str) -> float:
-        """Extract the first number from text, handling various formats"""
-        if text is None:
-            return None
-        
-        # Clean the text - remove newlines and extra whitespace
-        text = text.strip().replace('\n', ' ')
-        
-        # Try to find numbers in the text using regex
-        # This pattern matches integers, floats, fractions, and scientific notation
-        number_pattern = r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?'
-        matches = re.findall(number_pattern, text)
-        
+    for pattern in answer_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
         if matches:
-            # Take the last number found (often the final answer)
-            try:
-                return float(matches[-1])
-            except ValueError:
-                pass
-        
-        # If regex fails, try to convert the whole string
-        try:
-            return float(text)
-        except ValueError:
-            # As last resort, try to extract just digits and decimal points
-            cleaned = re.sub(r'[^\d.-]', '', text)
-            if cleaned:
-                try:
-                    return float(cleaned)
-                except ValueError:
-                    pass
-        
-        return None
-    
-    # Extract numbers from both solutions
-    generated_num = extract_number(generated_solution)
-    ground_truth_num = extract_number(ground_truth_answer)
-    
-    if generated_num is None or ground_truth_num is None:
-        return False
-    
-    # Compare with tolerance for floating point precision
-    tolerance = 1e-6
-    is_correct = abs(generated_num - ground_truth_num) < tolerance
-    
-    return is_correct
-     
+            # 取最后一个匹配，并清理
+            answer = matches[-1].strip()
+            # 移除常见的结束词
+            answer = re.sub(r"[。．.!\s]+$", "", answer)
+            if answer:
+                return answer
 
+    # 3) 寻找数学表达式模式
+    math_patterns = [
+        r"([+-]?\d*\.?\d+/\d+)",  # 分数
+        r"([+-]?\d+\.?\d*)",      # 数字
+        r"(\\sqrt\{[^}]+\})",     # 根号
+        r"(\\frac\{[^}]+\}\{[^}]+\})",  # LaTeX分数
+        r"(\([^)]+\))",           # 括号内容
+        r"(\[[^\]]+\])"           # 方括号内容
+    ]
+    
+    # 从后往前搜索，优先找到的数学表达式
+    for pattern in math_patterns:
+        matches = re.findall(pattern, text)
+        if matches:
+            return matches[-1].strip()
+
+    # 4) 回退：取末行的末个"数学片段"
+    # 简单策略：最后一行去掉多余空白，取最后一个空格分割的片段
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    last = lines[-1] if lines else text.strip()
+    # 去掉句尾标点
+    last = re.sub(r"[。．.!\s]+$", "", last)
+    # 取最后一个 token
+    tokens = last.split()
+    return tokens[-1].strip() if tokens else last
+
+
+# ---------------------------
+# 2) 浮点数近似判断
+# ---------------------------
+
+def float_close(a: float, b: float, rel_tol: float = 1e-9, abs_tol: float = 0.0) -> bool:
+    """
+    使用 Python 文档定义的近似等式：
+    abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+    参考: Python docs (math.isclose) 与 PEP 485
+    """
+    # 与 math.isclose 保持一致的判据
+    return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+
+
+# ---------------------------
+# 3) 符号表达式等价判断
+# ---------------------------
+
+_SYMPY_LOCALS = {
+    # 允许的一些符号与常量
+    "pi": sp.pi, "E": sp.E, "e": sp.E, "I": sp.I,
+    "sin": sp.sin, "cos": sp.cos, "tan": sp.tan,
+    "log": sp.log, "ln": sp.log, "exp": sp.exp,
+    "sqrt": sp.sqrt, "abs": sp.Abs
+}
+
+def _sympify_safe(s: str) -> sp.Expr:
+    """
+    尝试将字符串解析为 SymPy 表达式。
+    做一些轻度规范化：去逗号、中文逗号、前后空白。
+    """
+    try:
+        s = (s or "").strip()
+        if not s:  # 空字符串直接返回 None
+            return None
+        s = s.replace(",", "")  # 千分位逗号
+        s = s.replace("，", "")
+        # 把形如 "答案: 2/3" 的前缀去掉（非常启发式）
+        s = re.sub(r"^[^0-9\-\+\(\[]*:", "", s).strip()
+        if not s:  # 处理后变成空字符串
+            return None
+        return sp.sympify(s, locals=_SYMPY_LOCALS)
+    except Exception:
+        return None
+
+def _both_numbers(a, b) -> bool:
+    """
+    检查两个对象是否都是 SymPy 数值类型。
+    处理可能的列表、None 或其他非 SymPy 表达式类型。
+    """
+    try:
+        # 检查是否为 None
+        if a is None or b is None:
+            return False
+        
+        # 检查是否为列表或其他非 SymPy 表达式类型
+        if not hasattr(a, 'is_Number') or not hasattr(b, 'is_Number'):
+            return False
+            
+        return a.is_Number and b.is_Number
+    except (AttributeError, TypeError):
+        return False
+
+def _num_equal(a, b, rel_tol=1e-9, abs_tol=0.0) -> bool:
+    """
+    比较两个 SymPy 数值表达式是否相等。
+    增加了类型检查以防止非 SymPy 表达式导致的错误。
+    """
+    try:
+        # 确保输入是有效的 SymPy 表达式且有 evalf 方法
+        if not hasattr(a, 'evalf') or not hasattr(b, 'evalf'):
+            return False
+            
+        fa = float(a.evalf())  # evalf 以支持如 pi/3 等
+        fb = float(b.evalf())
+        return float_close(fa, fb, rel_tol=rel_tol, abs_tol=abs_tol)
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+def _simplify_equal(a, b) -> bool:
+    """
+    先做代数化简：simplify(a-b)==0
+    SymPy 官方建议：用 simplify/expand 等看 a-b 是否能化为 0
+    增加了类型检查以防止非 SymPy 表达式导致的错误。
+    """
+    try:
+        # 检查输入是否为有效的 SymPy 表达式
+        if a is None or b is None:
+            return False
+        if not hasattr(a, '__sub__') or not hasattr(b, '__sub__'):
+            return False
+            
+        diff = sp.simplify(a - b)
+        return diff == 0
+    except Exception:
+        return False
+
+def _equals_random_samples(a, b, trials: int = 8, domain: Tuple[int, int] = (-7, 7)) -> bool:
+    """
+    对含符号的表达式，用随机点数值检验作为兜底。
+    采用 SymPy 的 equals 思路：在多个点上代入并比较数值是否近似。
+    - 避免在可能导致除零的点采样。
+    增加了类型检查以防止非 SymPy 表达式导致的错误。
+    """
+    try:
+        # 检查输入是否为有效的 SymPy 表达式
+        if a is None or b is None:
+            return False
+        if not hasattr(a, 'free_symbols') or not hasattr(b, 'free_symbols'):
+            return False
+        if not hasattr(a, 'subs') or not hasattr(b, 'subs'):
+            return False
+            
+        # 找到自由符号
+        free_syms = sorted(list(a.free_symbols.union(b.free_symbols)), key=lambda x: x.name)
+    except (AttributeError, TypeError):
+        return False
+    if not free_syms:
+        # 无符号时不该来到这里
+        return False
+
+    for _ in range(trials):
+        subs_map = {}
+        for sym in free_syms:
+            # 避免 0/除零等，采样非零整数
+            val = 0
+            while val == 0:
+                val = random.randint(domain[0], domain[1])
+            subs_map[sym] = val
+        try:
+            av = sp.N(a.subs(subs_map))
+            bv = sp.N(b.subs(subs_map))
+            if not float_close(float(av), float(bv), rel_tol=1e-8, abs_tol=1e-10):
+                return False
+        except Exception:
+            # 遇到奇异点就重试一次
+            continue
+    return True
+
+
+def _is_percentage_equivalent(a: sp.Expr, b: sp.Expr, rel_tol: float = 1e-9) -> bool:
+    """
+    检查两个表达式是否在百分比意义下等价
+    例如: 0.5 == 50% == 1/2
+    """
+    try:
+        # 尝试将两个表达式都转换为数值
+        val_a = float(a.evalf())
+        val_b = float(b.evalf())
+        
+        # 检查 a 是否等于 b*100 或 b/100
+        if float_close(val_a, val_b * 100, rel_tol=rel_tol):
+            return True
+        if float_close(val_a * 100, val_b, rel_tol=rel_tol):
+            return True
+            
+        return False
+    except Exception:
+        return False
+
+
+def _is_scientific_equivalent(a: sp.Expr, b: sp.Expr, rel_tol: float = 1e-9) -> bool:
+    """
+    检查科学计数法表示是否等价
+    例如: 1.5e3 == 1500 == 15*10^2
+    """
+    try:
+        # 直接数值比较
+        val_a = float(a.evalf())
+        val_b = float(b.evalf())
+        return float_close(val_a, val_b, rel_tol=rel_tol)
+    except Exception:
+        return False
+
+
+def symbolic_equal(a_expr: Union[str, sp.Expr],
+                   b_expr: Union[str, sp.Expr],
+                   rel_tol: float = 1e-9,
+                   abs_tol: float = 0.0) -> bool:
+    """
+    符号表达式等价判断：
+      1) 解析为 SymPy 表达式
+      2) 若都是数值 -> 浮点近似
+      3) 尝试 simplify(a-b) == 0
+      4) 特殊形式处理（分数、百分比、科学计数法等）
+      5) 兜底：随机数值采样 equals（多点）
+    """
+    try:
+        a = _sympify_safe(a_expr) if isinstance(a_expr, str) else a_expr
+        b = _sympify_safe(b_expr) if isinstance(b_expr, str) else b_expr
+    except Exception:
+        return False
+
+    # 检查解析结果是否有效
+    if a is None or b is None:
+        return False
+
+    # 都是数字 -> 用浮点近似
+    if _both_numbers(a, b):
+        return _num_equal(a, b, rel_tol=rel_tol, abs_tol=abs_tol)
+
+    # 特殊形式处理：百分比比较
+    if _is_percentage_equivalent(a, b, rel_tol):
+        return True
+
+    # 特殊形式处理：科学计数法
+    if _is_scientific_equivalent(a, b, rel_tol):
+        return True
+
+    # 尝试代数化简
+    if _simplify_equal(a, b):
+        return True
+
+    # 兜底：数值采样 equals
+    return _equals_random_samples(a, b)
+
+
+# ---------------------------
+# 4) 统一入口
+# ---------------------------
+def normalize_math(expr: str) -> str:
+    """
+    数学表达式标准化处理：
+    - 移除LaTeX格式和环境
+    - 标准化常见数学符号
+    - 处理单位和百分比
+    - 统一空白字符处理
+    """
+    if not expr:
+        return expr
+        
+    # 去除 $$…$$
+    expr = re.sub(r'(\$\$)(?:(?!\1)[\s\S])*\1',
+                  lambda m: m.group(0)[2:-2], expr)
+    # 去除 $…$
+    expr = re.sub(r'(\$)(?:(?!\1)[\s\S])*\1',
+                  lambda m: m.group(0)[1:-1], expr)
+    
+    # 清理 LaTeX 环境及定界符
+    expr = re.sub(r'\\begin\{.*?\}|\\end\{.*?\}', '', expr)
+    expr = re.sub(r'\\\(|\\\)|\\\[|\\\]', '', expr)
+    expr = expr.replace("\\\\", "")  # 去除换行命令 \\
+    
+    # 标准化常见符号
+    expr = expr.replace("×", "*")
+    expr = expr.replace("÷", "/") 
+    expr = expr.replace("·", "*")
+    expr = expr.replace("∙", "*")
+    expr = expr.replace("−", "-")  # 数学减号转为ASCII减号
+    
+    # 处理百分比符号
+    expr = re.sub(r'(\d+(?:\.\d+)?)%', r'\1/100', expr)  # 50% -> 50/100
+    expr = re.sub(r'(\d+(?:\.\d+)?)\\%', r'\1/100', expr)  # 50\% -> 50/100
+    
+    # 处理常见单位（移除）
+    units = ['cm', 'mm', 'm', 'km', 'kg', 'g', 'mg', 's', 'min', 'h', 'hour', 'day', 
+             'degree', 'degrees', '°', '℃', '℉', 'inch', 'ft', 'feet', 'yard', 'mile']
+    for unit in units:
+        expr = re.sub(rf'\b{re.escape(unit)}s?\b', '', expr, flags=re.IGNORECASE)
+    
+    # 处理科学计数法：1.5e3 -> 1.5*10^3
+    expr = re.sub(r'(\d+(?:\.\d+)?)e([+-]?\d+)', r'\1*10^(\2)', expr, flags=re.IGNORECASE)
+    
+    # 标准化根号：√ -> sqrt
+    expr = expr.replace("√", "sqrt")
+    
+    # 处理分数线：确保分数格式正确
+    expr = re.sub(r'(\d+)/(\d+)', r'(\1)/(\2)', expr)  # 3/4 -> (3)/(4)
+    
+    # **关键新增**：去除全部空白字符
+    expr = re.sub(r"\s+", "", expr)  # 包括空格、制表符、换行等
+    return expr
+
+def evaluate_math_solution(pred_text: str,
+               gold_text: str,
+               rel_tol: float = 1e-9,
+               abs_tol: float = 0.0) -> bool:
+    """
+    统一入口：给定原始文本（模型输出 / 参考答案），
+    - 先抽取候选答案
+    - 再做符号等价判断（内部会处理数值/符号两种情况）
+    """
+    pred = extract_answer_eval(pred_text)
+    pred = normalize_math(pred)
+    gold = extract_answer_eval(gold_text)
+    gold = normalize_math(gold)
+    return symbolic_equal(pred, gold, rel_tol=rel_tol, abs_tol=abs_tol)
 
 # Test function
 def test_load_math_problems(batch_size: int = 5):
     """Test loading math problems"""
-    results = load_math_problem_batch(env_indices=list(range(batch_size)), mode="validate")
+    results = load_math_problem_batch(env_indices=list(range(batch_size)), mode="train",difficulty="train_polaris")
     for i, result in enumerate(results):
         print(f"\n--- Problem {i+1} ---")
         print(f"Problem: {result['question']}")

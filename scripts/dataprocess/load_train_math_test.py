@@ -68,6 +68,13 @@ DATASETS = {
         "q_keys": ["problem", "question", "prompt", "Problem"],
         "a_keys": ["answer", "final_answer", "solution", "Solution", "Answer"],
     },
+    "gsm8k": {
+        "path": "openai/gsm8k",
+        "subset": None,
+        "prefer_splits": ["test", "validation", "dev", "train"],
+        "q_keys": ["question", "Problem", "problem", "prompt"],
+        "a_keys": ["answer", "final_answer", "solution", "Solution", "Answer"],
+    },
     # MATH-500
     # https://huggingface.co/datasets/HuggingFaceH4/MATH-500
     "MATH500": {
@@ -95,6 +102,15 @@ DATASETS = {
         "q_keys": ["question", "Problem", "problem", "prompt"],
         "a_keys": ["answer", "final_answer", "solution", "Solution", "Answer"],
     },
+    # OlympiadBench
+    # https://huggingface.co/datasets/Hothan/OlympiadBench
+    "OlympiadBench": {
+        "path": "Hothan/OlympiadBench",
+        "subset": "OE_TO_maths_en_COMP",
+        "prefer_splits": ["train", "test", "validation", "dev"],
+        "q_keys": ["problem", "question", "prompt", "Problem"],
+        "a_keys": ["answer", "final_answer", "solution", "Solution", "Answer"],
+    },
 }
 
 
@@ -106,6 +122,122 @@ def choose_available_split(ds_dict, prefer_splits):
         return list(ds_dict.keys())[0]
     raise ValueError("No splits available in the loaded dataset.")
 
+
+def download_and_process_gsm8k_test(out_dir: str):
+    # 确保输出目录存在
+    project_root = Path(__file__).resolve().parents[2]
+    out_dir = project_root / "datasets" / "math" / "train"
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # 下载gsm8k数据集
+    print("📥 下载gsm8k数据集...")
+    ds_dict = datasets.load_dataset("openai/gsm8k", "main")
+    
+    # 选择测试集split
+    split = choose_available_split(ds_dict, ["test"])
+    dataset = ds_dict[split]
+    print(f"✅ 使用split: {split}（作为测试集）")
+    
+    # 提取答案
+    def map_fn(example):
+        q_raw = get_first_key(example, ["question", "Problem", "problem", "prompt"])
+        a_raw = get_first_key(example, ["answer", "final_answer", "solution", "Solution", "Answer"])
+        return {
+            "question": q_raw,
+            "solution": extract_solution(a_raw),
+        }
+    
+    print("🔧 统一映射为 {solution} ...")
+    dataset_std = dataset.map(map_fn, remove_columns=[c for c in dataset.column_names if c not in []])
+    
+    # 限制为前500条
+    #dataset_std = dataset_std.select(range(500))
+
+    # 存储结果
+    test_path = Path(out_dir) / "gsm8k_test_full.parquet"
+    dataset_std.to_parquet(str(test_path))
+    print(f"💾 测试集已保存到: {test_path}（{len(dataset_std)} 条）")
+
+
+
+def download_and_process_olympiadbench_test(out_dir: str):
+    # 确保输出目录存在
+    project_root = Path(__file__).resolve().parents[2]
+    out_dir = project_root / "datasets" / "math" / "train"
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # 下载OlympiadBench数据集
+    print("📥 下载OlympiadBench数据集...")
+    ds_dict = datasets.load_dataset("Hothan/OlympiadBench", "OE_TO_maths_en_COMP")
+    
+    # 选择训练集split
+    split = choose_available_split(ds_dict, ["train"])
+    dataset = ds_dict[split]
+    print(f"✅ 使用split: {split}（作为测试集）")
+    
+    # 提取答案
+    def map_fn(example):
+        q_raw = get_first_key(example, ["problem", "question", "prompt", "Problem"])
+        a_raw = get_first_key(example, ["answer", "final_answer", "solution", "Solution", "Answer"])
+        return {
+            "question": q_raw,
+            "solution": extract_solution(a_raw),
+        }
+    
+    print("🔧 统一映射为 {solution} ...")
+    dataset_std = dataset.map(map_fn, remove_columns=[c for c in dataset.column_names if c not in []])
+    
+    # 存储结果
+    test_path = Path(out_dir) / "OlympiadBench_test.parquet"
+    dataset_std.to_parquet(str(test_path))
+    print(f"💾 测试集已保存到: {test_path}（{len(dataset_std)} 条）")
+    
+    # 打印一个样本
+    if len(dataset_std) > 0:
+        ex = dataset_std[0]
+        print("\n=== 样本示例 ===")
+        print(f"问题: {ex['question']}")
+        print(f"答案: {ex['solution']}")
+
+
+def download_and_process_polaris_train(out_dir: str):
+    # 确保输出目录存在
+    project_root = Path(__file__).resolve().parents[2]
+    out_dir = project_root / "datasets" / "math" / "train"
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # 下载POLARIS数据集
+    print("📥 下载POLARIS数据集...")
+    ds_dict = datasets.load_dataset("POLARIS-Project/Polaris-Dataset-53K")
+    
+    # 选择训练集split
+    split = choose_available_split(ds_dict, ["train", "test", "validation", "dev"])
+    dataset = ds_dict[split]
+    print(f"✅ 使用split: {split}（作为训练集）")
+    
+    # 提取答案 - POLARIS数据集字段为problem, answer, difficulty
+    def map_fn(example):
+        q_raw = get_first_key(example, ["problem", "question", "prompt", "Problem"])
+        a_raw = get_first_key(example, ["answer", "final_answer", "solution", "Solution", "Answer"])
+        return {
+            "question": q_raw,
+            "solution": extract_solution(a_raw),
+        }
+    
+    print("🔧 统一映射为 {question, solution} ...")
+    dataset_std = dataset.map(map_fn, remove_columns=[c for c in dataset.column_names if c not in []])
+    
+    # 存储结果
+    train_path = Path(out_dir) / "train_polaris.parquet"
+    dataset_std.to_parquet(str(train_path))
+    print(f"💾 训练集已保存到: {train_path}（{len(dataset_std)} 条）")
+    
+    # 打印一个样本
+    if len(dataset_std) > 0:
+        ex = dataset_std[0]
+        print("\n=== 样本示例 ===")
+        print(f"问题: {ex['question']}")
+        print(f"答案: {ex['solution']}")
 
 def main():
     project_root = Path(__file__).resolve().parents[2]
@@ -125,7 +257,7 @@ def main():
     df.to_parquet(train_path, index=False)
     
 
-    for benchmark in ["AIME24", "AIME25", "MATH500", "GSM8K", "MATH"]:
+    for benchmark in ["AIME24", "AIME25", "MATH500", "GSM8K", "MATH", "OlympiadBench"]:
         conf = DATASETS[benchmark]
         path = conf["path"]
         subset = conf.get("subset", None)
@@ -172,4 +304,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    out_dir = Path(__file__).resolve().parents[2] / "datasets" / "math" / "train"
+    download_and_process_polaris_train(out_dir)

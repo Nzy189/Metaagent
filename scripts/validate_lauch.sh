@@ -1,6 +1,6 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=6
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -26,16 +26,12 @@ cleanup() {
         kill $PROXY_PID 2>/dev/null
     fi
     
-    # 关闭 vLLM 引擎进程
-    if [ ! -z "$VLLM_PID" ]; then
-        echo "关闭 vLLM 引擎进程 $VLLM_PID"
-        kill $VLLM_PID 2>/dev/null
-    fi
+    
     
     # 强制关闭所有占用 8101 和 8100 端口的进程
-    echo "强制关闭占用端口 8101 和 8100 的进程"
-    lsof -ti:8101 | xargs -r kill -9 2>/dev/null
-    lsof -ti:8100 | xargs -r kill -9 2>/dev/null
+    echo "强制关闭占用端口 8201 和 8200 的进程"
+    lsof -ti:8201 | xargs -r kill -9 2>/dev/null
+    lsof -ti:8200 | xargs -r kill -9 2>/dev/null
     
     echo "清理完成"
     exit 0
@@ -50,11 +46,11 @@ lsof -ti:8101 | xargs -r kill -9 2>/dev/null
 lsof -ti:8100 | xargs -r kill -9 2>/dev/null
 sleep 2
 
-# 启动 vLLM 后端在 8101 端口
-echo "启动 vLLM 引擎..."
+# 启动 vLLM 后端在 8201 端口，使用 livecodebench_baseline checkpoint
+echo "启动 vLLM 引擎，使用 livecodebench_baseline checkpoint..."
 python -m vllm.entrypoints.openai.api_server \
-    --model Qwen/Qwen2.5-Coder-7B-Instruct \
-    --host 127.0.0.1 --port 8101 \
+    --model /home/lah003/workspace/verl_efficient/checkpoints/verl_examples/gsm8k/code_1.7B_two_policies_livecodebench/global_step_151/actor/checkpoint \
+    --host 127.0.0.1 --port 8201 \
     --gpu-memory-utilization 0.9 --tensor-parallel-size 1 \
     --max-model-len 32768 &
 
@@ -72,7 +68,8 @@ if ! kill -0 $VLLM_PID 2>/dev/null; then
 fi
 
 # 启动代理，将 /v1/completions 的 tokens 转换为 token_id:<id>
-export VLLM_BACKEND_ADDRESS=127.0.0.1:8101
+export VLLM_BACKEND_ADDRESS=127.0.0.1:8201
+export PROXY_PORT=8200
 echo "启动代理服务..."
 python scripts/vllm_token_id_proxy.py &
 

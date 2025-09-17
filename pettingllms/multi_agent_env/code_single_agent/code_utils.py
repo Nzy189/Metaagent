@@ -474,7 +474,7 @@ async def evaluate_code_against_tests(
             obj_refs = []
   
 
-            actor_idx = ray.get(ray_actor.get_idx.remote())
+            actor_idx = await _await_ray_object_ref(ray_actor.get_idx.remote(), 10.0)
             for i in range(total_tests):
                 safe_rollout_idx = rollout_idx if rollout_idx is not None else 0
                 actor = actors[safe_rollout_idx % len(actors)]

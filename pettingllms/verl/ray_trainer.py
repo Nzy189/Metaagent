@@ -831,15 +831,16 @@ class RayPPOTrainer:
             )
 
     def _save_checkpoint(self):
-        # path: given_path + `/global_step_{global_steps}` + `/actor`
-        local_global_step_folder = os.path.join(self.config.trainer.default_local_dir,
-                                                f'global_step_{self.global_steps}')
+        # path: given_path + `/experiment_name` + `/global_step_{global_steps}` + `/actor`
+        experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
+        experiment_folder = os.path.join(self.config.trainer.default_local_dir, experiment_name)
+        local_global_step_folder = os.path.join(experiment_folder, f'global_step_{self.global_steps}')
         # Make dirs from this absolute path
         os.makedirs(local_global_step_folder, exist_ok=True)
         print(f'local_global_step_folder: {local_global_step_folder}')
         actor_local_path = os.path.join(local_global_step_folder, 'actor')
 
-        actor_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(self.config.trainer.default_hdfs_dir, f"global_step_{self.global_steps}", "actor")
+        actor_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(self.config.trainer.default_hdfs_dir, experiment_name, f"global_step_{self.global_steps}", "actor")
 
         remove_previous_ckpt_in_save = self.config.trainer.get("remove_previous_ckpt_in_save", False)
         if remove_previous_ckpt_in_save:
@@ -858,7 +859,7 @@ class RayPPOTrainer:
 
         if self.use_critic:
             critic_local_path = os.path.join(local_global_step_folder, "critic")
-            critic_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(self.config.trainer.default_hdfs_dir, f"global_step_{self.global_steps}", "critic")
+            critic_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(self.config.trainer.default_hdfs_dir, experiment_name, f"global_step_{self.global_steps}", "critic")
             self.critic_wg.save_checkpoint(critic_local_path, critic_remote_path, self.global_steps, max_ckpt_to_keep=max_critic_ckpt_to_keep)
 
         # save dataloader
@@ -867,7 +868,7 @@ class RayPPOTrainer:
         #torch.save(dataloader_state_dict, dataloader_local_path)
 
         # latest checkpointed iteration tracker (for atomic usage)
-        local_latest_checkpointed_iteration = os.path.join(self.config.trainer.default_local_dir, "latest_checkpointed_iteration.txt")
+        local_latest_checkpointed_iteration = os.path.join(experiment_folder, "latest_checkpointed_iteration.txt")
         with open(local_latest_checkpointed_iteration, "w") as f:
             f.write(str(self.global_steps))
 
@@ -879,7 +880,8 @@ class RayPPOTrainer:
         if self.config.trainer.default_hdfs_dir is not None:
             raise NotImplementedError("load from hdfs is not implemented yet")
         else:
-            checkpoint_folder = self.config.trainer.default_local_dir  # TODO: check path
+            experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
+            checkpoint_folder = os.path.join(self.config.trainer.default_local_dir, experiment_name)  # TODO: check path
             if not os.path.isabs(checkpoint_folder):
                 working_dir = os.getcwd()
                 checkpoint_folder = os.path.join(working_dir, checkpoint_folder)

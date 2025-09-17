@@ -92,7 +92,11 @@ def _launch_vllm_in_background(trainer_config_path: str, registry_path: str, num
 async def _evaluate_once(address: str, trainer_cfg: DictConfig, prompt: str, mode: str = "validate") -> str:
     # 1) 计算 model_name（vLLM OpenAI server 侧用它作为 models 名称）
     model_path = trainer_cfg.actor_rollout_ref.model.path
-    model_name = "/".join(str(model_path).split("/")[-2:])
+    # 如果包含 checkpoint 字样则保留完整路径，否则截取最后两段
+    if "checkpoint" in str(model_path):
+        model_name = str(model_path)
+    else:
+        model_name = "/".join(str(model_path).split("/")[-2:])
 
     # 2) 加载 tokenizer 路径（优先使用 tokenizer_path）
     tokenizer_path = trainer_cfg.actor_rollout_ref.get("tokenizer_path", model_path)
@@ -118,6 +122,7 @@ async def _evaluate_once(address: str, trainer_cfg: DictConfig, prompt: str, mod
         agent_idx=0,
         prompt_dpr=dpr,
         ppo_trainer_config=trainer_cfg,
+        enable_thinking=False,
         address=address,
         model_name=model_name,
         tokenizer=tokenizer,

@@ -3,11 +3,15 @@ from datasets import load_dataset
 import pandas as pd
 from pathlib import Path
 import os
+import sys
 import re, ast, json, zlib, pickle, base64
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime
+
+# 设置更高的整数字符串转换限制，以处理非常大的测试输出
+sys.set_int_max_str_digits(0)  # 0 表示无限制
 
 # ============================================================
 # 公共：把任意“参数/字面量说明”规约为 stdin 风格的多行文本
@@ -271,6 +275,72 @@ def _parse_cc_difficulty(ex: Dict[str, Any]) -> Optional[int]:
         return mapping.get(s)
     return None
 
+
+import re
+import ast
+
+def _node_to_text(n: ast.AST) -> str:
+    # 字符串：直接取值，不带引号
+    if isinstance(n, ast.Constant) and isinstance(n.value, str):
+        return n.value
+    # 其他字面量：int/float/bool/None
+    if isinstance(n, ast.Constant):
+        return repr(n.value) if not isinstance(n.value, (int, float, bool, type(None))) else str(n.value)
+    # 特殊处理矩阵（二维列表）
+    if isinstance(n, ast.List):
+        # 检查是否是矩阵形式（所有元素都是列表）
+        if all(isinstance(elem, ast.List) for elem in n.elts):
+            # 这是一个矩阵，保持原格式
+            return ast.unparse(n)
+        else:
+            # 普通列表，也保持原格式
+            return ast.unparse(n)
+    # 列表/字典/元组/表达式：反向生成源代码
+    return ast.unparse(n)
+
+def convert_asserts_to_io(assert_lines: List[str]) -> Dict[str, List[str]]:
+    results = {"test_input": [], "test_output": []}
+    for line in assert_lines:
+        s = line.strip()
+        if not s or not s.startswith("assert"):
+            continue
+        m = re.match(r"assert\s+(.+?)\s*==\s*(.+)$", s)
+        if not m:
+            continue
+        call_expr, expected_expr = m.groups()
+
+        # 解析函数调用
+        call_tree = ast.parse(call_expr, mode="eval")
+        if not isinstance(call_tree.body, ast.Call):
+            continue
+        call = call_tree.body
+
+        # 输入：处理参数，特别注意矩阵格式
+        arg_texts = []
+        for a in call.args:
+            text = _node_to_text(a)
+            # 如果这是一个矩阵（包含方括号和逗号），保持为单行
+            if text.startswith('[') and text.endswith(']') and ',' in text:
+                arg_texts.append(text)
+            else:
+                arg_texts.append(text)
+        
+        # 如果只有一个参数且看起来是矩阵格式，直接使用
+        if len(arg_texts) == 1 and arg_texts[0].startswith('[') and arg_texts[0].endswith(']'):
+            input_str = arg_texts[0] + "\n"
+        else:
+            input_str = "\n".join(arg_texts) + "\n"
+
+        # 期望输出
+        expected_node = ast.parse(expected_expr, mode="eval").body
+        output_str = _node_to_text(expected_node) + "\n"
+
+        results["test_input"].append(input_str)
+        results["test_output"].append(output_str)
+    return results
+
+
+
 def process_code_contests(split: str) -> pd.DataFrame:
     print(f"🔄 加载 deepmind/code_contests split={split} ...")
     ds = load_dataset("deepmind/code_contests", split=split)
@@ -291,8 +361,8 @@ def process_code_contests(split: str) -> pd.DataFrame:
         rows.append({
             "question": (ex.get("description") or "").strip(),
             "solution": solution,
-            "test_input": [ _normalize_cell(str(x)) for x in test_in ],
-            "test_output": [ _normalize_cell(str(x)) for x in (test_out or []) ],
+            "test_input": test_in,
+            "test_output": test_out,
         })
     df = pd.DataFrame(rows, columns=["question","test_input","test_output","solution"])
     df = _filter_nonempty_io(df)
@@ -307,22 +377,27 @@ def process_mbpp() -> pd.DataFrame:
     print("🔄 加载 MBPP（优先 sanitized/test）...")
     ds = load_dataset("Gen-Verse/MBPP-ReasonFlux", split="test")
     rows = []
-    for ex in ds:
+    for i,ex in enumerate(ds):
         question = (ex.get("text") or ex.get("prompt") or ex.get("description") or "").strip()
         # 修复：确保 solution 获取并清洗
         solution_raw = ex.get("code", None)
         if not solution_raw:
             solution_raw = ex.get("solution", "")
         solution = _clean_solution(solution_raw)
-
-        inputs=ex.get("test_input") 
-        outputs=ex.get("test_output")
+        results = convert_asserts_to_io(ex.get("test_list"))
+        inputs = ex.get("test_input")
+        outputs = ex.get("test_output")
         rows.append({
             "question": question,
             "solution": solution,
             "test_input": inputs,
             "test_output": outputs,
         })
+        if i<5:
+            print(question)
+            print(solution)
+            print(inputs)
+            print(outputs)
     df = pd.DataFrame(rows, columns=["question","test_input","test_output","solution"])
     df = _filter_nonempty_io(df)
     print(f"✅ mbpp: {len(df)}")
@@ -331,7 +406,7 @@ def process_mbpp() -> pd.DataFrame:
 # ============================================================
 # HumanEval
 # ============================================================
-def process_apps() -> pd.DataFrame:
+def process_apps_test() -> pd.DataFrame:
     print("🔄 加载 apps ...")
     ds = load_dataset(
         "json",
@@ -389,7 +464,64 @@ def process_apps() -> pd.DataFrame:
     print(f"✅ apps: {len(df)}")
     return df
 
+def process_apps_train() -> pd.DataFrame:
+    print("🔄 加载 apps ...")
+    ds = load_dataset(
+        "json",
+        data_files={"test": "hf://datasets/codeparrot/apps/test.jsonl"},
+        split="test",
+    )
+    ds = list(ds)
+    rows = []
     
+    for ex in ds[1000:5000]:
+        # 解析 solutions 和 input_output 字段
+        try:
+            solutions = json.loads(ex.get("solutions", "[]"))
+            input_output = json.loads(ex.get("input_output", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+            
+        # 获取问题描述
+        question = (ex.get("question") or "").strip()
+        if not question:
+            continue
+            
+        # 处理解决方案
+        if not solutions:
+            solution = ""
+        else:
+            # apps 数据集的 solutions 是字符串列表，直接取第一个
+            solution = _clean_solution(solutions[0]) if solutions else ""
+            
+        # 处理测试输入输出
+        test_input = []
+        test_output = []
+        
+        if input_output:
+            inputs = input_output.get("inputs", [])
+            outputs = input_output.get("outputs", [])
+            
+            if isinstance(inputs, list) and isinstance(outputs, list):
+                test_input = [_normalize_cell(str(x)) for x in inputs]
+                test_output = [_normalize_cell(str(x)) for x in outputs]
+        
+        # 只保留有测试用例的样本
+        if not (test_input and test_output):
+            continue
+            
+        rows.append({
+            "question": question,
+            "solution": solution,
+            "test_input": test_input,
+            "test_output": test_output,
+        })
+    
+    df = pd.DataFrame(rows, columns=["question", "test_input", "test_output", "solution"])
+    df = _filter_nonempty_io(df)
+    print(f"✅ apps: {len(df)}")
+    return df
+
 def process_humaneval() -> pd.DataFrame:
     print("🔄 加载 openai_humaneval/test ...")
     ds = load_dataset("openai_humaneval", split="test")
@@ -540,6 +672,7 @@ def process_livecodebench() -> pd.DataFrame:
 
 def main():
     
+    
 
 
     project_root = Path(__file__).resolve().parents[2]
@@ -547,7 +680,12 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     print(f"📁 输出目录: {out_dir}")
 
-    df_apps = process_apps()
+    df_mbpp = process_mbpp()
+    (out_dir / "mbpp.parquet").unlink(missing_ok=True)
+    df_mbpp.to_parquet(out_dir / "mbpp.parquet", index=False)
+    print(f"💾 保存: {out_dir / 'mbpp.parquet'}")
+
+    df_apps = process_apps_test()
     (out_dir / "apps.parquet").unlink(missing_ok=True)
     df_apps.to_parquet(out_dir / "apps.parquet", index=False)
     print(f"💾 保存: {out_dir / 'apps.parquet'}")
@@ -565,10 +703,7 @@ def main():
     print(f"💾 保存: {out_dir / 'code_contests.parquet'}")
 
     # 2.2 MBPP
-    df_mbpp = process_mbpp()
-    (out_dir / "mbpp.parquet").unlink(missing_ok=True)
-    df_mbpp.to_parquet(out_dir / "mbpp.parquet", index=False)
-    print(f"💾 保存: {out_dir / 'mbpp.parquet'}")
+    
 
     # 2.3 HumanEval
     df_he = process_humaneval()
@@ -586,4 +721,9 @@ def main():
     print(f"💾 保存: {out_dir / 'livecodebench.parquet'}")
 
 if __name__ == "__main__":
-    main()
+    project_root = Path(__file__).resolve().parents[2]
+    out_dir = project_root / "datasets" / "code" / "train"
+    os.makedirs(out_dir, exist_ok=True)
+    df_apps_train = process_apps_train()
+    df_apps_train.to_parquet(out_dir / "apps_train_easier.parquet", index=False)
+    print(f"💾 保存: {out_dir / 'apps_train_easier.parquet'}")

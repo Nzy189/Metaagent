@@ -77,39 +77,54 @@ class UnitTestGenerationAgent(Agent):
         question = getattr(state, "problem", None)
         current_code = getattr(state, "generated_code", None)
         mismatch_cases = getattr(state, "generated_test_vs_generated_code_mismatch_cases", None)
-        formatted_prompt_for_mismatch_cases = "The previous history of mismatch cases between the current generated test cases and the current code execution result:\n"
+        formatted_prompt_for_mismatch_cases = "The previous history of mismatch cases between your previous generated test case and another LLM generated code execution result:\n"
         for idx, code in enumerate(state.generated_code_history):
             if state.generated_test_vs_generated_code_mismatch_cases_history[idx] is not None:
                 formatted_prompt_for_mismatch_cases += f"Code {idx+1}:\n{code}\n"
                 for mismatch_case in state.generated_test_vs_generated_code_mismatch_cases_history[idx]:
                     formatted_prompt_for_mismatch_cases += f"Input: {mismatch_case['test_input']}\n"
-                    formatted_prompt_for_mismatch_cases += f"LLM generated test case output: {mismatch_case['generated_test_output']}\n"
-                    formatted_prompt_for_mismatch_cases += f"LLM code execution output: {mismatch_case['code_execution_output']}\n"
+                    formatted_prompt_for_mismatch_cases += f"You previous generated test case output: {mismatch_case['generated_test_output']}\n"
+                    formatted_prompt_for_mismatch_cases += f"Another LLM code execution output: {mismatch_case['code_execution_output']}\n"
                     formatted_prompt_for_mismatch_cases += f"Two outputs are not the same.\n"
         
         if turn_idx == 0:
             # Test-case generation mode
             formatted_prompt = (
-                f" You are a helpful assistant that generates test examples for coding tasks.  \n"
-                f" User: Given a coding task, instead of providing the final script, your task is to generate some new test exampless (both input, output and explanation).\n"
+                f" You are a helpful assistant that the task is to generate unit test cases for coding tasks.  \n"
+                f" User: Given a coding task, instead of providing the final script, your task is to generate some new test cases (both input, output).\n"
                 f"This is the problem:\n{question}\n\n"
-                f"You need to provide some new test examples as much as possible. For coverage, you should provide at least 3 test examples. A good test example should be completely accurate and conform to the problem's format requirements, while also possessing enough discriminative power to distinguish correct code from incorrect code.\n"
-                f"Before providing a test example, you must think carefully and reason step by step to derive an input and output you are very confident are correct. For example, start by designing an input you can reliably handle, then compute the output step by step. If you're unsure about the output, revise or re-design the input to ensure accuracy. Directly providing input/output pairs without this process is discouraged, as it often results in low accuracy.\n"
-                f"Finally, after completing these previous thinking and derivation steps (you should not write the final test example unless you have gone through these steps very thoroughly), you MUST put your final test example in the following format:\n\n"
-                +text_format
+                f"You need to provide a new test case.\n"
+                f"Before providing a test example, you must think carefully and reason step by step to derive an input and output you are very confident are correct. "
+                f"Leverage your mathematical reasoning skills - if the problem involves mathematical concepts, formulas, algorithms, or numerical computations, "
+                f"use rigorous mathematical analysis to verify your test case. Apply mathematical reasoning methods such as:\n"
+                f"- Algebraic manipulation and equation solving\n"
+                f"- Logical deduction and proof techniques\n"
+                f"- Pattern recognition and mathematical induction\n"
+                f"- Computational verification of mathematical properties\n"
+                f"- Edge case analysis using mathematical bounds and constraints\n"
+                f"Then reason through the expected output for your chosen input using these mathematical principles.\n"
+                f"You MUST put your final test case in the following format:\n\n"
+                +text_format_single
                
             )
         else:
            
             formatted_prompt =""
             formatted_prompt += (
-                f" You are a helpful assistant that checks and refines test examples for coding tasks.  \n"
-                f" User: Given a coding task, you need to check the current generated test cases and the current code execution result, if the mismatch is caused by the current generated test cases, please refine the test cases to pass all tests.\n"
+                f" You are a helpful assistant that checks and refines test cases for coding tasks.  \n"
+                f" User: Given a coding task, you need to generate test case align with the problem description.\n"
                 f"This is the problem:\n{question}\n\n")
             formatted_prompt +=formatted_prompt_for_mismatch_cases + (
-                f"First, you need to judge the mismatch history between the current generated test cases and the current code execution result, if the mismatch is caused by the current generated test cases, please refine the test cases to pass all tests.\n"
-                f"Then, you need to refine the code to pass all tests.\n"
-                +text_format
+                f"First, according to the problem and the code generated by another LLM, you need to think if the previous test case is correct, "
+                f"if you misunderstood the task or had wrong reasoning before, then give a test case which is correct.\n"
+                f"Use your mathematical reasoning skills to thoroughly analyze the problem. If it involves mathematical concepts, "
+                f"apply rigorous mathematical analysis including:\n"
+                f"- Mathematical verification of the expected relationships\n"
+                f"- Step-by-step mathematical derivation of correct outputs\n"
+                f"- Validation using mathematical properties and constraints\n"
+                f"- Error analysis to identify where previous reasoning went wrong\n"
+                f"Ensure your corrected test case is mathematically sound and aligns with the problem requirements.\n"
+                +text_format_single
                 
             )
 
@@ -149,6 +164,7 @@ class UnitTestGenerationAgent(Agent):
                 env_data.state.generated_test_vs_generated_code_mismatch_cases = env_failed_cases
                 env_data.state.generated_test_vs_generated_code_match_ratio = env_passed_ratio
                 if env_passed_ratio >= 1.0 and len(gen_inputs) > 0:
+                    self.done = True
                     pass
                 else:
                     env_data.state.generated_code_history.append(env_data.state.generated_code)
@@ -171,7 +187,7 @@ class UnitTestGenerationAgent(Agent):
                 env_data.state.generated_test_vs_golden_code_match_ratio = passed_ratio
                 if passed_ratio >= 1.0 and len(gen_inputs) > 0:
                     self.is_pass = True
-                    self.done = True
+                    
         
         
                     

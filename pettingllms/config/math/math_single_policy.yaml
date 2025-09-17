@@ -2,6 +2,7 @@
 # reasoning_agent and tool_agent use Qwen3-4B-Instruct-2507
 mode: "validate"
 sample_mode: "tree"
+enable_thinking: false
 # Inherit from base configuration
 defaults:
   # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently
@@ -41,7 +42,7 @@ env:
   resolve: false
   multi_modal: false
   batched_init: true
-
+if_dapo: true
 # Multi-agent interaction configuration
 multi_agent_interaction:
   
@@ -105,14 +106,14 @@ trainer:
   nnodes: 1
   balance_batch: True
   total_epochs: 1
-  total_training_steps: 200
+  total_training_steps: 400
   project_name: pettingllms
   experiment_name: math_single_policy
   logger: [ 'console', 'wandb' ]
   log_val_generations: 0
   rollout_data_dir: null
   validation_data_dir: null
-  save_freq: -1
+  save_freq: 40
   resume_mode: auto
   resume_from_path: null
   val_before_train: True

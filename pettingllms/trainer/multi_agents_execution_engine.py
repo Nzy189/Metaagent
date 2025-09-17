@@ -56,18 +56,20 @@ class MultiAgentsExecutionEngine:
             self.turn_order = getattr(self.config.multi_agent_interaction, 'turn_order', ['code_generator', 'test_generator'])
             self.num_interacting_agents = getattr(self.config.multi_agent_interaction, 'num_interacting_agents', 2)
             self.shared_observation = getattr(self.config.multi_agent_interaction, 'shared_observation', True)
+            self.parallel = getattr(self.config, 'parallel', True)  # 默认为并行执行
         else:
             self.turn_order = ['code_generator', 'test_generator']
             self.num_interacting_agents = 2
             self.shared_observation = True
+            self.parallel = True  # 默认为并行执行
         
         # Rollout configuration - direct access with fallbacks
         if hasattr(self.config, 'data') and self.config.data is not None:
-            self.sample_temperature = getattr(self.config.data, 'sample_temperature', 0.7)
+            self.sample_temperature = getattr(self.config.data, 'sample_temperature', 1)
             self.gen_batch_size = getattr(self.config.data, 'gen_batch_size', 64)
             self.gen_n_samples = getattr(self.config.data, 'gen_n_samples', 8)
         else:
-            self.sample_temperature = 0.7
+            self.sample_temperature = 1
             self.gen_batch_size = 64
             self.gen_n_samples = 8
             
@@ -76,8 +78,8 @@ class MultiAgentsExecutionEngine:
             self.generate_timeout = getattr(self.config.timeout, 'generate_timeout', 60.0)
             self.step_timeout = getattr(self.config.timeout, 'step_timeout', 30.0)
         else:
-            self.generate_timeout = 120.0  # 60 seconds for generation
-            self.step_timeout = 30     # 30 seconds for environment step
+            self.generate_timeout = 100.0  
+            self.step_timeout = 20    
         
     def __init__(
         self,
@@ -145,18 +147,38 @@ class MultiAgentsExecutionEngine:
         self.chat_parser_dict={}
         self.rollout_latency_dict = {}
         self.timer.checkpoint("MultiAgentsExecutionEngine initialization completed")
+        if self.env_name in ENV_WORKER_CLASS_MAPPING:
+                _worker_factory_or_cls = ENV_WORKER_CLASS_MAPPING[self.env_name]
+                try:
+                    RayDockerWorker = _worker_factory_or_cls() if callable(_worker_factory_or_cls) else _worker_factory_or_cls
+                except Exception as e:
+                    print(f"Failed to create RayDockerWorker from mapping for env '{self.env_name}': {e}")
+                    RayDockerWorker = None
+        else:
+            RayDockerWorker = get_ray_docker_worker_cls()
+        print("begin to create Ray docker workers")
+        if RayDockerWorker is not None and hasattr(RayDockerWorker, "remote"):
+            num_workers = self.config.data.get("num_workers", 1800)
+            self.num_workers = num_workers
+            self.timer.checkpoint(f"Creating {num_workers} Ray docker workers")
+            self.env_workers = [RayDockerWorker.remote(idx) for idx in range(num_workers)]
+        else:
+            print(f"RayDockerWorker is not available or invalid for env '{self.env_name}'. Skipping env workers initialization.")
         
 
     def init_agents_and_envs(self,mode="train",step_idx=0,resample=True):
         self.multi_logger = get_multi_logger()
         self.timer.checkpoint("Starting init_agents_and_envs")
         self.mode=mode
+        self.success_rollout_idx_list_dict={}
+        self.success_ave_turn_dict={}
         if mode=="validate":
-            self.success_rollout_idx_list_dict={}
+            
             self.sample_num=1
             self.gen_batch_size=1
             for agent_name in self.turn_order:
                 self.success_rollout_idx_list_dict[agent_name]=[]
+                self.success_ave_turn_dict[agent_name]=0
         else:
             self.sample_num=self.gen_n_samples
             self.gen_batch_size=self.config.data.gen_batch_size
@@ -200,27 +222,7 @@ class MultiAgentsExecutionEngine:
                 for env_idx in range(len(self.env_idx_list)):
                     self.env_rollout_mapping[env_idx] = [_ for _ in range(env_idx*self.sample_num, (env_idx+1)*self.sample_num)]
             self.timer.checkpoint("Starting batched env initialization")
-            self.env_workers = None
-            if self.env_name in ENV_WORKER_CLASS_MAPPING:
-                _worker_factory_or_cls = ENV_WORKER_CLASS_MAPPING[self.env_name]
-                try:
-                    RayDockerWorker = _worker_factory_or_cls() if callable(_worker_factory_or_cls) else _worker_factory_or_cls
-                except Exception as e:
-                    print(f"Failed to create RayDockerWorker from mapping for env '{self.env_name}': {e}")
-                    RayDockerWorker = None
-            else:
-                RayDockerWorker = get_ray_docker_worker_cls()
-            print("begin to create Ray docker workers")
-            if RayDockerWorker is not None and hasattr(RayDockerWorker, "remote"):
-                num_workers = len(self.envs)
-                self.timer.checkpoint(f"Creating {num_workers} Ray docker workers")
-                self.env_workers = [RayDockerWorker.remote(idx) for idx in range(num_workers)]
-                self.multi_logger.log_rollout_summary(
-                    self.mode, -1, -1, "env_workers",
-                    f"init {num_workers} env workers"
-                )
-            else:
-                print(f"RayDockerWorker is not available or invalid for env '{self.env_name}'. Skipping env workers initialization.")
+            
             self.agent_groups_list = []
             for rollout_idx in range(len(self.envs)):
                 self.agent_groups_list_per_rollout = []
@@ -266,7 +268,7 @@ class MultiAgentsExecutionEngine:
                 f"Starting turn {turn_idx + 1}",
                 {"turn_idx": turn_idx + 1}
             )
-            enable_thinking=getattr(self.config, 'enable_thinking', False)
+            self.enable_thinking=getattr(self.config, 'enable_thinking', False)
             for agent_idx, agent_name in enumerate(self.turn_order):
                 current_agent = agent_group[agent_idx]
                 current_agent.update_from_env(turn_idx,env)
@@ -278,17 +280,21 @@ class MultiAgentsExecutionEngine:
                         prompt, 
                         self.max_prompt_length,
                         multi_modal=False,
-                        enable_thinking=enable_thinking
+                        enable_thinking=self.enable_thinking
                    )
                 if format_prompt is None:
                     return None
                 ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
                 model_path=ppo_trainer_config.actor_rollout_ref.model.path
-                model_name = "/".join(model_path.split("/")[-2:])
+                # 如果包含 checkpoint 字样则保留完整路径，否则截取最后两段
+                if "checkpoint" in str(model_path):
+                    model_name = str(model_path)
+                else:
+                    model_name = "/".join(str(model_path).split("/")[-2:])
                 # Generate responses
                 output_dpr = None
                 response_str = None
-                print(f"DEBUG: begin tp generate response for {agent_name} with model {model_name} using llm_async_generate")
+                #print(f"DEBUG: begin tp generate response for {agent_name} with model {model_name} using llm_async_generate")
                 
                 try:
                     _addresses = self.server_address_dict.get(policy_name)
@@ -305,6 +311,7 @@ class MultiAgentsExecutionEngine:
                         address=_address,
                         model_name=model_name,
                         tokenizer=self.tokenizer_dict[policy_name],
+                        enable_thinking=self.enable_thinking,
                         image_data=None,
                         application_id=str(uuid.uuid4()),
                         env_idx=rollout_idx // self.sample_num,
@@ -326,8 +333,9 @@ class MultiAgentsExecutionEngine:
                 
               
                 try:
+                    env_worker_id=random.randint(0, self.num_workers-1)
                     await asyncio.wait_for(
-                        current_agent.step(self.envs[rollout_idx],env_worker=self.env_workers[rollout_idx]),
+                        current_agent.step(self.envs[rollout_idx],env_worker=self.env_workers[env_worker_id]),
                         timeout=self.step_timeout
                     )
                 except asyncio.TimeoutError:
@@ -354,12 +362,13 @@ class MultiAgentsExecutionEngine:
                             trajectory_per_task_dict[policy_name], 
                             output_dpr
                         ])
-                        print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
+                        #print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
                 
                 self.multi_logger.log_env_agent_info(
                         self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
                         "Trajectory information updated",
                         {
+                            
                             "agent_prompt": prompt,
                             "agent_response": response_str,
                             "env_state": env.state,
@@ -398,6 +407,7 @@ class MultiAgentsExecutionEngine:
                 current_agent=self.agent_groups_list[rollout_idx][i]
                 if current_agent.is_pass:
                     self.success_rollout_idx_list_dict[agent_name].append(rollout_idx)
+                    self.success_ave_turn_dict[agent_name] += turn_idx + 1
         
        
         #trajectory_per_task_dict = self._assign_consistent_uids(trajectory_per_task_dict)
@@ -416,9 +426,10 @@ class MultiAgentsExecutionEngine:
             pass
 
         return trajectory_per_task_dict
+            
 
         
-    async def generate_env_idx_rollout(self, env_idx):
+    async def generate_env_idx_rollout(self, env_idx, if_dapo=True):
         """
         Generate a single rollout, adapted for multi-agent interaction in the code testing environment.
         
@@ -441,13 +452,18 @@ class MultiAgentsExecutionEngine:
         for turn_idx in range(self.max_turns):
             agent_done_list=[]
 
-            async def single_generate_response(idx,agent_idx,agent_name):
+            async def single_generate_response(idx,agent_idx,agent_name,sample_num=1):
                 rollout_idx=rollout_idx_list[idx]
                 env=envs_list[idx]
                 current_agent = agent_groups[idx][agent_idx]
                 current_agent.update_from_env(turn_idx,env)
                 prompt = current_agent.current_prompt
-                enable_thinking=getattr(self.config, 'enable_thinking', False)
+                if self.mode=="validate":
+                    enable_thinking=getattr(self.config, 'enable_thinking', False)
+                else:
+                    enable_thinking=False
+                override_temperature = 0.6 if sample_num > 1 else None
+                #override_temperature = 1
                 policy_name = self.agent_policy_mapping.get(agent_name) 
                 format_prompt =convert_prompt_to_dpr( self.tokenizer_dict[policy_name], 
                         self.processor_dict.get(policy_name), 
@@ -460,10 +476,17 @@ class MultiAgentsExecutionEngine:
                     return None
                 ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
                 model_path=ppo_trainer_config.actor_rollout_ref.model.path
-                model_name = "/".join(model_path.split("/")[-2:])
+                # 如果包含 checkpoint 字样则保留完整路径，否则截取最后两段
+                if "checkpoint" in str(model_path):
+                    model_name = str(model_path)
+                else:
+                    model_name = "/".join(str(model_path).split("/")[-2:])
                 output_dpr = None
                 response_str = None
-                print(f"DEBUG: begin tp generate response for {agent_name} with model {model_name} using llm_async_generate")
+                #print(f"DEBUG: begin tp generate response for {agent_name} with model {model_name} using llm_async_generate")
+                
+                # 如果 sample_num > 1，设置温度为1，无论是否是验证模式
+                
                 
                 try:
                     # 随机选择一个可用的 server address（兼容字符串/列表）
@@ -480,74 +503,179 @@ class MultiAgentsExecutionEngine:
                         address=_address,
                         model_name=model_name,
                         tokenizer=self.tokenizer_dict[policy_name],
+                        enable_thinking=enable_thinking,
                         image_data=None,
                         application_id=str(uuid.uuid4()),
                         env_idx=env_idx,
                         policy_name=policy_name,
                         timeout=self.generate_timeout,
-                        mode=self.mode
+                        mode=self.mode,
+                        override_temperature=override_temperature
                     )
                 except Exception:
                     output_dpr = None
                     response_str = None
                     
                 current_agent.update_from_model(response_str)
-                self.multi_logger.log_env_agent_info(
+                
+                env_worker_id=random.randint(0, self.num_workers-1)
+                
+                
+                try:
+                    await asyncio.wait_for(
+                        current_agent.step(self.envs[rollout_idx_list[idx]],env_worker=self.env_workers[env_worker_id]),
+                        timeout=self.step_timeout
+                    )
+                except asyncio.TimeoutError:
+                    current_agent.agent_reward = 0.0
+                    current_agent.reward_history.append(0.0)
+                if agent_name==self.turn_order[-1]:
+                    self.multi_logger.log_env_agent_info(
                         self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
                         "Trajectory information updated",
                         {
-                            "agent_prompt": prompt,
-                            "agent_response": response_str,
+                            "prompt": prompt,
+                            "response": response_str,
+                            "env_state": env.state,
                        
                         }
                     )
+                if self.env_name=="math_aggretion_env" and self.mode=="validate":
+                    print(f"DEBUG: Checking agent {agent_name}, is_pass={current_agent.is_pass}, turn_order[-1]={self.turn_order[-1]}")
+                    if current_agent.is_pass:
+                        print(f"DEBUG: Adding successful rollout {rollout_idx} for agent {agent_name}")
+                        self.success_rollout_idx_list_dict[agent_name].append(rollout_idx)
+    
+        
+                
+                if output_dpr is not None:
+                    output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
+                    output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object) 
                 return {
+                    'rollout_idx': rollout_idx,
                     'current_agent': current_agent,
                     'output_dpr': output_dpr,
                     'policy_name': policy_name,
                 }
 
             
-            tasks = []
-            task_info = []  # store (idx, agent_idx, agent_name) information
-            
-            for idx in range(len(rollout_idx_list)):
-                for agent_idx, agent_name in enumerate(self.turn_order):
-                    tasks.append(single_generate_response(idx, agent_idx, agent_name))
-                    task_info.append((idx, agent_idx, agent_name))
-            
-            # parallel execute all tasks
-            flat_results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # reorganize results into 2D structure: results[idx][agent_idx]
-            results = []
-            for idx in range(len(rollout_idx_list)):
-                agent_results = []
-                for agent_idx in range(len(self.turn_order)):
-                    # calculate the flat index
-                    flat_idx = idx * len(self.turn_order) + agent_idx
-                    agent_results.append(flat_results[flat_idx])
-                results.append(agent_results)
-
-            async def single_step(idx):
-
-                for agent_idx,agent_name in enumerate(self.turn_order):
-                    current_agent = agent_groups[idx][agent_idx]
-                    try:
-                        await asyncio.wait_for(
-                            current_agent.step(self.envs[rollout_idx_list[idx]],env_worker=self.env_workers[rollout_idx_list[idx]]),
-                            timeout=self.step_timeout
-                        )
-                    except asyncio.TimeoutError:
-                        current_agent.agent_reward = 0.0
-                        current_agent.reward_history.append(0.0)
-                    output_dpr = results[idx][agent_idx]['output_dpr']
-                    if output_dpr is not None:
-                        output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
-                        output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)  # Add agent name for metrics trackin
+            if self.parallel:
+                # 并行执行所有任务
+                tasks = []
+                task_info = []  # store (idx, agent_idx, agent_name) information
+                
+                for idx in range(len(rollout_idx_list)):
+                    for agent_idx, agent_name in enumerate(self.turn_order):
+                        # 获取当前 agent 的 sample_num 配置
+                        agent_config = self.agent_config_dict.get(agent_name, None)
+                        sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
+                        tasks.append(single_generate_response(idx, agent_idx, agent_name, sample_num))
+                        task_info.append((idx, agent_idx, agent_name))
+                
+                # parallel execute all tasks
+                flat_results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # reorganize results into 2D structure: results[idx][agent_idx]
+                results = []
+                for idx in range(len(rollout_idx_list)):
+                    agent_results = []
+                    for agent_idx in range(len(self.turn_order)):
+                        # calculate the flat index
+                        flat_idx = idx * len(self.turn_order) + agent_idx
+                        agent_results.append(flat_results[flat_idx])
+                    results.append(agent_results)
                     
-            steps = [single_step(idx) for idx in range(len(rollout_idx_list))]
-            await asyncio.gather(*steps)
+            else:
+                # 除最后一个agent外并行执行，最后一个agent顺序执行
+                results = []
+                flat_results = []  # 为非并行模式初始化 flat_results
+                
+                for idx in range(len(rollout_idx_list)):
+                    agent_results = []
+                    
+                    # 如果只有一个agent，直接执行
+                    if len(self.turn_order) == 1:
+                        agent_name = self.turn_order[0]
+                        agent_config = self.agent_config_dict.get(agent_name, None)
+                        sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
+                        
+                        if sample_num > 1:
+                            concurrent_tasks = []
+                            for sample_idx in range(sample_num):
+                                concurrent_tasks.append(single_generate_response(idx, 0, agent_name, sample_num))
+                            sample_results = await asyncio.gather(*concurrent_tasks)
+                            for sample_result in sample_results:
+                                agent_results.append(sample_result)
+                                flat_results.append(sample_result)
+                        else:
+                            result = await single_generate_response(idx, 0, agent_name, sample_num)
+                            agent_results.append(result)
+                            flat_results.append(result)
+                    
+                    else:
+                        # 先并行执行前n-1个agents
+                        if len(self.turn_order) > 1:
+                            parallel_tasks = []
+                            parallel_agent_info = []  # 存储 (agent_idx, agent_name, sample_num) 信息
+                            
+                            for agent_idx, agent_name in enumerate(self.turn_order[:-1]):  # 除最后一个agent
+                                agent_config = self.agent_config_dict.get(agent_name, None)
+                                sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
+                                
+                                if sample_num > 1:
+                                    # 为每个样本创建任务
+                                    for sample_idx in range(sample_num):
+                                        parallel_tasks.append(single_generate_response(idx, agent_idx, agent_name, sample_num))
+                                        parallel_agent_info.append((agent_idx, agent_name, sample_num))
+                                else:
+                                    parallel_tasks.append(single_generate_response(idx, agent_idx, agent_name, sample_num))
+                                    parallel_agent_info.append((agent_idx, agent_name, sample_num))
+                            
+                            # 并行执行前n-1个agents的所有任务
+                            parallel_results = await asyncio.gather(*parallel_tasks)
+                            
+                            # 按agent_idx重新组织结果
+                            agent_sample_results = {}  # {agent_idx: [results]}
+                            for result, (agent_idx, agent_name, sample_num) in zip(parallel_results, parallel_agent_info):
+                                if agent_idx not in agent_sample_results:
+                                    agent_sample_results[agent_idx] = []
+                                agent_sample_results[agent_idx].append(result)
+                            
+                            # 按顺序添加前n-1个agents的结果
+                            for agent_idx in range(len(self.turn_order) - 1):
+                                if agent_idx in agent_sample_results:
+                                    for result in agent_sample_results[agent_idx]:
+                                        agent_results.append(result)
+                                        flat_results.append(result)
+                        
+                        # 最后执行最后一个agent
+                        last_agent_idx = len(self.turn_order) - 1
+                        last_agent_name = self.turn_order[last_agent_idx]
+                        agent_config = self.agent_config_dict.get(last_agent_name, None)
+                        sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
+                        
+                        if sample_num > 1:
+                            # 创建并发任务列表
+                            concurrent_tasks = []
+                            for sample_idx in range(sample_num):
+                                concurrent_tasks.append(single_generate_response(idx, last_agent_idx, last_agent_name, sample_num))
+                            
+                            sample_results = await asyncio.gather(*concurrent_tasks)
+                            # 收集所有样本结果
+                            for sample_result in sample_results:
+                                agent_results.append(sample_result)
+                                flat_results.append(sample_result)
+                        else:
+                            # sample_num = 1 时，顺序执行
+                            result = await single_generate_response(idx, last_agent_idx, last_agent_name, sample_num)
+                            agent_results.append(result)
+                            flat_results.append(result)
+                    
+                    results.append(agent_results)
+
+           
+                    
+           
             rollout_score_idx=[]
             for idx in range(len(rollout_idx_list)):
                 result_score=0
@@ -572,7 +700,7 @@ class MultiAgentsExecutionEngine:
             envs_list = [copy.deepcopy(selected_env) for _ in envs_list]
             agent_groups = [copy.deepcopy(selected_agent_group) for _ in agent_groups]
             
-            if agent_done:
+            if agent_done and if_dapo:
                 for result in flat_results:
                         if result is not None and not isinstance(result, Exception):
                             current_agent = result['current_agent']
@@ -587,8 +715,35 @@ class MultiAgentsExecutionEngine:
                                         trajectory_per_task_dict[policy_name], 
                                         output_dpr
                                     ])
-                                    print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
+                                    #print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
                 break
+            else:
+                for result in flat_results:
+                        if result is not None and not isinstance(result, Exception):
+                            current_agent = result['current_agent']
+                            output_dpr = result['output_dpr']
+                            
+                            policy_name = result['policy_name']
+                            
+                            if output_dpr is not None:
+                                if trajectory_per_task_dict[policy_name].batch is None:
+                                    trajectory_per_task_dict[policy_name] = output_dpr
+                                else:
+                                    # Use concat instead of union, because each response content is different
+                                    trajectory_per_task_dict[policy_name] = DataProto.concat([
+                                        trajectory_per_task_dict[policy_name], 
+                                        output_dpr
+                                    ])
+                                    #print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
+                
+                if selected_agent_group[-1].done:
+                    break
+        
+        
+        
+        
+        
+        
         return trajectory_per_task_dict
 
 
@@ -601,10 +756,10 @@ class MultiAgentsExecutionEngine:
         
         concurrent_timer.checkpoint("Creating async tasks")
         
-        if rollout_mode == "tree" and self.mode=="train":
+        if rollout_mode == "tree" and self.mode=="train" or self.env_name=="math_aggretion_env":
             tasks = [
                 asyncio.create_task(
-                    self.generate_env_idx_rollout(env_idx), 
+                    self.generate_env_idx_rollout(env_idx, if_dapo=getattr(self.config, 'if_dapo', True)), 
                     name=f"env_{env_idx}_rollouts"
                 )
                 for env_idx in env_idx_list
@@ -638,7 +793,7 @@ class MultiAgentsExecutionEngine:
                     rollout_result = await completed_task
         
                     for policy_name, policy_data in rollout_result.items():
-                        print(policy_data)
+                        #print(policy_data)
                         if policy_data.batch is not None:  
                             if aggregated_results[policy_name].batch is None:
                                 aggregated_results[policy_name] = policy_data
@@ -647,7 +802,7 @@ class MultiAgentsExecutionEngine:
                                     aggregated_results[policy_name], 
                                     policy_data
                                 ])
-                            print(f"The length of concatenated aggregated_results[policy_name]: {len(aggregated_results[policy_name])}")
+                            #print(f"The length of concatenated aggregated_results[policy_name]: {len(aggregated_results[policy_name])}")
                     
                     completed_count += 1
                     
@@ -695,8 +850,11 @@ class MultiAgentsExecutionEngine:
         concurrent_timer.checkpoint("All tasks completed")
         with open("rollout_data.json", "w", encoding="utf-8") as f:
             json.dump(self.rollout_latency_dict, f, ensure_ascii=False, indent=4)
-        
-        
+        if self.mode=="validate":
+            for agent_name in self.turn_order:
+                success_rate = len(self.success_rollout_idx_list_dict.get(agent_name, [])) / len(tasks)
+                self.multi_logger.log_rollout_summary(self.mode, -1, -1, {agent_name: success_rate}, f"validate finished,success_rate: {success_rate}")
+            
         self.multi_logger.log_async_event(
             self.mode, -1, -1, "concurrent_batch_complete",
             "Concurrent execution completed",
@@ -913,9 +1071,9 @@ def run_benchmark_with_hydra(config: DictConfig):
     # 加载 trainer 配置
     trainer_config = OmegaConf.load("pettingllms/config/code/ppo_trainer/eval.yaml")
     
-    print(f"运行 benchmark: {config.env.benchmark}")
-    print(f"实验名称: {config.get('experiment_name', 'code_test')}")
-    print("="*50)
+    #print(f"运行 benchmark: {config.env.benchmark}")
+    #print(f"实验名称: {config.get('experiment_name', 'code_test')}")
+    #print("="*50)
     
    
 if __name__ == "__main__":

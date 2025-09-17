@@ -86,7 +86,15 @@ def load_math_problem_batch(
     current_dir = Path(__file__).parent.parent.parent.parent  # 回到 pettingllms 根目录
     local_datasets_dir = current_dir / "datasets" / "math" / dataset_name.lower().replace("/", "_")
     split_name = "train" if mode == "train" else "test"
-    parquet_file = local_datasets_dir / f"{split_name}.parquet"
+    if mode == "train":
+        # 检查config.difficulty是否为train_polaris
+        difficulty = getattr(config, "difficulty", None) if config else None
+        if difficulty == "train_polaris":
+            parquet_file = local_datasets_dir / f"train_polaris.parquet"
+        else:
+            parquet_file = local_datasets_dir / f"{split_name}.parquet"
+    else:
+        parquet_file = local_datasets_dir / f"{split_name}.parquet"
     print(f"📄 目标文件: {parquet_file}")
     
     if mode == "train":

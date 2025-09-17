@@ -40,7 +40,7 @@ env:
   resolve: false
   multi_modal: false
   batched_init: true
-
+if_dapo: true
 # Multi-agent interaction configuration
 multi_agent_interaction:
   

@@ -131,7 +131,22 @@ def run_ppo(config):
                 _system_config = None
 
             # this is for local ray cluster
+            # Get GPU count from config to ensure proper GPU detection
+            n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1) if hasattr(config, 'resource') else 1
+            
+            # Validate GPU availability before Ray initialization
+            import os
+            cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+            if cuda_visible_devices:
+                available_gpu_count = len(cuda_visible_devices.split(','))
+                print(f"CUDA_VISIBLE_DEVICES: {cuda_visible_devices}, Available GPUs: {available_gpu_count}")
+                if available_gpu_count < n_gpus_per_node:
+                    print(f"Warning: Requested {n_gpus_per_node} GPUs but only {available_gpu_count} are visible. Adjusting to {available_gpu_count}")
+                    n_gpus_per_node = available_gpu_count
+            
+            print(f"Initializing Ray with {n_gpus_per_node} GPUs")
             ray.init(
+                num_gpus=n_gpus_per_node,
                 runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}},
                 **({"_temp_dir": _ray_tmp_dir} if _ray_tmp_dir else {}),
                 **({"_system_config": _system_config} if _system_config else {})
@@ -243,7 +258,9 @@ def train_multi_agents(config):
             Role.RefPolicy: global_pool_id,
         }
 
+        print(f"Creating resource pool for {model_key}: {resource_pool_spec}")
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
+        resource_pool_manager.create_resource_pool()  # Explicitly create and validate resource pools
         managers.append(resource_pool_manager)
 
 

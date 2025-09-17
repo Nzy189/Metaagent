@@ -1,6 +1,6 @@
 set -x
-export RAY_TMPDIR="/home/lah003/workspace/PettingLLMs/tmp"
-export CUDA_VISIBLE_DEVICES=2,3
+
+export CUDA_VISIBLE_DEVICES=0
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -18,21 +18,33 @@ export LD_LIBRARY_PATH=$CUDA_HOME/targets/x86_64-linux/lib:${LD_LIBRARY_PATH}
 
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}
 
-
-
 model_0_config_path="models.model_0.ppo_trainer_config"
-model_0_data_dir=~/data/code/model_0
-
+train_data_size=32
+val_data_size=32
+model_0_data_dir=~/data/math/model_0
 
 
 model_0_USE_GRPO="$model_0_config_path.algorithm.adv_estimator=grpo $model_0_config_path.actor_rollout_ref.actor.use_kl_loss=False"
 
-model_0_resource="resource.n_gpus_per_node=2  $model_0_config_path.trainer.n_gpus_per_node=2 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=2"
+model_0_resource="resource.n_gpus_per_node=1  $model_0_config_path.trainer.n_gpus_per_node=1 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=1"
 
 model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/train.parquet +$model_0_config_path.data.val_files=$model_0_data_dir/text/test.parquet"
 
-python3 -m pettingllms.trainer.train --config-path ../config/code --config-name code_eval_single_agent \
-    $model_0_USE_GRPO $model_0_resource $model_0_data data.epoch_size=60 data.resample_freq=3\
+python3 -m pettingllms.trainer.train --config-path ../config/math --config-name math_aggretion \
+    $model_0_USE_GRPO $model_0_resource $model_0_data\
+    models.model_0.path=/home/lah003/models/Qwen3-1.7B\
+    benchmark=AIME24\
+    experiment_name=1.7b_Single_AIME25\
+    if_dapo=True\
+    trainer.total_training_steps=400\
+    trainer.save_freq=50\
+    data.epoch_size=30\
+    data.gen_batch_size=128\
+    data.gen_n_samples=4\
+    data.max_prompt_length=8192\
+    data.max_response_length=8192\
+    data.resample_freq=1\
+    data.filter_method=mean\
+    data.filter_ratio=0.3\
     sample_mode=tree\
-    experiment_name=4B_base_max_tree_epoch\
-    data.filter_ratio=0.5\
+    env.max_turns=1\

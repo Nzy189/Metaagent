@@ -389,7 +389,7 @@ trainer:
   log_val_generations: 0
   rollout_data_dir: null # directory for logging the rollout data, no dump if null
   validation_data_dir: null # directory for logging the validation data, no dump if null
-  save_freq: -1
+  save_freq: 40
   # auto: find the last ckpt to resume. If can't find, start from scratch
   resume_mode: auto # or disable or resume_path if resume_from_path is set
   resume_from_path: null
@@ -399,7 +399,7 @@ trainer:
   default_hdfs_dir: null
   del_local_ckpt_after_load: False
   default_local_dir: checkpoints/verl_examples/gsm8k
-  max_actor_ckpt_to_keep: 3
+  max_actor_ckpt_to_keep: 2
   max_critic_ckpt_to_keep: null
   # The timeout for ray worker group to wait for the register center to be ready
   ray_wait_register_center_timeout: 300

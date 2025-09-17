@@ -28,21 +28,7 @@ import errno
 import signal
 from typing import Any
 def _stdin_from_input_val_like_inproc(input_val: Any) -> str:
-    """
-    生成与 `_worker_inproc` 近似语义的 stdin：
-    - 若输入为 list/tuple，则按行拼接
-    - 统一换行符为 \n
-    - 确保最后一行以换行结尾，避免 input() 读到 EOF
-    不额外移除代码块/标记（与 inproc 保持一致）。
-    """
-    if isinstance(input_val, (list, tuple)):
-        input_text = "\n".join([str(x).rstrip("\n") for x in input_val])
-    else:
-        input_text = str(input_val)
-    input_text = input_text.replace("\r\n", "\n").replace("\r", "\n")
-    if not input_text.endswith("\n"):
-        input_text = input_text + "\n"
-    return input_text
+    return str(input_val)
 
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, List, Union
@@ -94,6 +80,7 @@ except ImportError:
 def load_problem_batch( 
     indices: List[int],
     dataset_name: str="train",
+    difficulty: str="difficult",
     benchmark_name: str="test",
     split: str = "train",
     mode: str = "train"
@@ -123,6 +110,12 @@ def load_problem_batch(
     current_dir = Path(__file__).parent.parent.parent.parent  # 回到 pettingllms 根目录
     local_datasets_dir = current_dir / "datasets" / "code" / dataset_name.lower().replace("/", "_")
     split_name = "train" if mode == "train" else benchmark_name
+    if difficulty == "easy" and mode == "train":
+        split_name = "apps_train"
+    if difficulty == "easier" and mode == "train":
+        split_name = "apps_train_easier"
+    if difficulty == "test":
+        split_name = "apps_test"
     parquet_file = local_datasets_dir / f"{split_name}.parquet"
     if mode == "train":
         if not parquet_file.exists():
@@ -249,7 +242,55 @@ async def _worker_docker(
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script)
 
-        stdin_text = _stdin_from_input_val_like_inproc(input_val)
+        # 在子进程内用 exec 执行用户脚本，并用 fake_input 实现按行 input()
+        runner_path = os.path.join(tmpdir, "runner.py")
+        runner_code = textwrap.dedent(
+            """
+            import sys, io, typing
+
+            def _main():
+                input_data = sys.stdin.read()
+                input_lines = iter(input_data.splitlines())
+
+                def fake_input(prompt: str = "") -> str:
+                    try:
+                        return next(input_lines)
+                    except StopIteration:
+                        raise EOFError("No more input")
+
+                original_stdin = sys.stdin
+                sys.stdin = io.StringIO(input_data)
+
+                context = {
+                    "__name__": "__main__",
+                    "input": fake_input,
+                    "List": typing.List,
+                    "Tuple": typing.Tuple,
+                    "Optional": typing.Optional,
+                }
+
+                try:
+                    with open("script.py", "r", encoding="utf-8") as sf:
+                        code_text = sf.read()
+                    try:
+                        exec(code_text, context)
+                    except SystemExit:
+                        # 与参考实现一致：捕获 SystemExit，仍然保留已打印输出
+                        pass
+                    except Exception as e:
+                        # 统一错误格式
+                        print(f"error: {e}")
+                finally:
+                    sys.stdin = original_stdin
+
+            if __name__ == "__main__":
+                _main()
+            """
+        )
+        with open(runner_path, "w", encoding="utf-8") as f:
+            f.write(runner_code)
+
+        stdin_text = input_val
         stdin_path = os.path.join(tmpdir, "stdin.txt")
         stdout_path = os.path.join(tmpdir, "stdout.txt")
         stderr_path = os.path.join(tmpdir, "stderr.txt")
@@ -273,7 +314,7 @@ async def _worker_docker(
             })
 
             proc = await asyncio.create_subprocess_exec(
-                sys.executable, "-X", "dev", "-W", "default", "-u", script_path,
+                sys.executable, "-X", "dev", "-W", "default", "-u", runner_path,
                 stdin=stdin_file,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -401,6 +442,63 @@ async def test_if_eq(x, y):
     return " ".join(x.split()) == " ".join(y.split())
 
 
+async def get_code_execution_output(
+    code: str,
+    input_val: str = "",
+    timeout: float = 40.0,
+    ray_actor: Any | None = None,
+) -> str:
+    """
+    Execute Python code with input and return the output.
+    Uses Ray worker for execution with proper timeout handling for concurrent rollouts.
+    
+    Args:
+        code: Python code to execute
+        input_val: Input data for the code
+        timeout: Execution timeout
+        ray_actor: Ray actor for code execution
+        
+    Returns:
+        Code execution output as string
+    """
+    try:
+        if ray_actor is None:
+            raise ValueError("ray_actor is required")
+        
+        # 为大规模并发增加超时缓冲时间
+        # 对于500个rollout，Ray调度和执行需要更多时间
+        timeout_buffer = max(timeout * 2.0, 30.0)  # 至少30秒缓冲
+        total_timeout = timeout + timeout_buffer
+        
+        #print(f"🔧 执行代码，超时设置: {total_timeout}s (原始: {timeout}s + 缓冲: {timeout_buffer}s)")
+        
+        # 使用 Ray actor 执行代码，并用 _await_ray_object_ref 处理超时
+        obj_ref = ray_actor.run.remote(code, input_val, "", timeout)  # expected_output 设为空字符串
+        result_dict = await _await_ray_object_ref(obj_ref, total_timeout)
+        
+        # 提取执行结果
+        if isinstance(result_dict, dict):
+            execution_output = result_dict.get("code_execution_output", "")
+        else:
+            execution_output = str(result_dict)
+            
+        if isinstance(execution_output, str) and execution_output.startswith("error:"):
+            print(f"⚠️ Ray执行返回错误: {execution_output}")
+        else:
+            print(f"✅ Ray执行成功，输出长度: {len(str(execution_output))} 字符")
+            
+        return execution_output
+        
+    except asyncio.TimeoutError as e:
+        error_msg = f"Ray execution timed out after {total_timeout}s"
+        print(f"❌ {error_msg}")
+        return f"error: {error_msg}"
+    except Exception as e:
+        error_msg = f"Ray execution failed: {e}"
+        print(f"❌ {error_msg}")
+        return f"error: {error_msg}"
+
+
 
 
 
@@ -447,8 +545,13 @@ async def evaluate_code_against_tests(
                 actor.run.remote(code, test_inputs[i], test_outputs[i], timeout, image)
             )
             
+        # 大幅增加超时缓冲时间以处理大规模并发
+        timeout_buffer = min(timeout * 1.5, 120.0)  # 最多120秒缓冲
+        total_timeout = timeout + timeout_buffer
+        #print(f"🚀 开始执行 {total_tests} 个代码测试任务，超时时间: {total_timeout}s")
+        
         async_tasks = [
-            _await_ray_object_ref(obj_ref, (timeout - 3.0)/total_tests)
+            _await_ray_object_ref(obj_ref, total_timeout)
             for obj_ref in obj_refs
         ]        
         results_or_exc = await asyncio.gather(*async_tasks, return_exceptions=True)
@@ -467,7 +570,12 @@ async def evaluate_code_against_tests(
             else:
                 #print(f"item code_execution_output: {item.get('code_execution_output')}")
                 processed_results.append(item)
-            results = processed_results
+        results = processed_results
+        
+        # 统计执行结果
+        success_count = sum(1 for r in results if not str(r.get("code_execution_output", "")).startswith("error:"))
+        error_count = len(results) - success_count
+        #print(f"✅ Ray代码测试任务完成: {success_count} 成功, {error_count} 失败")
     except Exception as e:
         print(f"Ray execution failed, falling back to docker: {e}")
         try:
@@ -572,7 +680,9 @@ def get_ray_docker_worker_cls():
     try:
         _max_conc = 20
 
-        @ray.remote(num_cpus=0.1, max_concurrency=_max_conc)
+        # 优化配置：支持500个rollout，每个rollout可能有多个测试用例
+        # 使用极少的CPU资源但支持大量并发
+        @ray.remote(num_cpus=0.001, max_concurrency=10000)
         class _RayDockerWorker:
             def __init__(self, idx):
                 if not isinstance(idx, (int, float)):
@@ -592,7 +702,7 @@ def get_ray_docker_worker_cls():
                 script: str,
                 input_val: str,
                 expected_output: str,
-                timeout: float = 10.0,
+                timeout: float = 40.0,  # 与外层函数保持一致
                 image: str = "python:3.11-slim",
             ) -> Dict[str, Any]:
                 
@@ -810,10 +920,12 @@ def test_load_problem(batch_size: int):
         results= load_problem_batch(
             indices=list(range(batch_size)),
             benchmark_name="train",
-            mode="validate"
+            mode="train",
+            difficulty="easy"
+
         )
         print(f"--------------------------------Here is the benchmark--------------------------------")
-        print(len(results))
+        print(results)
         
 
 if __name__ == "__main__":

@@ -32,29 +32,35 @@ except ImportError:
     ray = None
 
 def force_kill_ray_processes():
-    """强制杀死所有 Ray 进程"""
+    """强制杀死所有 Ray 及相关训练进程（多轮次、尽可能覆盖）。"""
     try:
         print("Force killing Ray processes...")
-        # 杀死所有 Ray 相关进程
-        commands = [
-            ['pkill', '-9', '-f', 'ray'],
-            ['pkill', '-9', '-f', 'raylet'],
-            ['pkill', '-9', '-f', 'python.*ray'],
-            ['pkill', '-9', '-f', 'gcs_server'],
-            ['pkill', '-9', '-f', 'dashboard'],
-            ['pkill', '-9', '-f', 'WorkerDict'],
-            ['pkill', '-9', '-f', 'train_multi_agents'],
+        # 更全面的匹配模式
+        patterns = [
+            'ray', 'raylet', 'python.*ray', 'gcs_server', 'dashboard', 'plasma_store',
+            'WorkerDict', 'ActorRolloutRefWorker', 'AsyncActorRolloutRefWorker',
+            'pettingllms.trainer.train', 'pettingllms/trainer/train.py', 'train.py',
+            'default_worker.py', 'worker.py', 'ray::'
         ]
-        
-        for cmd in commands:
+        # 多轮尝试，避免竞争条件
+        for _ in range(3):
+            for pat in patterns:
+                try:
+                    subprocess.run(['pkill', '-9', '-f', pat], capture_output=True, timeout=5)
+                except Exception:
+                    pass
+            # 同时杀掉占用项目 tmp 的进程
             try:
-                result = subprocess.run(cmd, capture_output=True, timeout=5)
-                if result.returncode == 0:
-                    print(f"✓ Killed processes matching: {' '.join(cmd[3:])}")
-            except:
+                proj_tmp = os.path.join(os.getcwd(), 'tmp')
+                cmd = f"lsof +D {proj_tmp} 2>/dev/null | awk 'NR>1 {{print $2}}' | sort -u"
+                res = subprocess.run(['bash', '-lc', cmd], capture_output=True, text=True, timeout=10)
+                pids = [p for p in res.stdout.strip().split('\n') if p]
+                if pids:
+                    subprocess.run(['bash', '-lc', f"kill -9 {' '.join(pids)}"], timeout=10)
+            except Exception:
                 pass
-        
-        print("Force killed all Ray processes")
+            time.sleep(1)
+        print("Force killed all Ray-related processes (best-effort)")
     except Exception as e:
         print(f"Error force killing Ray processes: {e}")
 
@@ -120,65 +126,125 @@ def force_kill_pllm_processes():
 
 
 def cleanup_ray_directory():
-    # 自动检测项目根目录中的tmp文件夹
-    # 当前工作目录应该是项目根目录
-    ray_tmp_dir = os.path.join(os.getcwd(), "tmp")
-    
-    # 检查目录大小
-    try:
-        if os.path.exists(ray_tmp_dir):
-            result = subprocess.run(['du', '-sh', ray_tmp_dir], 
-                                  capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                size = result.stdout.strip().split('\t')[0]
-                print(f"临时目录大小: {size}")
-    except:
-        pass
-    
-    try:
-        # 对于大量文件，最快的方法是重新创建目录
-        print(f"开始超快速清理: {ray_tmp_dir}")
-        
-        # 方法1: 重新创建目录（最快）
-        if os.path.exists(ray_tmp_dir):
-            # 创建临时目录名
-            temp_name = ray_tmp_dir + "_temp_" + str(int(time.time()))
-            
-            # 重命名原目录（瞬间完成）
-            os.rename(ray_tmp_dir, temp_name)
-            
-            # 立即创建新的空目录
-            os.makedirs(ray_tmp_dir, exist_ok=True)
-            
-            # 在后台异步删除旧目录，使用多个进程加速
-            subprocess.Popen(['rm', '-rf', temp_name], 
-                           stdout=subprocess.DEVNULL, 
-                           stderr=subprocess.DEVNULL)
-            
-            # 额外的清理进程，确保删除完成
-            subprocess.Popen(['bash', '-c', f'sleep 5 && rm -rf {temp_name}_*'], 
-                           stdout=subprocess.DEVNULL, 
-                           stderr=subprocess.DEVNULL)
-            
-            print(f"超快速清理完成: {ray_tmp_dir} (旧文件在后台删除中)")
-        else:
-            # 如果目录不存在，直接创建
-            os.makedirs(ray_tmp_dir, exist_ok=True)
-            print(f"目录不存在，已创建: {ray_tmp_dir}")
-            
-    except Exception as e:
-        print(f"超快速清理失败，使用备用方法: {e}")
+    """强制清理项目 tmp 下所有 ray 相关与执行残留目录，并兜底清理 /tmp/ray。"""
+    project_root = os.getcwd()
+    project_tmp = os.path.join(project_root, 'tmp')
+    ray_tmp = os.path.join(project_root, 'tmp', 'ray_tmp')
+    ray_spill = os.path.join(project_root, 'tmp', 'ray_spill')
+    sys_tmp_ray = '/tmp/ray'
+
+    dirs_to_clean = [project_tmp, ray_tmp, ray_spill, sys_tmp_ray]
+
+    def print_dir_size(path: str):
         try:
-            # 备用方法1: 使用系统命令
-            subprocess.run(f'rm -rf {ray_tmp_dir}/*', shell=True, capture_output=True, timeout=30)
-            subprocess.run(f'rm -rf {ray_tmp_dir}/.*', shell=True, capture_output=True, timeout=30)
-            print(f"备用方法1完成: {ray_tmp_dir}")
-        except Exception as e2:
-            print(f"备用方法1失败: {e2}")
-            # 备用方法2: 使用shutil
-            shutil.rmtree(ray_tmp_dir, ignore_errors=True)
-            os.makedirs(ray_tmp_dir, exist_ok=True)
-            print(f"备用方法2完成: {ray_tmp_dir}")
+            if os.path.exists(path):
+                result = subprocess.run(['du', '-sh', path], capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    size = result.stdout.strip().split('\t')[0]
+                    print(f" - {path} 大小: {size}")
+        except Exception:
+            pass
+
+    print("即将清理以下目录（存在的才会处理）：")
+    for d in dirs_to_clean:
+        print_dir_size(d)
+
+    # 第一步：尝试释放目录权限并杀掉占用句柄的进程
+    for d in dirs_to_clean:
+        if not os.path.exists(d):
+            continue
+        try:
+            try:
+                subprocess.run(['chmod', '-R', 'u+w', d], timeout=10, capture_output=True)
+            except Exception:
+                pass
+            cmd = f"lsof +D {d} 2>/dev/null | awk 'NR>1 {{print $2}}' | sort -u"
+            res = subprocess.run(['bash', '-lc', cmd], capture_output=True, text=True, timeout=10)
+            pids = [p for p in res.stdout.strip().split('\n') if p]
+            if pids:
+                print(f" - 发现占用 {d} 的进程: {', '.join(pids)}, 执行 kill -9...")
+                subprocess.run(['bash', '-lc', f"kill -9 {' '.join(pids)}"], timeout=10)
+        except Exception as e:
+            print(f" - 终止占用 {d} 的进程时出错: {e}")
+
+    # 第二步：逐子项删除，确保 tmp 下所有内容被删（包含隐藏项）
+    def wipe_children(dir_path: str):
+        if not os.path.isdir(dir_path):
+            return
+        try:
+            for name in os.listdir(dir_path):
+                child = os.path.join(dir_path, name)
+                try:
+                    if os.path.isdir(child) and not os.path.islink(child):
+                        try:
+                            shutil.rmtree(child, ignore_errors=False)
+                        except Exception:
+                            subprocess.run(['rm', '-rf', child], timeout=60, capture_output=True)
+                    else:
+                        try:
+                            os.unlink(child)
+                        except Exception:
+                            subprocess.run(['rm', '-f', child], timeout=30, capture_output=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # 对项目 tmp 目录做逐子项删除（保留 tmp 自身）
+    if os.path.isdir(project_tmp):
+        wipe_children(project_tmp)
+    else:
+        try:
+            os.makedirs(project_tmp, exist_ok=True)
+        except Exception:
+            pass
+
+    # 对 ray_tmp 与 ray_spill 做彻底删除并重建
+    for d in [ray_tmp, ray_spill]:
+        if os.path.exists(d):
+            try:
+                shutil.rmtree(d, ignore_errors=False)
+            except Exception:
+                try:
+                    subprocess.run(['rm', '-rf', d], timeout=60, capture_output=True)
+                except Exception:
+                    pass
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+
+    # 对 /tmp/ray 做彻底删除并重建
+    if os.path.exists(sys_tmp_ray):
+        try:
+            shutil.rmtree(sys_tmp_ray, ignore_errors=False)
+        except Exception:
+            try:
+                subprocess.run(['rm', '-rf', sys_tmp_ray], timeout=60, capture_output=True)
+            except Exception:
+                pass
+    try:
+        os.makedirs(sys_tmp_ray, exist_ok=True)
+    except Exception:
+        pass
+
+    # 额外清理 tmp 下的 pllm_exec_* 目录（再次兜底）
+    try:
+        exec_glob_cmd = "find ./tmp -mindepth 1 -maxdepth 1 -type d -name 'pllm_exec_*' -print0 | xargs -0 -r rm -rf"
+        subprocess.run(['bash', '-lc', exec_glob_cmd], timeout=30, capture_output=True)
+    except Exception:
+        pass
+
+    # 最后兜底：使用 dotglob 清空 tmp 下所有子项
+    try:
+        bash_clear = "shopt -s dotglob nullglob; rm -rf ./tmp/*"
+        subprocess.run(['bash', '-lc', bash_clear], timeout=30, capture_output=True)
+    except Exception:
+        pass
+
+    print("清理后目录大小：")
+    for d in dirs_to_clean:
+        print_dir_size(d)
 
 
 def check_system_memory():
