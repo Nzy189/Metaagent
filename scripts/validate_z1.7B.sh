@@ -69,7 +69,7 @@ for model in "${models[@]}"; do
     +parallel=false \
     $USE_GRPO $RESOURCE $DATA \
     models.model_0.path="$model" \
-    +map_size=16 \
+    +map_size=6 \
     benchmark="sudoku4x4" \
     data.epoch_size=120 \
     data.max_prompt_length=24000 \

@@ -34,44 +34,21 @@ class EnvStateBase:
             self.observation = ""
     
     def __str__(self) -> str:
-        """Print only essential environment info"""
-        # 安全处理 tool_action 可能为 None 的情况
-        tool_action_str = ""
-        if self.tool_action is not None:
-            tool_action_str = self.tool_action[:3] if len(self.tool_action) > 3 else self.tool_action
-            tool_action_str = str(tool_action_str) + ('...' if len(self.tool_action) > 3 else '')
-        else:
-            tool_action_str = "None"
-        
-        # 安全处理 observation 可能为 None 的情况
-        observation_str = ""
-        if self.observation is not None:
-            observation_str = self.observation[:100] if len(self.observation) > 100 else self.observation
-            observation_str = str(observation_str) + ('...' if len(self.observation) > 100 else '')
-        else:
-            observation_str = "None"
-            
+        """只打印基类属性和observation"""
         return (
-            f"action: {tool_action_str}\n"
-            f"observation: {observation_str}"
+            f"tool_action: {self.tool_action}\n"
+            f"tool_code: {self.tool_code}\n"
+            f"tool_execution_output: {self.tool_execution_output}\n"
+            f"plan_action: {self.plan_action}\n"
+            f"observation: {self.observation}"
         )
     
     def __repr__(self) -> str:
         return self.__str__()
-    
-    def to_dict_compact(self) -> dict:
-        """Return compact dictionary representation for logging (base class default implementation)"""
-        return {
-            "tool_action": self.tool_action[:5] if self.tool_action is not None and len(self.tool_action) > 5 else self.tool_action,  # 最多显示5个动作
-            "tool_code_lines": len(self.tool_code.split('\n')) if self.tool_code else 0,  # 只显示代码行数
-            "tool_output_chars": len(self.tool_execution_output) if self.tool_execution_output is not None else 0,  # 只显示输出字符数
-            "plan_action": self.plan_action[:3] if self.plan_action is not None and len(self.plan_action) > 3 else self.plan_action,  # 最多显示3个计划动作
-            "observation": (self.observation[:100] + "..." if len(self.observation) > 100 else self.observation) if self.observation is not None else None  # 截断观察信息
-        }
 
 @dataclass
 class EightQueensEnvState(EnvStateBase):
-    """N-Queens problem: Place N queens on an NxN board so they don't attack each other"""
+    """N皇后问题：在NxN棋盘上放置N个皇后，使它们不互相攻击"""
     
     N: int = 8
     cols: List[int] = field(default_factory=lambda: [-1] * 8)
@@ -97,7 +74,7 @@ class EightQueensEnvState(EnvStateBase):
         self.observation = self.text_observation()
     
     def text_observation(self) -> str:
-        """Text observation"""
+        """文本观察"""
         board = []
         for r in range(self.N):
             row = ['.'] * self.N
@@ -181,22 +158,6 @@ class EightQueensEnvState(EnvStateBase):
         
         self.step_count += 1
         self.observation = self.text_observation()
-    
-    def to_dict_compact(self) -> dict:
-        """Return compact dictionary representation for logging"""
-        base_dict = super().to_dict_compact()
-        placed_queens = sum(1 for c in self.cols if c >= 0)
-        conflicts = self._conflicts(self.cols)
-        base_dict.update({
-            "board_size": f"{self.N}x{self.N}",
-            "queens_placed": placed_queens,
-            "total_queens": self.N,
-            "conflicts": conflicts,
-            "done": self.done,
-            "steps": self.step_count,
-            "reward": round(self.reward, 3)
-        })
-        return base_dict
 
 
 
@@ -234,7 +195,7 @@ class BlocksworldEnvState(EnvStateBase):
         self.observation = self.text_observation()
     
     def text_observation(self) -> str:
-        """Text observation"""
+        """文本观察"""
         obs = []
         for i, stack in enumerate(self.stacks):
             if stack:
@@ -407,20 +368,6 @@ class BlocksworldEnvState(EnvStateBase):
         self.reward = total_reward
         self.current_stacks = [list(s) for s in self.stacks]  # 更新current_stacks属性
         self.observation = self.text_observation()
-    
-    def to_dict_compact(self) -> dict:
-        """Return compact dictionary representation for logging"""
-        base_dict = super().to_dict_compact()
-        similarity = self._calculate_goal_similarity()
-        base_dict.update({
-            "total_blocks": len(self.all_blocks),
-            "stacks_count": len([s for s in self.stacks if s]),  # 非空栈数量
-            "goal_similarity": round(similarity, 3),
-            "done": self.done,
-            "steps": self.step_count,
-            "reward": round(self.reward, 3)
-        })
-        return base_dict
 
 
 # =========================================================
@@ -429,11 +376,11 @@ class BlocksworldEnvState(EnvStateBase):
 
 @dataclass
 class Sudoku4x4EnvState(EnvStateBase):
-    """Dynamic size Sudoku: Fill NxN grid with row, column, and sub-grid constraints (keeping 4x4 name for compatibility)"""
+    """动态大小数独：填充NxN网格，满足行列和子网格约束（保留4x4名称以兼容现有代码）"""
     
     puzzle: Optional[List[List[int]]] = None
     seed: Optional[int] = None
-    size: int = 4  # Sudoku size, default 4x4
+    size: int = 4  # 数独大小，默认4x4
     config: Optional[dict] = None
     init_grid: List[List[int]] = field(default_factory=list)
     grid: List[List[int]] = field(default_factory=list)
@@ -444,109 +391,161 @@ class Sudoku4x4EnvState(EnvStateBase):
     def __post_init__(self):
         super().__post_init__()
         
-        # Read map_size parameter from config if available
+        # 从config中读取map_size参数，如果存在的话
         if self.config and hasattr(self.config, 'map_size'):
             self.size = self.config.map_size
         elif self.config and isinstance(self.config, dict) and 'map_size' in self.config:
             self.size = self.config['map_size']
-       
+        
+        # 验证size是否为完全平方数（数独需要是NxN，且子网格为sqrt(N)xsqrt(N)）
+        sqrt_size = int(self.size ** 0.5)
+        if sqrt_size * sqrt_size != self.size:
+            print(f"[WARN] 数独大小 {self.size} 不是完全平方数，调整为最近的完全平方数")
+            if self.size <= 1:
+                self.size = 4
+            elif self.size <= 4:
+                self.size = 4
+            elif self.size <= 9:
+                self.size = 9
+            elif self.size <= 16:
+                self.size = 16
+            else:
+                self.size = 16  # 限制最大为16x16
+        
+        # 如果提供了puzzle，直接使用
         if self.puzzle is not None:
-            assert len(self.puzzle) == self.size and all(len(row) == self.size for row in self.puzzle), f"Must be {self.size}x{self.size} grid"
+            assert len(self.puzzle) == self.size and all(len(row) == self.size for row in self.puzzle), f"必须是{self.size}x{self.size}网格"
             self.init_grid = [row[:] for row in self.puzzle]
-        # If seed is provided, generate puzzle based on seed
+        # 如果提供了seed，基于seed生成puzzle
         elif self.seed is not None:
             self.puzzle = self._generate_puzzle_from_seed(self.seed, self.size)
             self.init_grid = [row[:] for row in self.puzzle]
         else:
-            ValueError("No puzzle provided")
-        self.puzzle = [row[:] for row in self.puzzle]  # puzzle attribute needed for prompt
+            # 使用默认puzzle
+            self.puzzle = self._get_default_puzzle(self.size)
+            self.init_grid = [row[:] for row in self.puzzle]
+            
+        self.puzzle = [row[:] for row in self.puzzle]  # prompt需要的puzzle属性
         self.reset()
     
     def _generate_puzzle_from_seed(self, seed: int, size: int) -> List[List[int]]:
-        """Select sudoku puzzle from pre-generated JSON file based on seed"""
-        import json
-        import os
-        
-        # Get current file directory, then find datasets/sudoku_environments directory
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))  # Back to project root
-        sudoku_env_dir = os.path.join(project_root, "datasets", "sudoku_environments")
-        json_file = os.path.join(sudoku_env_dir, f"sudoku_{size}x{size}.json")
-        
-        try:
-            # Try to load pre-generated environments from JSON file
-            if os.path.exists(json_file):
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    environments = json.load(f)
-                
-                # Select an environment based on seed (ensure reproducibility)
-                env_index = seed % len(environments)
-                selected_env = environments[env_index]
-                return selected_env["puzzle"]
-            else:
-                print(f"[WARN] Pre-generated sudoku environment file not found: {json_file}")
-                return self._generate_fallback_puzzle(size, seed)
-                
-        except Exception as e:
-            print(f"[WARN] Error loading sudoku environment: {e}")
-            return self._generate_fallback_puzzle(size, seed)
-    
-    def _generate_fallback_puzzle(self, size: int, seed: int) -> List[List[int]]:
-        """Generate simple fallback sudoku puzzle"""
+        """基于seed生成NxN数独puzzle，使用回溯算法确保相同seed生成相同puzzle"""
         import random
         random.seed(seed)
         
-        puzzle = [[0 for _ in range(size)] for _ in range(size)]
-        box_size = int(size ** 0.5)
+        # 生成完整的数独解
+        full_solution = self._generate_complete_sudoku(size, seed)
         
-        # Place some numbers in each sub-grid
-        for box_row in range(0, size, box_size):
-            for box_col in range(0, size, box_size):
-                # Randomly place 1-2 numbers in sub-grid
-                positions = [(r, c) for r in range(box_row, box_row + box_size) 
-                           for c in range(box_col, box_col + box_size)]
-                random.shuffle(positions)
-                
-                fill_count = random.randint(1, min(2, len(positions)))
-                for i in range(fill_count):
-                    r, c = positions[i]
-                    # Try to place a safe number
-                    for num in random.sample(range(1, size + 1), size):
-                        if self._is_safe_fallback_placement(puzzle, r, c, num, size):
-                            puzzle[r][c] = num
-                            break
+        # 从完整解中移除一些数字来创建puzzle
+        puzzle = [row[:] for row in full_solution]
+        
+        # 计算要移除的数字数量（根据难度调整）
+        total_cells = size * size
+        difficulty_factor = 0.5 + (seed % 100) / 200.0  # 0.5-0.995的难度因子
+        cells_to_remove = int(total_cells * difficulty_factor)
+        
+        # 随机移除数字
+        positions = [(r, c) for r in range(size) for c in range(size)]
+        random.shuffle(positions)
+        
+        removed_count = 0
+        for r, c in positions:
+            if removed_count >= cells_to_remove:
+                break
+            
+            # 尝试移除这个数字
+            original_value = puzzle[r][c]
+            puzzle[r][c] = 0
+            
+            # 检查puzzle是否仍然有唯一解（简化版检查）
+            if self._has_unique_solution_simple(puzzle, size):
+                removed_count += 1
+            else:
+                # 恢复数字
+                puzzle[r][c] = original_value
         
         return puzzle
     
-    def _is_safe_fallback_placement(self, grid: List[List[int]], row: int, col: int, num: int, size: int) -> bool:
-        """Simple safety check for fallback puzzle generation"""
-        box_size = int(size ** 0.5)
+    def _generate_complete_sudoku(self, size: int, seed: int) -> List[List[int]]:
+        """生成完整的数独解"""
+        import random
+        random.seed(seed)
         
-        # Check row
-        for c in range(size):
-            if grid[row][c] == num:
-                return False
+        grid = [[0 for _ in range(size)] for _ in range(size)]
         
-        # Check column
-        for r in range(size):
-            if grid[r][col] == num:
-                return False
-        
-        # Check sub-grid
-        start_row = (row // box_size) * box_size
-        start_col = (col // box_size) * box_size
-        
-        for r in range(start_row, start_row + box_size):
-            for c in range(start_col, start_col + box_size):
-                if grid[r][c] == num:
+        def is_valid(grid, row, col, num):
+            # 检查行
+            for c in range(size):
+                if grid[row][c] == num:
                     return False
+            
+            # 检查列
+            for r in range(size):
+                if grid[r][col] == num:
+                    return False
+            
+            # 检查子网格
+            box_size = int(size ** 0.5)
+            start_row = row - row % box_size
+            start_col = col - col % box_size
+            
+            for r in range(start_row, start_row + box_size):
+                for c in range(start_col, start_col + box_size):
+                    if grid[r][c] == num:
+                        return False
+            
+            return True
+        
+        def solve(grid):
+            for row in range(size):
+                for col in range(size):
+                    if grid[row][col] == 0:
+                        numbers = list(range(1, size + 1))
+                        random.shuffle(numbers)  # 随机化数字顺序
+                        
+                        for num in numbers:
+                            if is_valid(grid, row, col, num):
+                                grid[row][col] = num
+                                
+                                if solve(grid):
+                                    return True
+                                
+                                grid[row][col] = 0
+                        
+                        return False
+            return True
+        
+        solve(grid)
+        return grid
+    
+    def _has_unique_solution_simple(self, puzzle: List[List[int]], size: int) -> bool:
+        """简化版的唯一解检查（为了性能考虑）"""
+        # 计算空格数量，如果太多空格，可能没有唯一解
+        empty_cells = sum(row.count(0) for row in puzzle)
+        total_cells = size * size
+        
+        # 如果空格太多（超过70%），认为可能没有唯一解
+        if empty_cells > total_cells * 0.7:
+            return False
+        
+        # 简单检查：每行、每列、每个子网格是否有足够的约束
+        box_size = int(size ** 0.5)
+        for i in range(size):
+            # 检查行
+            row_filled = sum(1 for x in puzzle[i] if x != 0)
+            if row_filled < size // 3:  # 至少填充1/3
+                return False
+            
+            # 检查列
+            col_filled = sum(1 for r in range(size) if puzzle[r][i] != 0)
+            if col_filled < size // 3:
+                return False
         
         return True
     
-    
     def _get_default_puzzle(self, size: int) -> List[List[int]]:
-        """Get default NxN sudoku puzzle"""
-        # Use different default puzzles for different sizes
+        """获取默认的NxN数独puzzle"""
+        # 对于不同大小使用不同的默认puzzle
         if size == 4:
             return [[1, 0, 0, 4],
                     [0, 0, 1, 0], 
@@ -565,27 +564,27 @@ class Sudoku4x4EnvState(EnvStateBase):
                 [0, 0, 0, 0, 8, 0, 0, 7, 9]
             ]
         elif size == 16:
-            # 16x16 sudoku default puzzle (simplified version)
+            # 16x16数独的默认puzzle（简化版）
             puzzle = [[0 for _ in range(16)] for _ in range(16)]
-            # Fill some basic numbers
+            # 填充一些基本数字
             puzzle[0] = [1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
             puzzle[1] = [0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0]
             return puzzle
         else:
-            # For other sizes, generate a basic puzzle
+            # 对于其他大小，生成一个基本的puzzle
             return self._generate_puzzle_from_seed(42, size)
 
     def reset(self):
-        """Reset environment"""
+        """重置环境"""
         self.grid = [row[:] for row in self.init_grid]
-        self.puzzle = [row[:] for row in self.init_grid]  # Update puzzle attribute
+        self.puzzle = [row[:] for row in self.init_grid]  # 更新puzzle属性
         self.done = False
         self.step_count = 0
         self.reward = 0.0
         self.observation = self.text_observation()
     
     def text_observation(self) -> str:
-        """Text observation"""
+        """文本观察"""
         obs = []
         for row in self.grid:
             obs.append(' '.join(str(x) if x != 0 else '.' for x in row))
@@ -847,19 +846,6 @@ class Sudoku4x4EnvState(EnvStateBase):
         
         return True
 
-    def to_dict_compact(self) -> dict:
-        """Return compact dictionary representation for logging"""
-        base_dict = super().to_dict_compact()
-        base_dict.update({
-            "sudoku_size": f"{self.size}x{self.size}",
-            "filled_cells": sum(1 for r in range(self.size) for c in range(self.size) if self.grid[r][c] != 0),
-            "total_cells": self.size * self.size,
-            "done": self.done,
-            "steps": self.step_count,
-            "reward": round(self.reward, 3)
-        })
-        return base_dict
-
 
 @dataclass
 class PlanPathGridEnvState(EnvStateBase):
@@ -923,7 +909,7 @@ class PlanPathGridEnvState(EnvStateBase):
 
     def __post_init__(self):
         super().__post_init__()
-        # Read map_size parameter from config if available
+        # 从config中读取map_size参数，如果存在的话
         if self.config and hasattr(self.config, 'map_size'):
             self.grid_h = self.config.map_size
             self.grid_w = self.config.map_size
@@ -1029,7 +1015,7 @@ class PlanPathGridEnvState(EnvStateBase):
         return grid, start, goal
     
     def text_observation(self) -> str:
-        """Text observation"""
+        """文本观察"""
         obs_lines = []
         for r in range(self.h):
             row = ""
@@ -1209,21 +1195,6 @@ class PlanPathGridEnvState(EnvStateBase):
             "done": self.done,
         }
         return self.pos, reward, self.done, info
-
-    def to_dict_compact(self) -> dict:
-        """Return compact dictionary representation for logging"""
-        base_dict = super().to_dict_compact()
-        base_dict.update({
-            "grid_size": f"{self.h}x{self.w}",
-            "start": self.start,
-            "goal": self.goal,
-            "current_pos": self.pos,
-            "distance_to_goal": abs(self.pos[0] - self.goal[0]) + abs(self.pos[1] - self.goal[1]),
-            "done": self.done,
-            "steps": self.steps,
-            "reward": round(self.reward, 3)
-        })
-        return base_dict
 
     
 

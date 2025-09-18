@@ -33,11 +33,12 @@ model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/trai
 python3 -m pettingllms.trainer.train --config-path ../config/plan_path --config-name plan_path_single_agent \
     $model_0_USE_GRPO $model_0_resource $model_0_data\
     models.model_0.path=/home/lah003/models/Qwen3-1.7B\
-    experiment_name=plan_path_single_agent_1.7B\
+    experiment_name=sokodu_single_agent_8B_map9\
+    +map_size=16\
     if_dapo=True\
     benchmark=sudoku4x4\
     trainer.total_training_steps=400\
-    trainer.save_freq=150\
+    trainer.save_freq=60\
     data.epoch_size=200\
     data.gen_batch_size=128\
     data.gen_n_samples=4\

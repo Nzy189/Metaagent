@@ -44,12 +44,13 @@ python3 -m pettingllms.trainer.train --config-path ../config/plan_path --config-
     $total_resource \
     $model_0_USE_GRPO $model_0_resource $model_0_data \
     $model_1_USE_GRPO $model_1_resource $model_1_data \
-    models.model_0.path=/home/lah003/models/Qwen3-1.7B \
-    models.model_1.path=/home/lah003/models/Qwen3-1.7B \
-    experiment_name=plan_path_two_policy_1.7B_2_turns \
+    models.model_0.path=/home/lah003/models/Qwen3-8B \
+    models.model_1.path=/home/lah003/models/Qwen3-8B \
+    experiment_name=sokodu_two_policy_8B_map9 \
+    +map_size=16\
     if_dapo=True \
     benchmark=sudoku4x4\
-    map_size=15 \
+    trainer.save_freq=60\
     data.epoch_size=200 \
     data.gen_batch_size=128 \
     data.gen_n_samples=4 \
