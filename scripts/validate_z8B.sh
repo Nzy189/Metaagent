@@ -69,15 +69,16 @@ for model in "${models[@]}"; do
     +parallel=false \
     $USE_GRPO $RESOURCE $DATA \
     models.model_0.path="$model" \
-    benchmark="PlanPath" \
+    +map_size=16 \
+    benchmark="sudoku4x4" \
     data.epoch_size=120 \
-    data.max_prompt_length=8192 \
+    data.max_prompt_length=24000 \
     data.max_response_length=8192 \
     data.resample_freq=3 \
     data.filter_method=std \
     data.filter_ratio=0.5 \
     sample_mode=tree \
-    env.max_turns=3 \
+    env.max_turns=4 \
     +vllm_address="$VLLM_ADDRESS"
 
 done

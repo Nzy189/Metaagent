@@ -6,7 +6,6 @@ export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:False"
 export VLLM_USE_V1=1
-export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
 export VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
 export HYDRA_FULL_ERROR=1
 export NCCL_IB_DISABLE=1
@@ -26,16 +25,12 @@ cleanup() {
         kill $PROXY_PID 2>/dev/null
     fi
     
-    # 关闭 vLLM 引擎进程
-    if [ ! -z "$VLLM_PID" ]; then
-        echo "关闭 vLLM 引擎进程 $VLLM_PID"
-        kill $VLLM_PID 2>/dev/null
-    fi
+    
     
     # 强制关闭所有占用 8101 和 8100 端口的进程
-    echo "强制关闭占用端口 8001 和 8000 的进程"
-    lsof -ti:8001 | xargs -r kill -9 2>/dev/null
-    lsof -ti:8000 | xargs -r kill -9 2>/dev/null
+    echo "强制关闭占用端口 8201 和 8200 的进程"
+    lsof -ti:8201 | xargs -r kill -9 2>/dev/null
+    lsof -ti:8200 | xargs -r kill -9 2>/dev/null
     
     echo "清理完成"
     exit 0
@@ -46,17 +41,17 @@ trap cleanup EXIT INT TERM
 
 # 首先清理可能存在的旧进程
 echo "清理可能存在的旧进程..."
-lsof -ti:8201 | xargs -r kill -9 2>/dev/null
-lsof -ti:8200 | xargs -r kill -9 2>/dev/null
+lsof -ti:8101 | xargs -r kill -9 2>/dev/null
+lsof -ti:8100 | xargs -r kill -9 2>/dev/null
 sleep 2
 
-# 启动 vLLM 后端在 8101 端口
-echo "启动 vLLM 引擎..."
+# 启动 vLLM 后端在 8201 端口，使用 livecodebench_baseline checkpoint
+echo "启动 vLLM 引擎，使用 livecodebench_baseline checkpoint..."
 python -m vllm.entrypoints.openai.api_server \
-    --model /home/lah003/models/Qwen3-8B \
-    --host 127.0.0.1 --port 8801 \
+    --model /home/lah003/workspace/verl_efficient/checkpoints/verl_examples/gsm8k/1.7b_baseline_AIME25_policy_reasoning_agent_model/global_step_151/actor/checkpoint \
+    --host 127.0.0.1 --port 8201 \
     --gpu-memory-utilization 0.9 --tensor-parallel-size 1 \
-    --max-model-len 32768 &
+    --max-model-len 32000 &
 
 VLLM_PID=$!
 echo "vLLM 引擎进程 ID: $VLLM_PID"
@@ -72,8 +67,8 @@ if ! kill -0 $VLLM_PID 2>/dev/null; then
 fi
 
 # 启动代理，将 /v1/completions 的 tokens 转换为 token_id:<id>
-export VLLM_BACKEND_ADDRESS=127.0.0.1:8801
-export PROXY_PORT=8800
+export VLLM_BACKEND_ADDRESS=127.0.0.1:8201
+export PROXY_PORT=8200
 echo "启动代理服务..."
 python scripts/vllm_token_id_proxy.py &
 

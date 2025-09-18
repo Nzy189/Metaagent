@@ -34,21 +34,44 @@ class EnvStateBase:
             self.observation = ""
     
     def __str__(self) -> str:
-        """只打印基类属性和observation"""
+        """Print only essential environment info"""
+        # 安全处理 tool_action 可能为 None 的情况
+        tool_action_str = ""
+        if self.tool_action is not None:
+            tool_action_str = self.tool_action[:3] if len(self.tool_action) > 3 else self.tool_action
+            tool_action_str = str(tool_action_str) + ('...' if len(self.tool_action) > 3 else '')
+        else:
+            tool_action_str = "None"
+        
+        # 安全处理 observation 可能为 None 的情况
+        observation_str = ""
+        if self.observation is not None:
+            observation_str = self.observation[:100] if len(self.observation) > 100 else self.observation
+            observation_str = str(observation_str) + ('...' if len(self.observation) > 100 else '')
+        else:
+            observation_str = "None"
+            
         return (
-            f"tool_action: {self.tool_action}\n"
-            f"tool_code: {self.tool_code}\n"
-            f"tool_execution_output: {self.tool_execution_output}\n"
-            f"plan_action: {self.plan_action}\n"
-            f"observation: {self.observation}"
+            f"action: {tool_action_str}\n"
+            f"observation: {observation_str}"
         )
     
     def __repr__(self) -> str:
         return self.__str__()
+    
+    def to_dict_compact(self) -> dict:
+        """Return compact dictionary representation for logging (base class default implementation)"""
+        return {
+            "tool_action": self.tool_action[:5] if self.tool_action is not None and len(self.tool_action) > 5 else self.tool_action,  # 最多显示5个动作
+            "tool_code_lines": len(self.tool_code.split('\n')) if self.tool_code else 0,  # 只显示代码行数
+            "tool_output_chars": len(self.tool_execution_output) if self.tool_execution_output is not None else 0,  # 只显示输出字符数
+            "plan_action": self.plan_action[:3] if self.plan_action is not None and len(self.plan_action) > 3 else self.plan_action,  # 最多显示3个计划动作
+            "observation": (self.observation[:100] + "..." if len(self.observation) > 100 else self.observation) if self.observation is not None else None  # 截断观察信息
+        }
 
 @dataclass
 class EightQueensEnvState(EnvStateBase):
-    """N皇后问题：在NxN棋盘上放置N个皇后，使它们不互相攻击"""
+    """N-Queens problem: Place N queens on an NxN board so they don't attack each other"""
     
     N: int = 8
     cols: List[int] = field(default_factory=lambda: [-1] * 8)
@@ -74,7 +97,7 @@ class EightQueensEnvState(EnvStateBase):
         self.observation = self.text_observation()
     
     def text_observation(self) -> str:
-        """文本观察"""
+        """Text observation"""
         board = []
         for r in range(self.N):
             row = ['.'] * self.N
@@ -158,6 +181,22 @@ class EightQueensEnvState(EnvStateBase):
         
         self.step_count += 1
         self.observation = self.text_observation()
+    
+    def to_dict_compact(self) -> dict:
+        """Return compact dictionary representation for logging"""
+        base_dict = super().to_dict_compact()
+        placed_queens = sum(1 for c in self.cols if c >= 0)
+        conflicts = self._conflicts(self.cols)
+        base_dict.update({
+            "board_size": f"{self.N}x{self.N}",
+            "queens_placed": placed_queens,
+            "total_queens": self.N,
+            "conflicts": conflicts,
+            "done": self.done,
+            "steps": self.step_count,
+            "reward": round(self.reward, 3)
+        })
+        return base_dict
 
 
 
@@ -195,7 +234,7 @@ class BlocksworldEnvState(EnvStateBase):
         self.observation = self.text_observation()
     
     def text_observation(self) -> str:
-        """文本观察"""
+        """Text observation"""
         obs = []
         for i, stack in enumerate(self.stacks):
             if stack:
@@ -368,6 +407,20 @@ class BlocksworldEnvState(EnvStateBase):
         self.reward = total_reward
         self.current_stacks = [list(s) for s in self.stacks]  # 更新current_stacks属性
         self.observation = self.text_observation()
+    
+    def to_dict_compact(self) -> dict:
+        """Return compact dictionary representation for logging"""
+        base_dict = super().to_dict_compact()
+        similarity = self._calculate_goal_similarity()
+        base_dict.update({
+            "total_blocks": len(self.all_blocks),
+            "stacks_count": len([s for s in self.stacks if s]),  # 非空栈数量
+            "goal_similarity": round(similarity, 3),
+            "done": self.done,
+            "steps": self.step_count,
+            "reward": round(self.reward, 3)
+        })
+        return base_dict
 
 
 # =========================================================
@@ -376,9 +429,12 @@ class BlocksworldEnvState(EnvStateBase):
 
 @dataclass
 class Sudoku4x4EnvState(EnvStateBase):
-    """4x4数独：填充4x4网格，满足行列和2x2宫格约束"""
+    """Dynamic size Sudoku: Fill NxN grid with row, column, and sub-grid constraints (keeping 4x4 name for compatibility)"""
     
-    puzzle: List[List[int]]
+    puzzle: Optional[List[List[int]]] = None
+    seed: Optional[int] = None
+    size: int = 4  # Sudoku size, default 4x4
+    config: Optional[dict] = None
     init_grid: List[List[int]] = field(default_factory=list)
     grid: List[List[int]] = field(default_factory=list)
     done: bool = False
@@ -387,22 +443,149 @@ class Sudoku4x4EnvState(EnvStateBase):
     
     def __post_init__(self):
         super().__post_init__()
-        assert len(self.puzzle) == 4 and all(len(row) == 4 for row in self.puzzle), "必须是4x4网格"
-        self.init_grid = [row[:] for row in self.puzzle]
-        self.puzzle = [row[:] for row in self.puzzle]  # prompt需要的puzzle属性
+        
+        # Read map_size parameter from config if available
+        if self.config and hasattr(self.config, 'map_size'):
+            self.size = self.config.map_size
+        elif self.config and isinstance(self.config, dict) and 'map_size' in self.config:
+            self.size = self.config['map_size']
+       
+        if self.puzzle is not None:
+            assert len(self.puzzle) == self.size and all(len(row) == self.size for row in self.puzzle), f"Must be {self.size}x{self.size} grid"
+            self.init_grid = [row[:] for row in self.puzzle]
+        # If seed is provided, generate puzzle based on seed
+        elif self.seed is not None:
+            self.puzzle = self._generate_puzzle_from_seed(self.seed, self.size)
+            self.init_grid = [row[:] for row in self.puzzle]
+        else:
+            ValueError("No puzzle provided")
+        self.puzzle = [row[:] for row in self.puzzle]  # puzzle attribute needed for prompt
         self.reset()
+    
+    def _generate_puzzle_from_seed(self, seed: int, size: int) -> List[List[int]]:
+        """Select sudoku puzzle from pre-generated JSON file based on seed"""
+        import json
+        import os
+        
+        # Get current file directory, then find datasets/sudoku_environments directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))  # Back to project root
+        sudoku_env_dir = os.path.join(project_root, "datasets", "sudoku_environments")
+        json_file = os.path.join(sudoku_env_dir, f"sudoku_{size}x{size}.json")
+        
+        try:
+            # Try to load pre-generated environments from JSON file
+            if os.path.exists(json_file):
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    environments = json.load(f)
+                
+                # Select an environment based on seed (ensure reproducibility)
+                env_index = seed % len(environments)
+                selected_env = environments[env_index]
+                return selected_env["puzzle"]
+            else:
+                print(f"[WARN] Pre-generated sudoku environment file not found: {json_file}")
+                return self._generate_fallback_puzzle(size, seed)
+                
+        except Exception as e:
+            print(f"[WARN] Error loading sudoku environment: {e}")
+            return self._generate_fallback_puzzle(size, seed)
+    
+    def _generate_fallback_puzzle(self, size: int, seed: int) -> List[List[int]]:
+        """Generate simple fallback sudoku puzzle"""
+        import random
+        random.seed(seed)
+        
+        puzzle = [[0 for _ in range(size)] for _ in range(size)]
+        box_size = int(size ** 0.5)
+        
+        # Place some numbers in each sub-grid
+        for box_row in range(0, size, box_size):
+            for box_col in range(0, size, box_size):
+                # Randomly place 1-2 numbers in sub-grid
+                positions = [(r, c) for r in range(box_row, box_row + box_size) 
+                           for c in range(box_col, box_col + box_size)]
+                random.shuffle(positions)
+                
+                fill_count = random.randint(1, min(2, len(positions)))
+                for i in range(fill_count):
+                    r, c = positions[i]
+                    # Try to place a safe number
+                    for num in random.sample(range(1, size + 1), size):
+                        if self._is_safe_fallback_placement(puzzle, r, c, num, size):
+                            puzzle[r][c] = num
+                            break
+        
+        return puzzle
+    
+    def _is_safe_fallback_placement(self, grid: List[List[int]], row: int, col: int, num: int, size: int) -> bool:
+        """Simple safety check for fallback puzzle generation"""
+        box_size = int(size ** 0.5)
+        
+        # Check row
+        for c in range(size):
+            if grid[row][c] == num:
+                return False
+        
+        # Check column
+        for r in range(size):
+            if grid[r][col] == num:
+                return False
+        
+        # Check sub-grid
+        start_row = (row // box_size) * box_size
+        start_col = (col // box_size) * box_size
+        
+        for r in range(start_row, start_row + box_size):
+            for c in range(start_col, start_col + box_size):
+                if grid[r][c] == num:
+                    return False
+        
+        return True
+    
+    
+    def _get_default_puzzle(self, size: int) -> List[List[int]]:
+        """Get default NxN sudoku puzzle"""
+        # Use different default puzzles for different sizes
+        if size == 4:
+            return [[1, 0, 0, 4],
+                    [0, 0, 1, 0], 
+                    [0, 4, 0, 0],
+                    [4, 0, 0, 1]]
+        elif size == 9:
+            return [
+                [5, 3, 0, 0, 7, 0, 0, 0, 0],
+                [6, 0, 0, 1, 9, 5, 0, 0, 0],
+                [0, 9, 8, 0, 0, 0, 0, 6, 0],
+                [8, 0, 0, 0, 6, 0, 0, 0, 3],
+                [4, 0, 0, 8, 0, 3, 0, 0, 1],
+                [7, 0, 0, 0, 2, 0, 0, 0, 6],
+                [0, 6, 0, 0, 0, 0, 2, 8, 0],
+                [0, 0, 0, 4, 1, 9, 0, 0, 5],
+                [0, 0, 0, 0, 8, 0, 0, 7, 9]
+            ]
+        elif size == 16:
+            # 16x16 sudoku default puzzle (simplified version)
+            puzzle = [[0 for _ in range(16)] for _ in range(16)]
+            # Fill some basic numbers
+            puzzle[0] = [1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            puzzle[1] = [0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0]
+            return puzzle
+        else:
+            # For other sizes, generate a basic puzzle
+            return self._generate_puzzle_from_seed(42, size)
 
     def reset(self):
-        """重置环境"""
+        """Reset environment"""
         self.grid = [row[:] for row in self.init_grid]
-        self.puzzle = [row[:] for row in self.init_grid]  # 更新puzzle属性
+        self.puzzle = [row[:] for row in self.init_grid]  # Update puzzle attribute
         self.done = False
         self.step_count = 0
         self.reward = 0.0
         self.observation = self.text_observation()
     
     def text_observation(self) -> str:
-        """文本观察"""
+        """Text observation"""
         obs = []
         for row in self.grid:
             obs.append(' '.join(str(x) if x != 0 else '.' for x in row))
@@ -411,16 +594,16 @@ class Sudoku4x4EnvState(EnvStateBase):
     def available_actions(self) -> List[Tuple[int, int, int]]:
         """可用动作：(row, col, value)"""
         actions = []
-        for r in range(4):
-            for c in range(4):
+        for r in range(self.size):
+            for c in range(self.size):
                 if self.grid[r][c] == 0:  # 只能在空格填数
-                    for v in range(1, 5):
+                    for v in range(1, self.size + 1):
                         actions.append((r, c, v))
         return actions
     
     def _is_valid_placement(self, r: int, c: int, v: int) -> bool:
         """检查在(r,c)放置v是否合法"""
-        if not (0 <= r < 4 and 0 <= c < 4 and 1 <= v <= 4):
+        if not (0 <= r < self.size and 0 <= c < self.size and 1 <= v <= self.size):
             return False
         
         if self.grid[r][c] != 0:  # 非空格
@@ -431,13 +614,14 @@ class Sudoku4x4EnvState(EnvStateBase):
             return False
         
         # 检查列
-        if any(self.grid[rr][c] == v for rr in range(4)):
+        if any(self.grid[rr][c] == v for rr in range(self.size)):
             return False
         
-        # 检查2x2宫格
-        box_r, box_c = (r // 2) * 2, (c // 2) * 2
-        for rr in range(box_r, box_r + 2):
-            for cc in range(box_c, box_c + 2):
+        # 检查子网格
+        box_size = int(self.size ** 0.5)
+        box_r, box_c = (r // box_size) * box_size, (c // box_size) * box_size
+        for rr in range(box_r, box_r + box_size):
+            for cc in range(box_c, box_c + box_size):
                 if self.grid[rr][cc] == v:
                     return False
         
@@ -451,8 +635,8 @@ class Sudoku4x4EnvState(EnvStateBase):
                 return False
         
         # 检查规则
-        for r in range(4):
-            for c in range(4):
+        for r in range(self.size):
+            for c in range(self.size):
                 v = self.grid[r][c]
                 # 临时清空检查唯一性
                 self.grid[r][c] = 0
@@ -464,32 +648,33 @@ class Sudoku4x4EnvState(EnvStateBase):
     
     def _calculate_progress(self) -> float:
         """计算解题进度 (0-1)"""
-        total_cells = 16
-        filled_cells = sum(1 for r in range(4) for c in range(4) if self.grid[r][c] != 0)
+        total_cells = self.size * self.size
+        filled_cells = sum(1 for r in range(self.size) for c in range(self.size) if self.grid[r][c] != 0)
         return filled_cells / total_cells
     
     def _count_constraints_satisfied(self) -> int:
         """计算满足的约束数量"""
         satisfied = 0
+        box_size = int(self.size ** 0.5)
         
         # 检查行约束
-        for r in range(4):
-            values = [self.grid[r][c] for c in range(4) if self.grid[r][c] != 0]
+        for r in range(self.size):
+            values = [self.grid[r][c] for c in range(self.size) if self.grid[r][c] != 0]
             if len(values) == len(set(values)):  # 无重复
                 satisfied += len(values) - 1 if len(values) > 1 else 0
         
         # 检查列约束  
-        for c in range(4):
-            values = [self.grid[r][c] for r in range(4) if self.grid[r][c] != 0]
+        for c in range(self.size):
+            values = [self.grid[r][c] for r in range(self.size) if self.grid[r][c] != 0]
             if len(values) == len(set(values)):  # 无重复
                 satisfied += len(values) - 1 if len(values) > 1 else 0
         
-        # 检查2x2宫格约束
-        for box_r in range(0, 4, 2):
-            for box_c in range(0, 4, 2):
+        # 检查子网格约束
+        for box_r in range(0, self.size, box_size):
+            for box_c in range(0, self.size, box_size):
                 values = []
-                for r in range(box_r, box_r + 2):
-                    for c in range(box_c, box_c + 2):
+                for r in range(box_r, box_r + box_size):
+                    for c in range(box_c, box_c + box_size):
                         if self.grid[r][c] != 0:
                             values.append(self.grid[r][c])
                 if len(values) == len(set(values)):  # 无重复
@@ -502,40 +687,41 @@ class Sudoku4x4EnvState(EnvStateBase):
         if self.grid[r][c] != 0:
             return set()
         
-        possible = set(range(1, 5))
+        possible = set(range(1, self.size + 1))
+        box_size = int(self.size ** 0.5)
         
         # 排除同行的值
-        for cc in range(4):
+        for cc in range(self.size):
             if self.grid[r][cc] in possible:
                 possible.remove(self.grid[r][cc])
         
         # 排除同列的值
-        for rr in range(4):
+        for rr in range(self.size):
             if self.grid[rr][c] in possible:
                 possible.remove(self.grid[rr][c])
         
-        # 排除同宫格的值
-        box_r, box_c = (r // 2) * 2, (c // 2) * 2
-        for rr in range(box_r, box_r + 2):
-            for cc in range(box_c, box_c + 2):
+        # 排除同子网格的值
+        box_r, box_c = (r // box_size) * box_size, (c // box_size) * box_size
+        for rr in range(box_r, box_r + box_size):
+            for cc in range(box_c, box_c + box_size):
                 if self.grid[rr][cc] in possible:
                     possible.remove(self.grid[rr][cc])
         
         return possible
 
     def step(self, action):
-        """执行动作，更新环境状态。动作格式：完整4x4网格 或 填入步骤列表[[r,c,v],...]"""
+        """执行动作，更新环境状态。动作格式：完整NxN网格 或 填入步骤列表[[r,c,v],...]"""
         if self.done:
             self.reward = 0.0
             return
         
         # 检查动作格式
-        if isinstance(action, list) and len(action) == 4 and all(isinstance(row, list) and len(row) == 4 for row in action):
-            # 格式1：完整4x4网格 [[1,2,3,4],[3,4,1,2],...]
+        if isinstance(action, list) and len(action) == self.size and all(isinstance(row, list) and len(row) == self.size for row in action):
+            # 格式1：完整NxN网格 [[1,2,3,4],[3,4,1,2],...]
             new_grid = action
             
             # 验证网格格式
-            if not all(isinstance(val, int) and 1 <= val <= 4 for row in new_grid for val in row):
+            if not all(isinstance(val, int) and 1 <= val <= self.size for row in new_grid for val in row):
                 self.reward = -1.0  # 无效网格值惩罚
                 return
             
@@ -554,7 +740,7 @@ class Sudoku4x4EnvState(EnvStateBase):
             if self._is_solved():
                 self.reward += 2.0  # 成功完成大奖励
                 # 效率奖励
-                empty_count = sum(1 for r in range(4) for c in range(4) if self.init_grid[r][c] == 0)
+                empty_count = sum(1 for r in range(self.size) for c in range(self.size) if self.init_grid[r][c] == 0)
                 if self.step_count <= empty_count:  # 最优步数
                     self.reward += 0.5
                 self.done = True
@@ -603,7 +789,7 @@ class Sudoku4x4EnvState(EnvStateBase):
                     step_reward += progress_reward + constraint_improvement * 0.02 + current_progress * 0.1
                     
                     # 策略奖励
-                    empty_cells = [(rr, cc) for rr in range(4) for cc in range(4) if self.grid[rr][cc] == 0]
+                    empty_cells = [(rr, cc) for rr in range(self.size) for cc in range(self.size) if self.grid[rr][cc] == 0]
                     if empty_cells:
                         current_constraints_count = len(self._get_possible_values(r, c))
                         avg_constraints = sum(len(self._get_possible_values(rr, cc)) for rr, cc in empty_cells) / len(empty_cells)
@@ -618,7 +804,7 @@ class Sudoku4x4EnvState(EnvStateBase):
             # 检查是否完成
             if self._is_solved():
                 total_reward += 2.0  # 成功完成大奖励
-                empty_count = sum(1 for r in range(4) for c in range(4) if self.init_grid[r][c] == 0)
+                empty_count = sum(1 for r in range(self.size) for c in range(self.size) if self.init_grid[r][c] == 0)
                 if self.step_count <= empty_count:
                     total_reward += 0.5
                 self.done = True
@@ -634,30 +820,45 @@ class Sudoku4x4EnvState(EnvStateBase):
     
     def _is_grid_valid(self) -> bool:
         """检查当前网格是否违反数独规则"""
+        box_size = int(self.size ** 0.5)
+        
         # 检查行
-        for r in range(4):
-            values = [self.grid[r][c] for c in range(4) if self.grid[r][c] != 0]
+        for r in range(self.size):
+            values = [self.grid[r][c] for c in range(self.size) if self.grid[r][c] != 0]
             if len(values) != len(set(values)):
                 return False
         
         # 检查列
-        for c in range(4):
-            values = [self.grid[r][c] for r in range(4) if self.grid[r][c] != 0]
+        for c in range(self.size):
+            values = [self.grid[r][c] for r in range(self.size) if self.grid[r][c] != 0]
             if len(values) != len(set(values)):
                 return False
         
-        # 检查2x2宫格
-        for box_r in range(0, 4, 2):
-            for box_c in range(0, 4, 2):
+        # 检查子网格
+        for box_r in range(0, self.size, box_size):
+            for box_c in range(0, self.size, box_size):
                 values = []
-                for r in range(box_r, box_r + 2):
-                    for c in range(box_c, box_c + 2):
+                for r in range(box_r, box_r + box_size):
+                    for c in range(box_c, box_c + box_size):
                         if self.grid[r][c] != 0:
                             values.append(self.grid[r][c])
                 if len(values) != len(set(values)):
                     return False
         
         return True
+
+    def to_dict_compact(self) -> dict:
+        """Return compact dictionary representation for logging"""
+        base_dict = super().to_dict_compact()
+        base_dict.update({
+            "sudoku_size": f"{self.size}x{self.size}",
+            "filled_cells": sum(1 for r in range(self.size) for c in range(self.size) if self.grid[r][c] != 0),
+            "total_cells": self.size * self.size,
+            "done": self.done,
+            "steps": self.step_count,
+            "reward": round(self.reward, 3)
+        })
+        return base_dict
 
 
 @dataclass
@@ -672,7 +873,7 @@ class PlanPathGridEnvState(EnvStateBase):
     
     seed: int
     grid_h: int = 10
-    grid_w: int = 10
+    grid_w: int = grid_h
     block_ratio: float = 0.22
     r_step: Optional[float] = None
     r_invalid: Optional[float] = None
@@ -682,6 +883,7 @@ class PlanPathGridEnvState(EnvStateBase):
     gamma: Optional[float] = None
     lambda_pot: Optional[float] = None
     max_steps: Optional[int] = None
+    config: Optional[dict] = None
     
     # 环境状态属性
     grid: str = ""
@@ -721,6 +923,14 @@ class PlanPathGridEnvState(EnvStateBase):
 
     def __post_init__(self):
         super().__post_init__()
+        # Read map_size parameter from config if available
+        if self.config and hasattr(self.config, 'map_size'):
+            self.grid_h = self.config.map_size
+            self.grid_w = self.config.map_size
+        elif self.config and isinstance(self.config, dict) and 'map_size' in self.config:
+            self.grid_h = self.config['map_size']
+            self.grid_w = self.config['map_size']
+        
         # 根据seed生成随机环境
         grid, start, goal = self._generate_random_environment(self.seed, self.grid_h, self.grid_w, self.block_ratio)
         
@@ -819,7 +1029,7 @@ class PlanPathGridEnvState(EnvStateBase):
         return grid, start, goal
     
     def text_observation(self) -> str:
-        """文本观察"""
+        """Text observation"""
         obs_lines = []
         for r in range(self.h):
             row = ""
@@ -1000,6 +1210,21 @@ class PlanPathGridEnvState(EnvStateBase):
         }
         return self.pos, reward, self.done, info
 
+    def to_dict_compact(self) -> dict:
+        """Return compact dictionary representation for logging"""
+        base_dict = super().to_dict_compact()
+        base_dict.update({
+            "grid_size": f"{self.h}x{self.w}",
+            "start": self.start,
+            "goal": self.goal,
+            "current_pos": self.pos,
+            "distance_to_goal": abs(self.pos[0] - self.goal[0]) + abs(self.pos[1] - self.goal[1]),
+            "done": self.done,
+            "steps": self.steps,
+            "reward": round(self.reward, 3)
+        })
+        return base_dict
+
     
 
 
@@ -1012,7 +1237,7 @@ class PlanPathGridEnvState(EnvStateBase):
 STATE_REGISTRY = {
     "EightQueens": EightQueensEnvState,
     "Blocksworld": BlocksworldEnvState, 
-    "Sudoku4x4": Sudoku4x4EnvState,
+    "sudoku4x4": Sudoku4x4EnvState,
     "PlanPath": PlanPathGridEnvState,
     # 可以根据需要添加更多benchmark
 }

@@ -291,21 +291,17 @@ def load_plan_path_problem_batch(
             problems.append(block_configs[config_idx])
         return problems
     
-    elif benchmark_name == "Sudoku4x4":
-        # 对于4x4数独问题，生成不同的初始状态
+    elif benchmark_name == "sudoku4x4":
+        # 对于sudoku4x4问题，使用seed生成不同的初始状态
         problems = []
-        sudoku_puzzles = [
-            [[1, 0, 0, 2], [0, 2, 1, 0], [0, 1, 2, 0], [2, 0, 0, 1]],
-            [[0, 2, 0, 0], [1, 0, 0, 2], [2, 0, 0, 1], [0, 0, 2, 0]],
-            [[0, 0, 1, 0], [0, 1, 0, 2], [1, 0, 2, 0], [0, 2, 0, 0]],
-        ]
         for i in range(len(env_indices)):
-            puzzle_idx = i % len(sudoku_puzzles)
-            problems.append({"puzzle": sudoku_puzzles[puzzle_idx]})
+            # 每个环境使用不同的seed
+            seed = env_indices[i] if i < len(env_indices) else i
+            problems.append({"seed": seed})
         return problems
     
     else:
-        raise ValueError(f"Unknown benchmark name: {benchmark_name}. Supported: PlanPath, EightQueens, Blocksworld, Sudoku4x4")
+        raise ValueError(f"Unknown benchmark name: {benchmark_name}. Supported: PlanPath, EightQueens, Blocksworld, sudoku4x4")
 
 
 if __name__ == "__main__":

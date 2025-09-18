@@ -1,6 +1,6 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -30,20 +30,21 @@ model_0_resource="resource.n_gpus_per_node=1  $model_0_config_path.trainer.n_gpu
 
 model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/train.parquet +$model_0_config_path.data.val_files=$model_0_data_dir/text/test.parquet"
 
-python3 -m pettingllms.trainer.train --config-path ../config/plan_path --config-name plan_path_single_policy \
+python3 -m pettingllms.trainer.train --config-path ../config/plan_path --config-name plan_path_single_agent \
     $model_0_USE_GRPO $model_0_resource $model_0_data\
     models.model_0.path=/home/lah003/models/Qwen3-1.7B\
-    experiment_name=plan_path_single_policy_1.7B\
+    experiment_name=plan_path_single_agent_1.7B\
     if_dapo=True\
+    benchmark=sudoku4x4\
     trainer.total_training_steps=400\
     trainer.save_freq=150\
     data.epoch_size=200\
     data.gen_batch_size=128\
     data.gen_n_samples=4\
-    data.max_prompt_length=16384\
-    data.max_response_length=2048\
+    data.max_prompt_length=8192\
+    data.max_response_length=4096\
     data.resample_freq=1\
     data.filter_method=std\
     data.filter_ratio=0\
     sample_mode=tree\
-    env.max_turns=3\
+    env.max_turns=4\

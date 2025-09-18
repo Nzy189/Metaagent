@@ -70,21 +70,30 @@ def prompt_blocksworld(turn_idx: int, state: Any) -> str:
 
 def prompt_sudoku4x4(turn_idx: int, state: Any) -> str:
     puzzle = getattr(state, "puzzle", None) or getattr(state, "init_grid", None)
-    puz = json.dumps(puzzle, ensure_ascii=False)
+    size = getattr(state, "size", 4)  # Dynamically get sudoku size
+    
+    # Simplify puzzle display, only show observation info
+    observation = getattr(state, "observation", "")
+    if not observation and puzzle:
+        # If no observation, generate simplified display from puzzle
+        obs_lines = []
+        for row in puzzle:
+            obs_lines.append(' '.join(str(x) if x != 0 else '.' for x in row))
+        observation = '\n'.join(obs_lines)
+    
     if turn_idx == 0:
         return (
-            "Solve the 4x4 Sudoku. Fill digits 1..4; rows, columns, and 2x2 boxes must have unique digits.\n"
-            f"Puzzle (0 means empty):\n```json\n{puz}\n```\n\n"
-            "Output either:\n"
-            "1) **Completed grid** as JSON 4x4 array, e.g.:\n```json\n[[1,2,3,4],[3,4,1,2],[2,1,4,3],[4,3,2,1]]\n```\n"
-            "or 2) A JSON list of fill steps (r,c,v), e.g.:\n```json\n[[0,0,1],[0,1,2],...]\n```\n"
+            f"Solve the {size}x{size} Sudoku. Fill digits 1..{size}; rows, columns, and sub-grids must have unique digits.\n"
+            f"Current puzzle:\n```\n{observation}\n```\n\n"
+            f"Output either:\n"
+            f"1) **Completed {size}x{size} grid** as JSON array\n"
+            f"2) A JSON list of fill steps (r,c,v)\n"
         )
     else:
         return (
-            "You are refining your previous Sudoku solution.\n"
-            f"You have put the digits in the following grid:\n{puz}\n"
-            f"However, it is not a valid solution. Please first analyze why it is not a valid solution and then correct it.\n"
-            "Return only a completed 4x4 grid JSON, or a JSON list of (r,c,v) steps.\n"
+            f"Refine your {size}x{size} Sudoku solution.\n"
+            f"Current state:\n```\n{observation}\n```\n"
+            f"Analyze errors and provide the corrected solution.\n"
         )
 
 # ========== 统一调度 ==========

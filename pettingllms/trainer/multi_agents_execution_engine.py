@@ -228,12 +228,33 @@ class MultiAgentsExecutionEngine:
                 self.agent_groups_list_per_rollout = []
                 for agent_idx, agent_name in enumerate(self.turn_order):
                     agent_class = self.agent_class_list[agent_idx]
-                    self.agent_groups_list_per_rollout.append(agent_class(env_idx=rollout_idx, agent_sample_idx=rollout_idx))
+                    
+                    agent_init_params = {'env_idx': rollout_idx, 'agent_sample_idx': rollout_idx}
+                    if hasattr(self.config, 'benchmark') and self._agent_needs_benchmark(agent_class):
+                        agent_init_params['benchmark'] = self.config.benchmark
+                    
+                    self.agent_groups_list_per_rollout.append(agent_class(**agent_init_params))
                 self.agent_groups_list.append(self.agent_groups_list_per_rollout)
             
             
             self.timer.checkpoint("Environment batch created") 
         self.timer.checkpoint("Agent groups initialization completed")
+    
+    def _agent_needs_benchmark(self, agent_class):
+        """
+        判断agent类是否需要benchmark参数
+        通过检查构造函数的参数签名来确定
+        """
+        import inspect
+        try:
+            # 获取agent类的__init__方法签名
+            init_signature = inspect.signature(agent_class.__init__)
+            # 检查是否有benchmark参数
+            return 'benchmark' in init_signature.parameters
+        except Exception:
+            # 如果无法获取签名，默认不传递benchmark参数
+            return False
+    
     def __init_one_env_instance(self, rollout_idx, env_args):
         env = self.env_class( env_idx=rollout_idx % self.gen_batch_size,rollout_idx=rollout_idx,max_turns=self.max_turns, **env_args)
         

@@ -115,7 +115,7 @@ class PlanPathEnvBatch:
             if benchmark_name == "PlanPath":
                 # 使用环境索引作为seed，确保相同索引生成相同环境
                 seed = env_indices[i] if i < len(env_indices) else i
-                state = state_class(seed=seed)
+                state = state_class(seed=seed, config=config)
             elif benchmark_name == "EightQueens":
                 state = state_class(N=prob["N"])
             elif benchmark_name == "Blocksworld":
@@ -123,8 +123,10 @@ class PlanPathEnvBatch:
                     init_stacks=prob["init_stacks"],
                     goal_stacks=prob["goal_stacks"]
                 )
-            elif benchmark_name == "Sudoku4x4":
-                state = state_class(puzzle=prob["puzzle"])
+            elif benchmark_name == "sudoku4x4":
+                # 使用环境索引作为seed，确保相同索引生成相同环境
+                seed = env_indices[i] if i < len(env_indices) else i
+                state = state_class(seed=seed, config=config)
             else:
                 raise ValueError(f"Unsupported benchmark: {benchmark_name}")
             # 复制为多个 env 实例

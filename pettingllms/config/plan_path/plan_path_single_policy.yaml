@@ -42,6 +42,7 @@ env:
   resolve: false
   multi_modal: false
   batched_init: true
+  map_size: 10  # 网格大小，将自动设置为 grid_h 和 grid_w
 
 if_dapo: true
 

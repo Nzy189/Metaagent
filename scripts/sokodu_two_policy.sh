@@ -1,6 +1,6 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES=2,3,4,5
+export CUDA_VISIBLE_DEVICES=2,3
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -34,8 +34,8 @@ model_0_USE_GRPO="$model_0_config_path.algorithm.adv_estimator=grpo $model_0_con
 model_1_USE_GRPO="$model_1_config_path.algorithm.adv_estimator=grpo $model_1_config_path.actor_rollout_ref.actor.use_kl_loss=False"
 total_resource="resource.n_gpus_per_node=2"
 
-model_0_resource="$model_0_config_path.trainer.n_gpus_per_node=2 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=2"
-model_1_resource="$model_1_config_path.trainer.n_gpus_per_node=2 $model_1_config_path.trainer.nnodes=1 $model_1_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=2"
+model_0_resource="$model_0_config_path.trainer.n_gpus_per_node=1 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=1"
+model_1_resource="$model_1_config_path.trainer.n_gpus_per_node=1 $model_1_config_path.trainer.nnodes=1 $model_1_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=1"
 
 model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/train.parquet +$model_0_config_path.data.val_files=$model_0_data_dir/text/test.parquet"
 model_1_data="+$model_1_config_path.data.train_files=$model_1_data_dir/text/train.parquet +$model_1_config_path.data.val_files=$model_1_data_dir/text/test.parquet"
@@ -44,17 +44,19 @@ python3 -m pettingllms.trainer.train --config-path ../config/plan_path --config-
     $total_resource \
     $model_0_USE_GRPO $model_0_resource $model_0_data \
     $model_1_USE_GRPO $model_1_resource $model_1_data \
-    models.model_0.path=/home/lah003/models/Qwen3-8B \
-    models.model_1.path=/home/lah003/models/Qwen3-8B \
-    experiment_name=plan_path_two_policy_8B \
+    models.model_0.path=/home/lah003/models/Qwen3-1.7B \
+    models.model_1.path=/home/lah003/models/Qwen3-1.7B \
+    experiment_name=plan_path_two_policy_1.7B_2_turns \
     if_dapo=True \
+    benchmark=sudoku4x4\
+    map_size=15 \
     data.epoch_size=200 \
     data.gen_batch_size=128 \
     data.gen_n_samples=4 \
-    data.max_prompt_length=8192 \
+    data.max_prompt_length=16384 \
     data.max_response_length=4096 \
     data.resample_freq=1 \
     data.filter_method=std \
     data.filter_ratio=0 \
     sample_mode=tree \
-    env.max_turns=3
+    env.max_turns=4

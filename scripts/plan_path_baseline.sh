@@ -41,7 +41,7 @@ python3 -m pettingllms.trainer.train --config-path ../config/plan_path --config-
     data.gen_batch_size=128\
     data.gen_n_samples=4\
     data.max_prompt_length=8192\
-    data.max_response_length=8192\
+    data.max_response_length=4096\
     data.resample_freq=1\
     data.filter_method=std\
     data.filter_ratio=0\

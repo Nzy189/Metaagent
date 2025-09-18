@@ -37,8 +37,6 @@ config_name="math_single_policy"
 config_name_aggretion="math_aggretion" 
 config_path_aggretion="../config/math"
 config_path_code="../config/code"
-config_path_plan_path="../config/plan_path"
-config_name_plan_path="plan_path_single_policy"
 config_name_code="code_eval"
 train_data_size=32
 val_data_size=32
@@ -48,13 +46,20 @@ RESOURCE="resource.n_gpus_per_node=2 models.model_0.ppo_trainer_config.trainer.n
 DATA="+models.model_0.ppo_trainer_config.data.train_files=$data_dir/text/train.parquet +models.model_0.ppo_trainer_config.data.val_files=$data_dir/text/test.parquet"
 
 # VLLM 服务地址配置（可通过命令行参数覆盖）
-VLLM_ADDRESS=${1:-"127.0.0.1:8000"} 
+VLLM_ADDRESS=${1:-"127.0.0.1:8100"} 
 
 # 模型列表（Hugging Face 仓库名）
 
-
+#models=(
+#  "Qwen/Qwen3-1.7B"
+#  "Qwen/Qwen3-4B"
+#  "Qwen/Qwen3-4B-Instruct"
+#  "Qwen/Qwen3-8B"
+#  "Qwen/Qwen2.5-7B-Instruct"
+#  "Qwen/Qwen2.5-3B-Instruct"
+#)
 models=(
-  "/home/lah003/models/Qwen3-1.7B"
+  "/home/lah003/workspace/verl_efficient/checkpoints/verl_examples/gsm8k/math_1.7B_two_policies_AIME25_policy_reasoning_agent_model/global_step_151/actor/checkpoint "
 )
 
 
@@ -65,20 +70,20 @@ for model in "${models[@]}"; do
   echo "=== Using VLLM address: $VLLM_ADDRESS ==="
 
   python3 -m pettingllms.scripts.async_vllm_code_eval \
-    --config-path "$config_path_plan_path" --config-name "$config_name_plan_path" \
-    +parallel=false \
+    --config-path "$config_path" --config-name "$config_name" \
+    +parallel=true \
+    enable_thinking=false \
     $USE_GRPO $RESOURCE $DATA \
     models.model_0.path="$model" \
-    +map_size=16 \
-    benchmark="sudoku4x4" \
+    benchmark="AIME24" \
     data.epoch_size=120 \
-    data.max_prompt_length=24000 \
+    data.max_prompt_length=8192 \
     data.max_response_length=8192 \
-    data.resample_freq=3 \
+    data.resample_freq=4 \
     data.filter_method=std \
     data.filter_ratio=0.5 \
     sample_mode=tree \
-    env.max_turns=4 \
+    env.max_turns=5 \
     +vllm_address="$VLLM_ADDRESS"
 
 done

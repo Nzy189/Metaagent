@@ -2,6 +2,7 @@ import re
 import json
 import copy
 import logging
+import ast
 from typing import Any, List, Tuple, Dict, Optional
 
 from pettingllms.multi_agent_env.base.agent import Agent, AgentData
@@ -18,22 +19,32 @@ def truncatefn(s, length=300):
 
 
 
-def extract_final_action(text: str) -> List[str] | None:
+def extract_final_action(text: str, benchmark: str = "plan_path") -> List | None:
     """
     Extract the final action that appears on the last line starting with '#### '.
-    Convert string representation of list to actual list object.
-    Example match:
-        '#### ["R", "R", "D", "D"]'  -> ["R", "R", "D", "D"]
-        '#### [U,R,D,L]'  -> ["U", "R", "D", "L"]
+    Support different formats for different benchmarks.
     """
+    # 安全检查：确保text不为None
+    if text is None or not isinstance(text, str):
+        return None
+    
     # Find all lines starting with '#### '
-    pattern = re.compile(r'(?m)^\s*####\s+(.+)$')
+    pattern = re.compile(r'(?m)^\s*####\s+(.+)$', re.DOTALL)
     matches = pattern.findall(text)
     
     if not matches:
         return None
     
     action_str = matches[-1].strip()
+    
+    try:
+        # 尝试使用ast.literal_eval解析（支持嵌套列表）
+        if action_str.startswith('[') and action_str.endswith(']'):
+            parsed = ast.literal_eval(action_str)
+            if isinstance(parsed, list):
+                return parsed
+    except (ValueError, SyntaxError):
+        pass
     
     try:
         # 尝试直接解析JSON格式
@@ -43,8 +54,8 @@ def extract_final_action(text: str) -> List[str] | None:
         pass
     
     try:
-        # 处理没有引号的格式，如 [U,R,D,L]
-        if action_str.startswith('[') and action_str.endswith(']'):
+        # 处理没有引号的简单格式，如 [U,R,D,L]（仅适用于plan_path）
+        if benchmark == "plan_path" and action_str.startswith('[') and action_str.endswith(']'):
             # 移除方括号
             inner = action_str[1:-1].strip()
             if inner:
@@ -56,7 +67,7 @@ def extract_final_action(text: str) -> List[str] | None:
     except Exception:
         pass
     
-    # 如果都失败了，返回None
+    # If all failed, return None
     return None
 
 
@@ -64,7 +75,7 @@ class PlanAgent(Agent):
     """
     Unified PlanWalker:
     - benchmark: plan_path | eight_queens | blocksworld | sudoku4x4
-    - 仅 prompt 随 benchmark 改变；评测与写回管线保持一致。
+    - Only prompt changes with benchmark; evaluation and write-back pipeline remains consistent.
     """
 
     def __init__(self, rollout_idx: int | None = None, benchmark: str = "plan_path", **kwargs):
@@ -81,28 +92,43 @@ class PlanAgent(Agent):
         self.action_list = []
         self.state_list = []
 
-    # ===================== Prompt 构造（已外部化） =====================
+    # ===================== Prompt Construction (Externalized) =====================
     def update_from_env(self, turn_idx: int, env_data: Env):
         self.env_data = env_data
         state = getattr(env_data, "state", None)
-        formatted_prompt = f"You are a planning and reasoning agent. You will receive: The original task description, The Code Agent’s code, The code execution output. Your job is to reason carefully, decide the final action, and format your response exactly as specified. Instructions: Read the task, inspect the code, and verify the execution output against the task requirements. If the code/output is correct and sufficient, adopt it; otherwise, improve or override it with your own reasoning. Keep your reasoning concise but explicit: justify why the final action is correct. Formatting is mandatory. Please give the final action list after ####. Example: #### [U,R,D,L].\n"
+        formatted_prompt = f"You are a planning and reasoning agent. You will receive: The original task description, The Code Agent’s code, The code execution output. Your job is to reason carefully, decide the final action, and format your response exactly as specified. Instructions: Read the task, inspect the code, and verify the execution output against the task requirements. If the code/output is correct and sufficient, adopt it; otherwise, improve or override it with your own reasoning. Keep your reasoning concise but explicit: justify why the final action is correct. Formatting is mandatory. Please give the final action list after ####. "
+        if self.benchmark == "plan_path":
+            formatted_prompt+= "Example: #### [U,R,D,L].\n"
+        if self.benchmark == "sudoku4x4":
+            formatted_prompt+= "Example: #### [[1,2,3,4],[3,4,1,2],[2,1,4,3],[4,3,2,1]] or #### [[0,1,2],[0,2,3],[1,0,4]].\n"
+
+       
         formatted_prompt+= build_plan_prompt(self.benchmark,turn_idx, state)
         formatted_prompt+= f"Here is code agent's code: {state.tool_code}.\n"
-        formatted_prompt+= f"Here is code agent's execution output: {state.tool_execution_output}. The code agent's output format might not follow the format [U,D,L,R], like use action_map ={{0:'U', 1:'D', 2:'L', 3:'R'}} to present the action\n"
+        formatted_prompt+= f"Here is code agent's execution output: {state.tool_execution_output}. "
         formatted_prompt+= f"Here is code agent's action: {state.tool_action}.\n"
         if turn_idx > 0:
             for i, action in enumerate(self.action_list):
                 formatted_prompt+= f"The {i+1}th action is {action}. The {i+1}th state is {self.state_list[i]}.\n"
-            formatted_prompt+= f"Please reason step by step and give the final action list after ####. Example: #### [U,R,D,L].\n"
+            formatted_prompt+= f"Please reason step by step and give the final action list after ####."
+            if self.benchmark == "plan_path":
+                formatted_prompt+= f"Example: #### [U,R,D,L].\n"
+            if self.benchmark == "sudoku4x4":
+                formatted_prompt+= f"Example: #### [[1,2,3,4],[3,4,1,2],[2,1,4,3],[4,3,2,1]] or [[0,1,2],[0,2,3],[1,0,4]].\n"
 
             
         self.current_prompt = {"text": formatted_prompt, "image": None}
 
     
     def update_from_model(self, response: str):
-        self.current_action = extract_final_action(response)
+        # 安全检查：确保response不为None
+        if response is None:
+            self.current_action = []
+            return self.current_action
+            
+        self.current_action = extract_final_action(response, self.benchmark)
         if self.current_action is None:
-            self.current_action=[]
+            self.current_action = []
         return self.current_action
 
     async def step(self, env_data: Env, env_worker: Any = None):
@@ -111,7 +137,10 @@ class PlanAgent(Agent):
         self.state_list.append(state)
         state.step(self.current_action)
         self.action_list.append(self.current_action)
-        self.agent_reward = state.reward
+        if self.current_action is None or self.current_action == []:
+            self.agent_reward = -5
+        else:
+            self.agent_reward = state.reward
         
         # 检查是否成功完成任务
         if hasattr(state, 'done') and state.done:
