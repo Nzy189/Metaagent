@@ -6,7 +6,6 @@ from pettingllms.multi_agent_env.base.env import Env
 
 @dataclass
 class AgentData:
-    history: Optional[Any] = None
     current_prompt: Optional[Dict[str, Any]] = field(
         default_factory=lambda: {"text": None, "image": None}
     )
@@ -14,9 +13,10 @@ class AgentData:
     current_observation: Optional[Any] = None
     info: Optional[Dict[str, Any]] = None
     agent_reward: Optional[float] = None
+    is_pass: bool = False
     done: bool = False
     reward_history: Optional[List[float]] = field(default_factory=list)
-    is_pass: bool = False
+    
 
 class Agent(AgentData):
     def __init__(self):
@@ -67,27 +67,13 @@ class Agent(AgentData):
         Returns:
             None
         """
-        self.history = None
-        self.current_prompt = {"text": None, "image": None}
         self.current_action = None
+        self.current_prompt = None
         self.current_observation = None
         self.info = None
         self.agent_reward = None
         self.reward_history = []
         self.is_pass = False
         self.done = False
-        return
 
-    def get_current_state(self) -> Optional[Any]:
-        """
-        Returns the agent's current state as a dictionary.
 
-        This method provides access to the agent's internal state at the current step,
-        which can be useful for debugging, logging, or state management.
-
-        Returns:
-            Step: The agent's current state.
-        """
-        if not self.trajectory.steps:
-            return None
-        return self.trajectory.steps[-1]

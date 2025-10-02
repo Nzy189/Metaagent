@@ -146,13 +146,11 @@ pettingllms/bin/
 pettingllms/lib/
 pettingllms/lib64/
 pettingllms/include/
-pettingllms/Scripts/
 pettingllms/pyvenv.cfg
 .pettingllms/bin/
 .pettingllms/lib/
 .pettingllms/lib64/
 .pettingllms/include/
-.pettingllms/Scripts/
 .pettingllms/pyvenv.cfg
 
 # Spyder project settings
@@ -191,9 +189,7 @@ cython_debug/
 # DS_Store
 .DS_Store
 
-# Project specific ignores
-scripts copy/
-**/scripts copy/
+
 data/.cache/
 **/cache/
 *.egg-info/

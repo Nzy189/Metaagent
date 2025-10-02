@@ -72,29 +72,6 @@ class CodeEnv(Env):
    
 
     def reset(self):
-        """
-        Reset the environment to the initial state.
-        class CodeTestEnvState:
-    problem: str=None
-    golden_code: str=None
-    generated_code: str=None
-    generated_test_input: List[str]=None
-    generated_test_output: List[str]=None
-    ground_truth_test_input: List[str]=None
-    ground_truth_test_output: List[str]=None
-    exe_code_generated_test_output: List[str]=None
-    exe_code_ground_truth_test_output: List[str]=None
-    # Evaluation results: generated test vs generated code
-    ground_truth_test_vs_generated_code_mismatch_cases: List[Dict]=None
-    ground_truth_test_vs_generated_code_match_cases: List[Dict]=None
-    ground_truth_test_vs_generated_code_match_ratio: float=None
-    generated_test_vs_generated_code_match_cases: List[Dict]=None
-    generated_test_vs_generated_code_mismatch_cases: List[Dict]=None
-    generated_test_vs_generated_code_match_ratio: float=None
-    generated_test_vs_golden_code_match_cases: List[Dict]=None
-    generated_test_vs_golden_code_mismatch_cases: List[Dict]=None
-    generated_test_vs_golden_code_match_ratio: float=None
-        """
 
         self.state.generated_code=None
         self.state.generated_code_history=[]

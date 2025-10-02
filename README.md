@@ -123,8 +123,8 @@ Table 3 · Ablation on Plan-Path (Qwen3-1.7B)
 
 ```bash
 git clone https://github.com/NorahYujieZhao/PettingLLMs.git
-cd pettingllms
-pip install -e .
+cd PettingLLMs
+bash setup.bash
 ```
 
 

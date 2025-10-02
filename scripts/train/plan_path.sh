@@ -18,17 +18,11 @@ export LD_LIBRARY_PATH=$CUDA_HOME/targets/x86_64-linux/lib:${LD_LIBRARY_PATH}
 
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}
 
-model_0_config_path="models.model_0.ppo_trainer_config"
-train_data_size=32
-val_data_size=32
-model_0_data_dir=~/data/math/model_0
-
 
 model_0_USE_GRPO="$model_0_config_path.algorithm.adv_estimator=grpo $model_0_config_path.actor_rollout_ref.actor.use_kl_loss=False"
 
 model_0_resource="resource.n_gpus_per_node=1  $model_0_config_path.trainer.n_gpus_per_node=1 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=1"
 
-model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/train.parquet +$model_0_config_path.data.val_files=$model_0_data_dir/text/test.parquet"
 
 python3 -m pettingllms.trainer.train --config-path ../config/stateful --config-name plan_path_single_agent \
     $model_0_USE_GRPO $model_0_resource $model_0_data\
