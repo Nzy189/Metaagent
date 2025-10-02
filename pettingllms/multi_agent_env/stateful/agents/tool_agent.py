@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 import copy
 
 def truncatefn(s, length=300):
-    """截断字符串到指定长度"""
     if isinstance(s, str):
         pass
     else:
@@ -27,24 +26,11 @@ def truncatefn(s, length=300):
 
 
 def generate_sudoku_example(n: int, seed: int = 42) -> List[List[int]]:
-    """
-    根据给定的大小 n 生成一个随机的数独示例网格
-    
-    Args:
-        n: 数独的大小 (nxn)
-        seed: 随机种子，确保可重现性
-        
-    Returns:
-        nxn 的数独网格示例
-    """
     random.seed(seed)
     
-    # 创建一个简单的示例网格
     grid = [[0 for _ in range(n)] for _ in range(n)]
     
-    # 根据不同大小生成不同的示例
     if n == 4:
-        # 4x4 数独示例
         grid = [
             [1, 2, 3, 4],
             [3, 4, 1, 2], 
@@ -52,7 +38,6 @@ def generate_sudoku_example(n: int, seed: int = 42) -> List[List[int]]:
             [4, 3, 2, 1]
         ]
     elif n == 9:
-        # 9x9 数独示例 (部分填充)
         grid = [
             [5, 3, 0, 0, 7, 0, 0, 0, 0],
             [6, 0, 0, 1, 9, 5, 0, 0, 0],
@@ -65,8 +50,7 @@ def generate_sudoku_example(n: int, seed: int = 42) -> List[List[int]]:
             [0, 0, 0, 0, 8, 0, 0, 7, 9]
         ]
     else:
-        # 对于其他大小，生成一个简单的部分填充网格
-        for i in range(min(n, 3)):  # 只填充前几行作为示例
+        for i in range(min(n, 3)):  
             for j in range(min(n, 3)):
                 grid[i][j] = (i * n + j) % n + 1
     
@@ -74,51 +58,40 @@ def generate_sudoku_example(n: int, seed: int = 42) -> List[List[int]]:
 
 
 def extract_code_from_response(response: str) -> str:
-    """
-    从智能体响应中提取代码块。
-    
-    Args:
-        response: 智能体响应字符串
-        
-    Returns:
-        提取的代码字符串
-    """
-    # 安全检查：确保response不为None
+
     if response is None or not isinstance(response, str):
         return ""
     
-    # 优先寻找完整的 Python 代码块
+    
     python_pattern = r'```python\s*(.*?)```'
     matches = re.findall(python_pattern, response, re.DOTALL)
     
     if matches:
-        return matches[-1].strip()  # 返回最后一个代码块
+        return matches[-1].strip()  
     
-    # 寻找完整的通用代码块
+    
     code_pattern = r'```\s*(.*?)```'
     matches = re.findall(code_pattern, response, re.DOTALL)
     
     if matches:
         return matches[-1].strip()
     
-    # 寻找不完整的 Python 代码块（只有开始标记）
+    
     incomplete_python_pattern = r'```python\s*(.*?)$'
     matches = re.findall(incomplete_python_pattern, response, re.DOTALL)
     
     if matches:
         return matches[-1].strip()
     
-    # 寻找不完整的通用代码块（只有开始标记）
+    
     incomplete_code_pattern = r'```\s*(.*?)$'
     matches = re.findall(incomplete_code_pattern, response, re.DOTALL)
     
     if matches:
         code = matches[-1].strip()
-        # 检查是否看起来像代码（包含常见的Python关键字或语法）
         if any(keyword in code for keyword in ['def ', 'import ', 'from ', '=', 'print(', 'return', 'if ', 'for ', 'while ']):
             return code
     
-    # 如果没有找到代码块，返回整个响应
     return response.strip()
 
 
@@ -133,12 +106,11 @@ def extract_actions_from_code_output(output: str, benchmark: str = "plan_path") 
     Returns:
         动作序列列表，格式取决于benchmark
     """
-    # 安全检查：确保output不为None且为字符串
+    
     if output is None or not isinstance(output, str) or output.startswith("error:"):
         return None
     
     try:
-        # 寻找 **Actions List**: [...] 格式
         actions_pattern = r'\*\*Actions List\*\*:\s*(\[.*?\])'
         matches = re.findall(actions_pattern, output, re.DOTALL)
         
@@ -147,24 +119,23 @@ def extract_actions_from_code_output(output: str, benchmark: str = "plan_path") 
             try:
                 actions = eval(actions_str)
                 if isinstance(actions, list):
-                    # 验证格式是否符合benchmark要求
                     if benchmark == "plan_path":
                         if all(isinstance(action, str) and action in ['U', 'D', 'L', 'R'] for action in actions):
                             return actions
                     elif benchmark == "sudoku4x4":
-                        # 检查是否为完整网格格式 [[1,2,3,4],...]
+                        
                         if (len(actions) > 0 and isinstance(actions[0], list) and 
                             all(isinstance(row, list) and len(row) > 0 for row in actions)):
                             return actions
-                        # 检查是否为步骤格式 [[r,c,v],...]
+                       
                         elif all(isinstance(step, list) and len(step) == 3 for step in actions):
                             return actions
                     else:
-                        return actions  # 其他benchmark直接返回
+                        return actions  
             except:
                 pass
         
-        # 备选：寻找 Actions: [...] 格式  
+        
         actions_pattern2 = r'Actions:\s*(\[.*?\])'
         matches2 = re.findall(actions_pattern2, output, re.DOTALL)
         
@@ -184,7 +155,7 @@ def extract_actions_from_code_output(output: str, benchmark: str = "plan_path") 
             except:
                 pass
         
-        # 最后尝试：寻找任何符合格式的列表
+        
         lines = output.strip().split('\n')
         for line in lines:
             line = line.strip()
@@ -249,8 +220,7 @@ class ToolAgent(Agent):
             #formatted_prompt+= f"Important: Your code must output the final action sequence in this exact format:\n**Actions List**: [\"U\", \"R\", \"D\", \"L\"] (example for path planning)\n\n"
             #formatted_prompt+= f"Important: Your code must output the final action sequence in this exact format:\n**Actions List**: [\"U\", \"R\", \"D\", \"L\"] (example for path planning)\n\nNote: If your algorithm produces numerical results, convert them using action_map = {{0:'U', 1:'D', 2:'L', 3:'R'}} before outputting.\n"
         elif self.benchmark == "sudoku4x4":
-            # 使用与上面相同的逻辑获取数独大小和示例
-            sudoku_size = 4  # 默认大小
+            sudoku_size = 4 
             if state and hasattr(state, 'size'):
                 sudoku_size = state.size
             elif state and hasattr(state, 'config'):
@@ -260,7 +230,7 @@ class ToolAgent(Agent):
                     sudoku_size = state.config['map_size']
             
             example_grid = generate_sudoku_example(sudoku_size)
-            example_str = str(example_grid).replace(' ', '')  # 移除空格以匹配格式
+            example_str = str(example_grid).replace(' ', '')  
             
             formatted_prompt+= f"Important: Your code must output the final action in one of these exact formats:\n**Actions List**: {example_str} (complete grid) for {sudoku_size}x{sudoku_size} sudoku.\n"
         else:
@@ -268,7 +238,6 @@ class ToolAgent(Agent):
         self.current_prompt = {"text": formatted_prompt, "image": None}
 
     def update_from_model(self, response: str):
-        # 安全检查：确保response不为None
         if response is None:
             self.current_code = ""
             return self.current_code
@@ -310,29 +279,29 @@ class ToolAgent(Agent):
             self.agent_reward =  state.reward
         self.agent_reward_history.append(self.agent_reward)
         
-        # 检查是否成功完成任务
+        
         if hasattr(state, 'done') and env_data.state.done:
-            # 根据不同的 benchmark 检查成功条件
+            
             if self.benchmark == "plan_path":
-                # PlanPath: 检查是否到达目标位置
+                
                 if hasattr(state, 'pos') and hasattr(state, 'goal') and state.pos == state.goal:
                     self.done = True
                     self.is_pass = True
-                    self.agent_reward = max(self.agent_reward, 1.0)  # 确保成功时有正奖励
+                    self.agent_reward = max(self.agent_reward, 1.0)  
             elif self.benchmark == "eight_queens":
-                # EightQueens: 检查是否正确放置了所有皇后
+                
                 if hasattr(state, '_is_solved') and state._is_solved():
                     self.done = True
                     self.is_pass = True
                     self.agent_reward = max(self.agent_reward, 1.0)
             elif self.benchmark == "blocksworld":
-                # Blocksworld: 检查是否达到目标配置
+                
                 if hasattr(state, '_is_goal_reached') and state._is_goal_reached():
                     self.done = True
                     self.is_pass = True
                     self.agent_reward = max(self.agent_reward, 1.0)
             elif self.benchmark == "sudoku4x4":
-                # Sudoku4x4: 检查是否正确解决数独
+                
                 if hasattr(state, '_is_solved') and state._is_solved():
                     self.done = True
                     self.is_pass = True

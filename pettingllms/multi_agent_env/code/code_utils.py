@@ -242,7 +242,6 @@ async def _worker_docker(
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script)
 
-        # 在子进程内用 exec 执行用户脚本，并用 fake_input 实现按行 input()
         runner_path = os.path.join(tmpdir, "runner.py")
         runner_code = textwrap.dedent(
             """
@@ -334,7 +333,6 @@ async def _worker_docker(
                         proc.kill()
                     except Exception:
                         pass
-                # 在超时时向 stderr 追加父进程侧的说明，便于诊断
                 try:
                     with open(stderr_path, "ab") as f_err_append:
                         msg = f"[parent] Timeout after {timeout}s; process killed.\n".encode()
@@ -392,10 +390,9 @@ async def _worker_docker(
                         if not file_handle.closed:
                             file_handle.close()
                     except Exception as e:
-                        print(f"关闭 {file_name} 文件句柄失败: {e}")
+                        print(f"close {file_name} file handle failed: {e}")
                         
     except Exception as e:
-        # top level fallback, keep the same behavior as the original implementation: convert exception to readable string
         printed_output = f"error: {e}"
 
     finally:
@@ -465,27 +462,21 @@ async def get_code_execution_output(
         if ray_actor is None:
             raise ValueError("ray_actor is required")
         
-        # 为大规模并发增加超时缓冲时间
-        # 对于500个rollout，Ray调度和执行需要更多时间
-        timeout_buffer = max(timeout * 2.0, 30.0)  # 至少30秒缓冲
+    
+        timeout_buffer = max(timeout * 2.0, 30.0)  
         total_timeout = timeout + timeout_buffer
-        
-        #print(f"🔧 执行代码，超时设置: {total_timeout}s (原始: {timeout}s + 缓冲: {timeout_buffer}s)")
-        
-        # 使用 Ray actor 执行代码，并用 _await_ray_object_ref 处理超时
-        obj_ref = ray_actor.run.remote(code, input_val, "", timeout)  # expected_output 设为空字符串
+        obj_ref = ray_actor.run.remote(code, input_val, "", timeout)  
         result_dict = await _await_ray_object_ref(obj_ref, total_timeout)
         
-        # 提取执行结果
         if isinstance(result_dict, dict):
             execution_output = result_dict.get("code_execution_output", "")
         else:
             execution_output = str(result_dict)
             
         if isinstance(execution_output, str) and execution_output.startswith("error:"):
-            print(f"⚠️ Ray执行返回错误: {execution_output}")
+            print(f"⚠️ Ray execution returned error: {execution_output}")
         else:
-            print(f"✅ Ray执行成功，输出长度: {len(str(execution_output))} 字符")
+            print(f"✅ Ray execution successful, output length: {len(str(execution_output))} characters")
             
         return execution_output
         
@@ -572,7 +563,6 @@ async def evaluate_code_against_tests(
                 processed_results.append(item)
         results = processed_results
         
-        # 统计执行结果
         success_count = sum(1 for r in results if not str(r.get("code_execution_output", "")).startswith("error:"))
         error_count = len(results) - success_count
         #print(f"✅ Ray代码测试任务完成: {success_count} 成功, {error_count} 失败")
