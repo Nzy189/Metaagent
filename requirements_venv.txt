@@ -39,7 +39,7 @@ click==8.1.8
 cloudpickle==3.1.1
 codetiming==1.4.0
 colorama==0.4.6
-compressed-tensors==0.10.2
+compressed-tensors==0.11.0
 contourpy==1.3.3
 cupy-cuda12x==13.5.1
 cycler==0.12.1
@@ -80,7 +80,6 @@ filelock==3.19.1
 filetype==1.2.0
 fire==0.7.1
 firecrawl==2.16.5
-flash_attn==2.8.3
 Flask==3.1.1
 fonttools==4.59.1
 frozenlist==1.7.0
@@ -152,7 +151,7 @@ llama-index-core==0.12.42
 llama-index-llms-openai==0.3.42
 llguidance==0.7.30
 llvmlite==0.44.0
-lm-format-enforcer==0.10.12
+lm-format-enforcer==0.11.3
 lxml==5.4.0
 markdown-it-py==4.0.0
 MarkupSafe==3.0.2
@@ -193,15 +192,15 @@ nvidia-nvshmem-cu12==3.3.20
 nvidia-nvtx-cu12==12.8.55
 oauthlib==3.3.1
 omegaconf==2.3.0
-openai==1.90.0
+openai==1.99.0
 opencv-python-headless==4.11.0.86
-opentelemetry-api==1.26.0
-opentelemetry-sdk==1.26.0
-opentelemetry-semantic-conventions==0.47b0
+opentelemetry-api==1.30.0
+opentelemetry-sdk==1.30.0
+opentelemetry-semantic-conventions==0.51b0
 orjson==3.11.2
 outcome==1.3.0.post0
-outlines==1.2.0
-outlines_core==0.2.10
+outlines
+outlines_core
 packaging==25.0
 pandas==2.3.1
 parso==0.8.4
@@ -306,16 +305,11 @@ together==1.5.25
 tokenizers==0.21.4
 toml==0.10.2
 tomlkit==0.13.3
-torch==2.7.1+cu128
-torchaudio==2.7.1
-torchdata==0.11.0
-torchvision==0.22.1
 tqdm==4.67.1
 traitlets==5.14.3
 transformers==4.55.2
 trio==0.30.0
 trio-websocket==0.12.2
-triton==3.3.1
 typer==0.15.4
 types-certifi==2021.10.8.3
 types-requests==2.32.4.20250809
@@ -330,10 +324,12 @@ unidiff==0.7.5
 urllib3==2.5.0
 uvicorn==0.35.0
 uvloop==0.21.0
+<<<<<<< HEAD
 -e git+https://github.com/volcengine/verl.git@92e81cfcfd7c5a088032c78f2c80b4fc32b88119#egg=verl
+=======
+>>>>>>> main
 vertexai==1.71.1
 virtualenv==20.34.0
-vllm==0.10.0
 wandb==0.21.1
 watchfiles==1.1.0
 wcwidth==0.2.13
@@ -348,4 +344,8 @@ xformers==0.0.31
 xgrammar==0.1.21
 xxhash==3.5.0
 yarl==1.20.1
+<<<<<<< HEAD
 zipp==3.23.0
+=======
+zipp==3.23.0
+>>>>>>> main

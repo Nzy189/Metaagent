@@ -34,9 +34,7 @@ python3 -m pettingllms.trainer.train --config-path ../config/math --config-name 
     $model_0_USE_GRPO $model_0_resource $model_0_data\
     models.model_0.path=/home/lah003/models/Qwen3-8B\
     benchmark=AIME25\
-    +difficulty=train_polaris\
     experiment_name=8b_Single_AIME25\
-    if_dapo=True\
     trainer.total_training_steps=400\
     trainer.save_freq=150\
     data.epoch_size=100\

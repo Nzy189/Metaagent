@@ -32,7 +32,7 @@ model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/trai
 
 python3 -m pettingllms.trainer.train --config-path ../config/stateful --config-name plan_path_single_agent \
     $model_0_USE_GRPO $model_0_resource $model_0_data\
-    models.model_0.path=/home/lah003/models/Qwen3-1.7B\
+    models.model_0.path=/home/nvidia/data/models/Qwen3-1.7B\
     experiment_name=plan_path_single_agent_1.7B\
     if_dapo=True\
     benchmark=plan_path\

@@ -280,7 +280,6 @@ build/
 
 # Version control
 .git/
-.gitmodules
 .git-credentials
 
 # Documentation build
