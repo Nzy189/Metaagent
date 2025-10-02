@@ -21,7 +21,6 @@ from omegaconf import DictConfig, OmegaConf
 from pydantic import BaseModel, ConfigDict
 from tensordict import TensorDict
 from transformers import AutoProcessor, AutoTokenizer
-from pettingllms.misc import colorful_print
 
 from verl.protocol import DataProto
 from verl.single_controller.ray.base import RayWorkerGroup
@@ -29,7 +28,6 @@ from verl.utils import hf_processor, hf_tokenizer
 from verl.utils.fs import copy_to_local
 from verl.utils.model import compute_position_id_with_mask
 from verl.utils.torch_functional import get_response_mask, pad_2d_list_to_length
-from verl.workers.rollout.async_server import async_server_class
 from pettingllms.utils.logger_config import get_multi_logger
 from dataclasses import dataclass
 from openai.types.completion import Completion
@@ -45,7 +43,16 @@ def _repeat_interleave(value: torch.Tensor | np.ndarray, repeats: int) -> torch.
 
 async def poll_completions_openai(address: str, **completions_request) -> Completion:
     # Use aiohttp directly instead of AsyncOpenAI to avoid potential blocking
-    base_url = f"http://{address}/v1/completions"
+    # Handle address that might already contain protocol
+    if address.startswith(('http://', 'https://')):
+        base_url = f"{address}/v1/completions"
+    else:
+        base_url = f"http://{address}/v1/completions"
+    # Debug: print resolved base URL
+    try:
+        print(f"[LLM][poll_completions_openai] address={address} -> base_url={base_url}")
+    except Exception:
+        pass
     headers = {
         "Content-Type": "application/json",
     }
@@ -73,12 +80,15 @@ async def poll_completions_openai(address: str, **completions_request) -> Comple
                     return result
         except Exception as e:
             import traceback
-
+            
+            # Log the actual URL being attempted for debugging
+            print(f"❌ Request failed to {base_url}: {str(e)}")
             traceback.print_exc()
             # If this is the last retry, raise the exception
             if retry == max_retries - 1:
                 raise e
             # Exponential backoff
+            print(f"🔄 Retrying in {retry_delay} seconds... (attempt {retry + 2}/{max_retries})")
             await asyncio.sleep(retry_delay)
             retry_delay *= 2
 
@@ -192,6 +202,12 @@ async def llm_async_generate(
 
     unique_request_id = f"{application_id}_{uuid.uuid4().hex[:8]}"
 
+    # Debug: print input address/model info
+    try:
+        print(f"[LLM][llm_async_generate] request_id={unique_request_id} address={address} model={model_name} mode={mode}")
+    except Exception:
+        pass
+
     if mode == "train":
         temperature = override_temperature if override_temperature is not None else ppo_trainer_config.actor_rollout_ref.rollout.temperature
         kwargs={
@@ -261,7 +277,7 @@ class RequestState:
     server: ray.actor.ActorHandle
     created_time: datetime
     response_received_time: Optional[datetime] = None
-    timeout_seconds: float = 10.0  # 响应后10秒超时
+    timeout_seconds: float = 10.0  
     is_timeout_cleanup_scheduled: bool = False
     is_cleaned_up: bool = False
 

@@ -1,0 +1,157 @@
+# Configuration for Plan Path multi-agent training with TWO different policies
+# plan_walker_agent uses direct reasoning, plan_tool_agent uses code generation
+mode: "validate"
+sample_mode: "tree"
+enable_thinking: false
+# Inherit from base configuration
+defaults:
+  # Inject a separate ppo_trainer/eval subtree for each model; can be overridden independently
+  - ../ppo_trainer@models.model_0.ppo_trainer_config: eval
+  - ../ppo_trainer@models.model_1.ppo_trainer_config: eval
+  - _self_
+
+benchmark: "PlanPath"
+
+# dataset config (shared by all agents)
+data:
+  filter_method: mean # mean, uid, dapo, std
+  filter_ratio: 0.2
+  gen_batch_size: 64
+  gen_n_samples: 5
+  sample_temperature: 1
+  val_freq: 10
+  resample_freq: 1
+  epoch_size: 30
+  # Batch sizes
+  train_batch_size: 256
+  val_batch_size: 32
+  
+  # Sequence lengths
+  max_prompt_length: 4096
+  max_response_length: 2048
+
+resource:
+  nnodes: 1
+  n_gpus_per_node: 8
+  trust_remote_code: true
+
+# Environment configuration (shared by all agents)
+env:
+  name: stateful_env
+  benchmark: "PlanPath"
+  max_turns: 5
+  resolve: false
+  multi_modal: false
+  batched_init: true
+
+if_dapo: true
+
+# Multi-agent interaction configuration
+multi_agent_interaction:
+  
+  # Turn order for agents (list of agent names)
+  turn_order: [ "tool_call_agent","plan_agent"]
+  
+  # Number of agents that interact per episode
+  num_interacting_agents: 2
+  
+  # Whether agents can see other agents' actions
+  shared_observation: true
+
+# Shared model configurations
+models:
+  model_0:
+    # TODO: make configurable
+    path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
+    #path: "/home/lah003/models/Qwen2.5-7B-Instruct"
+    name: "plan_agent_model"
+    ppo_trainer_config:
+      data: 
+        max_prompt_length: ${data.max_prompt_length}
+        max_response_length: ${data.max_response_length}
+      actor_rollout_ref:
+        model:
+          path: ${models.model_0.path}
+        rollout:
+          n: ${data.gen_n_samples}
+          temperature: ${data.sample_temperature}
+          prompt_length: ${data.max_prompt_length}
+          response_length: ${data.max_response_length}
+          tensor_model_parallel_size: ${resource.n_gpus_per_node}
+        trainer:
+          n_gpus_per_node: ${resource.n_gpus_per_node}
+          n_training_gpus_per_node: ${resource.n_gpus_per_node}
+  model_1:
+    # TODO: make configurable
+    path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
+    #path: "/home/lah003/models/Qwen2.5-7B-Instruct"
+    name: "tool_call_agent_model"
+    ppo_trainer_config:
+      data: 
+        max_prompt_length: ${data.max_prompt_length}
+        max_response_length: ${data.max_response_length}
+      actor_rollout_ref:
+        model:
+          path: ${models.model_0.path}
+        rollout:
+          n: ${data.gen_n_samples}
+          temperature: ${data.sample_temperature}
+          prompt_length: ${data.max_prompt_length}
+          response_length: ${data.max_response_length}
+          tensor_model_parallel_size: ${resource.n_gpus_per_node}
+        trainer:
+          n_gpus_per_node: ${resource.n_gpus_per_node}
+          n_training_gpus_per_node: ${resource.n_gpus_per_node}
+# Multi-agent configuration for two policies
+# Multi-agent configuration for two policies
+agent_policy_configs:
+  # Number of agents to train
+  num_agents: 2
+  policy_list: ["tool_call_agent_model","plan_agent_model"]
+  agent_configs:  
+    agent_0:
+      name: "tool_call_agent"
+      policy_name: "tool_call_agent_model"
+      sample_num: 4
+
+    agent_1:
+      name: "plan_agent"
+      policy_name: "plan_agent_model"
+      sample_num: 4
+      
+
+# Logger configuration
+project_name: pettingllms
+experiment_name: plan_path_two_policies
+logger: [ 'console', 'wandb' ]
+
+trainer:
+  device: cuda
+  n_gpus_per_node: ${resource.n_gpus_per_node}
+  nnodes: 1
+  balance_batch: True
+  total_epochs: 1
+  total_training_steps: 200
+  project_name: pettingllms
+  experiment_name: plan_path_two_policies
+  logger: [ 'console', 'wandb' ]
+  log_val_generations: 0
+  rollout_data_dir: null
+  validation_data_dir: null
+  save_freq: -1
+  resume_mode: auto
+  resume_from_path: null
+  val_before_train: True
+  test_freq: -1
+  critic_warmup: 0
+  default_hdfs_dir: null
+  del_local_ckpt_after_load: False
+  default_local_dir: checkpoints/pettingllms/plan_path_two_policies
+  max_actor_ckpt_to_keep: 3
+  max_critic_ckpt_to_keep: null
+  ray_wait_register_center_timeout: 300
+  npu_profile:
+    options: {}
+  rejection_sample: False
+  rejection_sample_multiplier: 2
+  n_training_gpus_per_node: ${resource.n_gpus_per_node}

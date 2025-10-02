@@ -11,26 +11,22 @@ ENV_CLASSES = {
    
     # Multi-agent system environments
     "web_env": safe_import("pettingllms.multi_agent_env.frontend.websight_env", "WebEnv"),
-    "code_env": safe_import("pettingllms.multi_agent_env.code.code_test_env", "CodeTestEnv"),
+    "code_env": safe_import("pettingllms.multi_agent_env.code.code_env", "CodeEnv"),
     "base_env": safe_import("pettingllms.multi_agent_env.base.env", "BaseEnv"),
-    "multi_turn_env": safe_import("pettingllms.multi_agent_env.base.env", "MultiTurnEnvironment"),
-    "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_test_env", "CodeTestEnv"),
-    "math_env_single_agent": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnv"),
-    "math_env": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnv"),
+    "math_env": safe_import("pettingllms.multi_agent_env.math.math_env", "MathEnv"),
+    "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math_aggretion.math_env", "MathEnv"),
     "alfworld_env": safe_import("pettingllms.multi_agent_env.alfworld.alfworld_env", "AlfworldEnv"),
-    "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math_aggretion.math_test_env", "MathTestEnv"),
-    "plan_path_env": safe_import("pettingllms.multi_agent_env.plan_path.plan_path_env", "PlanPathEnv"),
+    "stateful_env": safe_import("pettingllms.multi_agent_env.stateful.stateful_env", "StatefulEnv"),
 }
 
 ENV_BATCH_CLASSES = {
     "base_env": safe_import("pettingllms.multi_agent_env.base.env", "EnvBatch"),
-    "code_env": safe_import("pettingllms.multi_agent_env.code.code_test_env", "CodeTestEnvBatch"),
+    "code_env": safe_import("pettingllms.multi_agent_env.code.code_env", "CodeEnvBatch"),
     "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_test_env", "CodeTestEnvBatch"),
-    "math_env": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnvBatch"),
-    "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math_aggretion.math_test_env", "MathTestEnvBatch"),
-    "math_env_single_agent": safe_import("pettingllms.multi_agent_env.math.math_test_env", "MathTestEnvBatch"),
+    "math_env": safe_import("pettingllms.multi_agent_env.math.math_env", "MathEnvBatch"),
+    "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math_aggretion.math_env", "MathEnvBatch"),
     "alfworld_env": safe_import("pettingllms.multi_agent_env.alfworld.alfworld_env", "AlfWorldEnvBatch"),
-    "plan_path_env": safe_import("pettingllms.multi_agent_env.plan_path.plan_path_env", "PlanPathEnvBatch"),
+    "stateful_env": safe_import("pettingllms.multi_agent_env.stateful.stateful_env", "StatefulEnvBatch"),
 }
 
 # Import agent classes
@@ -52,9 +48,9 @@ AGENT_CLASSES = {
     "aggreted_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.aggreted_agent", "AggregationAgent"),
     "sample_tool_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.sample_tool_agent", "ToolAgent"),
     "sample_reasoning_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.sample_reasoning_agent", "ReasoningAgent"),
-    # Plan path agents
-    "plan_agent": safe_import("pettingllms.multi_agent_env.plan_path.agents.plan_agent", "PlanAgent"),
-    "tool_call_agent": safe_import("pettingllms.multi_agent_env.plan_path.agents.tool_agent", "ToolAgent"),
+    # Stateful agents
+    "plan_agent": safe_import("pettingllms.multi_agent_env.stateful.agents.plan_agent", "PlanAgent"),
+    "tool_call_agent": safe_import("pettingllms.multi_agent_env.stateful.agents.tool_agent", "ToolAgent"),
 }
 
 ENV_WORKER_CLASSES = {
@@ -62,7 +58,7 @@ ENV_WORKER_CLASSES = {
     "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_utils", "get_ray_docker_worker_cls"),
     "math_env": safe_import("pettingllms.multi_agent_env.math.math_utils", "get_ray_docker_worker_cls"),
     "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math.math_utils", "get_ray_docker_worker_cls"),
-    "plan_path_env": safe_import("pettingllms.multi_agent_env.math.math_utils", "get_ray_docker_worker_cls")  # 复用数学环境的worker
+    "stateful_env": safe_import("pettingllms.multi_agent_env.math.math_utils", "get_ray_docker_worker_cls")  
 }
 
 # Filter out None values for unavailable imports

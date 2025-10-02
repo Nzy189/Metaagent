@@ -264,9 +264,9 @@ def _ensure_ray_initialized() -> bool:
 
             # Ensure Ray temp and spill directories
             try:
-                project_root = Path(__file__).resolve().parents[3]
-                ray_tmp_dir = os.path.join(project_root, "tmp", "ray_tmp")
-                ray_spill_dir = os.path.join(project_root, "tmp", "ray_spill")
+                # Use /tmp for shorter socket paths (Unix socket path limit is 107 bytes)
+                ray_tmp_dir = "/tmp/verl_ray"
+                ray_spill_dir = "/tmp/verl_spill"
                 os.makedirs(ray_tmp_dir, exist_ok=True)
                 os.makedirs(ray_spill_dir, exist_ok=True)
 
@@ -371,9 +371,9 @@ def _ensure_ray_initialized() -> bool:
 
             # Ensure Ray temp and spill directories
             try:
-                project_root = Path(__file__).resolve().parents[3]
-                ray_tmp_dir = os.path.join(project_root, "tmp", "ray_tmp")
-                ray_spill_dir = os.path.join(project_root, "tmp", "ray_spill")
+                # Use /tmp for shorter socket paths (Unix socket path limit is 107 bytes)
+                ray_tmp_dir = "/tmp/verl_ray"
+                ray_spill_dir = "/tmp/verl_spill"
                 os.makedirs(ray_tmp_dir, exist_ok=True)
                 os.makedirs(ray_spill_dir, exist_ok=True)
 
@@ -617,9 +617,9 @@ def _ensure_ray_initialized() -> bool:
 
             # Ensure Ray temp and spill directories
             try:
-                project_root = Path(__file__).resolve().parents[3]
-                ray_tmp_dir = os.path.join(project_root, "tmp", "ray_tmp")
-                ray_spill_dir = os.path.join(project_root, "tmp", "ray_spill")
+                # Use /tmp for shorter socket paths (Unix socket path limit is 107 bytes)
+                ray_tmp_dir = "/tmp/verl_ray"
+                ray_spill_dir = "/tmp/verl_spill"
                 os.makedirs(ray_tmp_dir, exist_ok=True)
                 os.makedirs(ray_spill_dir, exist_ok=True)
 

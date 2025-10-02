@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from pettingllms.multi_agent_env.base.env import MultiAgentsEnvironment
+from pettingllms.multi_agent_env.base.env import Env
 from pettingllms.utils.logger_config import get_multi_logger
 from alfworld.agents.environment import get_environment
 from alfworld.agents.environment.alfred_tw_env import AlfredTWEnv

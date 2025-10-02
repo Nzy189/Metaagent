@@ -5,8 +5,8 @@ sample_mode: "tree"
 # Inherit from base configuration
 defaults:
   # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently
-  - ppo_trainer@models.model_0.ppo_trainer_config: eval
-  - ppo_trainer@models.model_1.ppo_trainer_config: eval
+  - ../ppo_trainer@models.model_0.ppo_trainer_config: eval
+  - ../ppo_trainer@models.model_1.ppo_trainer_config: eval
   - _self_
 benchmark: "MATH500"
 # dataset config (shared by all agents)

@@ -165,17 +165,35 @@ class MultiAgentsPPOTrainer:
         )
 
     def init_workers(self):
-        """Initialize workers for all PPO trainers."""
+        """
+        Initialize workers for all PPO trainers.
+        
+        注意：由于 trainer 对象包含不可序列化的组件（如 asyncio event loops），
+        无法使用 Ray remote tasks 或线程池来并行化。但 init_workers() 内部
+        的 Ray worker 创建本身已经是并行的。
+        """
         colorful_print("Initializing workers for all PPO trainers...", "cyan")
         if not self.ppo_trainer_dict:
             colorful_print("No PPO trainers to initialize", "yellow")
             return
 
+        # 必须在主进程中顺序调用，因为：
+        # 1. trainer 对象包含 asyncio event loops (不可序列化)
+        # 2. Ray worker groups 和 AsyncLLMServerManager 也不可序列化
+        # 3. 但每个 trainer.init_workers() 内部已经使用 Ray 并行创建多个 workers
         
-        for model_name, trainer in self.ppo_trainer_dict.items():
-            trainer.init_workers()
-            colorful_print(f"Initialized workers for trainer: {model_name}", "green")
-        colorful_print("All workers initialized successfully", "green")
+        colorful_print(f"Initializing {len(self.ppo_trainer_dict)} trainers sequentially (each trainer spawns workers in parallel)...", "blue")
+        
+        for idx, (model_name, trainer) in enumerate(self.ppo_trainer_dict.items(), 1):
+            colorful_print(f"[{idx}/{len(self.ppo_trainer_dict)}] Initializing workers for: {model_name}", "blue")
+            try:
+                trainer.init_workers()  # 内部会并行创建 Ray workers
+                colorful_print(f"✓ [{idx}/{len(self.ppo_trainer_dict)}] Successfully initialized: {model_name}", "green")
+            except Exception as e:
+                colorful_print(f"✗ Failed to initialize {model_name}: {str(e)}", "red")
+                raise RuntimeError(f"Failed to initialize trainer {model_name}") from e
+        
+        colorful_print(f"All {len(self.ppo_trainer_dict)} trainers initialized successfully!", "green")
 
     def _update_parameters(self, batch, ppo_trainer, timing_raw):
         #TODO: uid
@@ -518,40 +536,113 @@ class MultiAgentsPPOTrainer:
                     # Track metrics from all trainers
                     all_trainer_metrics = {}
                     
-                    update_pbar = tqdm(self.ppo_trainer_dict.items(), desc="Updating Parameters", position=2, leave=False)
-                    
-                    for model_name, trainer in update_pbar:
-                        update_pbar.set_description(f"Updating {model_name}")
-                        
-                        # Update parameters for the corresponding policy/model
-                        if model_name not in gen_batch_output_per_policy:
-                            # Skip if this model has not generated data
-                            continue
-                        self._update_parameters(
-                            batch_per_trainer[model_name],
-                            trainer,
-                            timing_raw,
-                        )
-                                                # Collect metrics from each trainer's batch
-                        if hasattr(batch_per_trainer[model_name], 'meta_info') and 'metrics' in batch_per_trainer[model_name].meta_info:
-                            trainer_metrics = batch_per_trainer[model_name].meta_info['metrics']
+                    # 使用 ThreadPoolExecutor 进行并行更新（避免 Ray remote 的 self 引用问题）
+                    def update_single_trainer(model_name, batch, trainer):
+                        """更新单个 trainer 的参数"""
+                        try:
+                            # 为每个任务创建独立的 timing 字典
+                            local_timing_raw = {}
                             
-                            # Check if we have agent_name information to split metrics by agent
-                            if hasattr(batch_per_trainer[model_name], 'non_tensor_batch') and 'agent_name' in batch_per_trainer[model_name].non_tensor_batch:
-                                agent_names = batch_per_trainer[model_name].non_tensor_batch['agent_name']
-                                unique_agents = list(set(agent_names))
+                            # 调用原有的更新逻辑
+                            self._update_parameters(batch, trainer, local_timing_raw)
+                            
+                            # 提取 metrics
+                            trainer_metrics = {}
+                            if hasattr(batch, 'meta_info') and 'metrics' in batch.meta_info:
+                                trainer_metrics = batch.meta_info['metrics']
+                            
+                            # 提取 agent names 用于后续处理
+                            agent_names = None
+                            if hasattr(batch, 'non_tensor_batch') and 'agent_name' in batch.non_tensor_batch:
+                                agent_names = batch.non_tensor_batch['agent_name']
+                            
+                            return {
+                                "status": "success",
+                                "model_name": model_name,
+                                "timing": local_timing_raw,
+                                "metrics": trainer_metrics,
+                                "agent_names": agent_names
+                            }
+                        except Exception as e:
+                            import traceback
+                            return {
+                                "status": "error",
+                                "model_name": model_name,
+                                "error": str(e),
+                                "traceback": traceback.format_exc()
+                            }
+                    
+                    # 收集需要更新的 trainers
+                    tasks_to_submit = []
+                    for model_name, trainer in self.ppo_trainer_dict.items():
+                        if model_name in gen_batch_output_per_policy:
+                            tasks_to_submit.append((model_name, batch_per_trainer[model_name], trainer))
+                    
+                    if not tasks_to_submit:
+                        colorful_print("No trainers to update", "yellow")
+                    else:
+                        colorful_print(f"Starting parallel parameter updates for {len(tasks_to_submit)} trainers...", "cyan")
+                        
+                        # 使用线程池并行执行（Ray 的 PPO trainer 内部已经使用 Ray 做分布式）
+                        with ThreadPoolExecutor(max_workers=len(tasks_to_submit)) as executor:
+                            # 提交所有任务
+                            futures = {}
+                            for model_name, batch, trainer in tasks_to_submit:
+                                future = executor.submit(update_single_trainer, model_name, batch, trainer)
+                                futures[future] = model_name
+                                colorful_print(f"  Submitted update task for: {model_name}", "blue")
+                            
+                            # 使用 tqdm 显示进度
+                            update_pbar = tqdm(total=len(futures), desc="Updating Parameters", position=2, leave=False)
+                            
+                            # 等待所有任务完成
+                            results = []
+                            for future in as_completed(futures):
+                                result = future.result()
+                                results.append(result)
+                                update_pbar.update(1)
+                                update_pbar.set_description(f"Updated {result.get('model_name', 'unknown')}")
+                            
+                            update_pbar.close()
+                        
+                        # 处理结果：合并 timing 和 metrics
+                        success_count = 0
+                        for result in results:
+                            if result["status"] == "success":
+                                model_name = result["model_name"]
+                                colorful_print(f"✓ Updated parameters for: {model_name}", "green")
+                                success_count += 1
                                 
-                                # Split metrics by agent
-                                for agent_name in unique_agents:
+                                # 合并 timing 信息（取最大值，因为是并行执行）
+                                for key, value in result["timing"].items():
+                                    if key in timing_raw:
+                                        timing_raw[key] = max(timing_raw[key], value)
+                                    else:
+                                        timing_raw[key] = value
+                                
+                                # 处理 metrics
+                                trainer_metrics = result["metrics"]
+                                agent_names = result["agent_names"]
+                                
+                                # Check if we have agent_name information to split metrics by agent
+                                if agent_names is not None:
+                                    unique_agents = list(set(agent_names))
+                                    # Split metrics by agent
+                                    for agent_name in unique_agents:
+                                        for key, value in trainer_metrics.items():
+                                            prefixed_key = f"agent_{agent_name}/{key}"
+                                            all_trainer_metrics[prefixed_key] = value
+                                else:
+                                    # Fallback: use model name prefix (for backward compatibility)
                                     for key, value in trainer_metrics.items():
-                                        prefixed_key = f"agent_{agent_name}/{key}"
+                                        prefixed_key = f"model_{model_name}/{key}"
                                         all_trainer_metrics[prefixed_key] = value
                             else:
-                                # Fallback: use model name prefix (for backward compatibility)
-                                for key, value in trainer_metrics.items():
-                                    prefixed_key = f"model_{model_name}/{key}"
-                                    all_trainer_metrics[prefixed_key] = value
-                    update_pbar.close()
+                                colorful_print(f"✗ Failed to update {result['model_name']}: {result['error']}", "red")
+                                colorful_print(f"Traceback:\n{result['traceback']}", "red")
+                                raise RuntimeError(f"Failed to update trainer {result['model_name']}")
+                        
+                        colorful_print(f"All {success_count} trainers updated successfully!", "green")
                     
                     # Add trainer metrics to main metrics
                     metrics.update(all_trainer_metrics)
@@ -696,7 +787,7 @@ class MultiAgentsPPOTrainer:
             sample_idx: Starting index of samples to visualize
             max_samples: Maximum number of samples to visualize
         """
-        from pettingllms.misc import colorful_print
+        
 
         # Get the relevant tensors
         prompts = tensor_batch.batch["prompts"]

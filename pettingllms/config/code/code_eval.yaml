@@ -6,7 +6,7 @@ enable_thinking: false
 # Inherit from base configuration
 defaults:
   # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently
-  - ppo_trainer@models.model_0.ppo_trainer_config: eval
+  - ../ppo_trainer@models.model_0.ppo_trainer_config: eval
   - _self_
 benchmark: "livecodebench" #"human_eval","livecodebench","mbpp","test"
 # dataset config (shared by all agents)

@@ -10,21 +10,8 @@ if TYPE_CHECKING:
 
 
 
-@dataclass
+@dataclass    
 class Env:
-    env_idx: int
-    rollout_idx: int
-    max_turns: int
-    turn: int = 0
-    global_observations: Optional[Any] = None
-    global_infos: Optional[Any] = None
-    agent_infos: Optional[Dict[str, Any]] = None
-    agent_observations: Optional[Dict[str, Any]] = None
-    state: Optional[Any] = None
-    termination_reason: Optional[str] = None #TODO:
-    is_pass: bool = False
-    
-class MultiAgentsEnvironment(Env):
     """
     An environment for multi-turn interactions with LLMs.
     The environment provides a series of questions/prompts and evaluates responses using a custom reward function.
@@ -42,7 +29,17 @@ class MultiAgentsEnvironment(Env):
             task: Dictionary containing the task information
             config: Configuration for the system
         """
-        super().__init__(env_idx, rollout_idx, max_turns)
+        env_idx: int
+        rollout_idx: int
+        max_turns: int
+        turn: int = 0
+        global_observations: Optional[Any] = None
+        global_infos: Optional[Any] = None
+        agent_infos: Optional[Dict[str, Any]] = None
+        agent_observations: Optional[Dict[str, Any]] = None
+        state: Optional[Any] = None
+        termination_reason: Optional[str] = None #TODO:
+        is_pass: bool = False
         
         # Save configuration
         self.config = config

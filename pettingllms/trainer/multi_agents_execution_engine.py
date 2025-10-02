@@ -1,5 +1,4 @@
 import asyncio
-import concurrent.futures
 import logging
 import time
 import json
@@ -14,23 +13,15 @@ except Exception:  # fallback when verl is a src tree: verl/verl/protocol.py
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
-import openai
-import torch
-from openai.types import Completion
-from pettingllms.trainer.multiagentssys_register import AGENT_CLASS_MAPPING, ENV_CLASS_MAPPING, ENV_BATCH_CLASSES, ENV_WORKER_CLASS_MAPPING
+from pettingllms.trainer.multiagentssys_register import AGENT_CLASS_MAPPING, ENV_CLASS_MAPPING, ENV_BATCH_CLASS_MAPPING, ENV_WORKER_CLASS_MAPPING
 from functools import partial
 import multiprocessing
-from pettingllms.utils.simpler_timer import create_timer, timer_checkpoint
+from pettingllms.utils.simpler_timer import create_timer
 import copy
 from pettingllms.multi_agent_env.base.env import Env, EnvBatch
-from pettingllms.misc import colorful_print
-from pettingllms.parser.chat_template.parser import ChatTemplateParser
-from pettingllms.trainer.utils import convert_prompt_to_dpr, convert_dpr_to_response, convert_prompt_to_format,llm_async_generate
+from pettingllms.trainer.utils import convert_prompt_to_dpr, llm_async_generate
 from pettingllms.utils.logger_config import get_multi_logger
-from threading import Thread
-from pettingllms.trainer.utils import build_reverse_mapping,poll_completions_openai
 from pettingllms.multi_agent_env.code.code_utils import get_ray_docker_worker_cls
 
 
@@ -195,7 +186,7 @@ class MultiAgentsExecutionEngine:
                 self.envs = pool.map(func, range(self.gen_batch_size*self.sample_num))
             self.timer.checkpoint("Non-batched env initialization completed")   
         else:
-            self.env_batch_class=ENV_BATCH_CLASSES[self.env_name]
+            self.env_batch_class=ENV_BATCH_CLASS_MAPPING[self.env_name]
             self.timer.checkpoint("Creating environment batch")  
             if resample==False and mode=="train":
                 for env in self.envs:
@@ -241,18 +232,13 @@ class MultiAgentsExecutionEngine:
         self.timer.checkpoint("Agent groups initialization completed")
     
     def _agent_needs_benchmark(self, agent_class):
-        """
-        判断agent类是否需要benchmark参数
-        通过检查构造函数的参数签名来确定
-        """
+    
         import inspect
         try:
-            # 获取agent类的__init__方法签名
             init_signature = inspect.signature(agent_class.__init__)
-            # 检查是否有benchmark参数
+           
             return 'benchmark' in init_signature.parameters
         except Exception:
-            # 如果无法获取签名，默认不传递benchmark参数
             return False
     
     def __init_one_env_instance(self, rollout_idx, env_args):
@@ -321,6 +307,13 @@ class MultiAgentsExecutionEngine:
                     _addresses = self.server_address_dict.get(policy_name)
                     if isinstance(_addresses, (list, tuple)):
                         _address = random.choice(_addresses) if len(_addresses) > 0 else _addresses[0]
+                    else:
+                        _address = _addresses
+                    # Debug: print chosen address for this policy/agent
+                    try:
+                        print(f"[Engine][generate_single_rollout] env_idx={env_idx} rollout_idx={rollout_idx} turn={turn_idx} agent={agent_name} policy={policy_name} chosen_address={_address}")
+                    except Exception:
+                        pass
                     
 
                     output_dpr,response_str = await llm_async_generate(
@@ -385,15 +378,20 @@ class MultiAgentsExecutionEngine:
                         ])
                         #print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
                 
+                # Use compact state representation to reduce log redundancy
+                env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else {
+                    "observation": getattr(env.state, 'observation', ''),
+                    "done": getattr(env.state, 'done', False),
+                    "reward": getattr(env.state, 'reward', 0.0),
+                    "step_count": getattr(env.state, 'step_count', 0)
+                }
                 self.multi_logger.log_env_agent_info(
                         self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
                         "Trajectory information updated",
                         {
-                            
-                            "agent_prompt": prompt,
+                            "agent_prompt": {"text": prompt, "image": None},
                             "agent_response": response_str,
-                            "env_state": env.state,
-                       
+                            "env_state": env_state_compact,
                         }
                     )
         
@@ -497,7 +495,7 @@ class MultiAgentsExecutionEngine:
                     return None
                 ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
                 model_path=ppo_trainer_config.actor_rollout_ref.model.path
-                # 如果包含 checkpoint 字样则保留完整路径，否则截取最后两段
+               
                 if "checkpoint" in str(model_path):
                     model_name = str(model_path)
                 else:
@@ -506,11 +504,10 @@ class MultiAgentsExecutionEngine:
                 response_str = None
                 #print(f"DEBUG: begin tp generate response for {agent_name} with model {model_name} using llm_async_generate")
                 
-                # 如果 sample_num > 1，设置温度为1，无论是否是验证模式
-                
+                   
                 
                 try:
-                    # 随机选择一个可用的 server address（兼容字符串/列表）
+                    
                     _addresses = self.server_address_dict.get(policy_name)
                     if isinstance(_addresses, (list, tuple)):
                         _address = random.choice(_addresses) if len(_addresses) > 0 else _addresses[0]
@@ -551,14 +548,20 @@ class MultiAgentsExecutionEngine:
                     current_agent.agent_reward = 0.0
                     current_agent.reward_history.append(0.0)
                 if agent_name==self.turn_order[-1]:
+                    # Use compact state representation to reduce log redundancy
+                    env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else {
+                        "observation": getattr(env.state, 'observation', ''),
+                        "done": getattr(env.state, 'done', False),
+                        "reward": getattr(env.state, 'reward', 0.0),
+                        "step_count": getattr(env.state, 'step_count', 0)
+                    }
                     self.multi_logger.log_env_agent_info(
                         self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
                         "Trajectory information updated",
                         {
-                            "prompt": prompt,
-                            "response": response_str,
-                            "env_state": env.state,
-                       
+                            "agent_prompt": {"text": prompt, "image": None},
+                            "agent_response": response_str,
+                            "env_state": env_state_compact,
                         }
                     )
                 if self.env_name=="math_aggretion_env" and self.mode=="validate":
@@ -703,7 +706,9 @@ class MultiAgentsExecutionEngine:
                 for agent_idx in range(len(self.turn_order)):
                     if agent_idx==0:
                         current_agent = agent_groups[idx][agent_idx]
-                        result_score += current_agent.agent_reward
+                        # 修复：检查 agent_reward 是否为 None，如果是则使用 0
+                        agent_reward = current_agent.agent_reward if current_agent.agent_reward is not None else 0
+                        result_score += agent_reward
                 rollout_score_idx.append(result_score)
             try:
                 best_i = int(np.argmax(np.asarray(rollout_score_idx)))

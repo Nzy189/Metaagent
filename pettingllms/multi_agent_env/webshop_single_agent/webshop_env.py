@@ -3,7 +3,7 @@ import copy
 from typing import Any, Dict, Optional, Union, List
 from dataclasses import dataclass
 
-from pettingllms.multi_agent_env.base.env import MultiAgentsEnvironment
+from pettingllms.multi_agent_env.base.env import Env
 from webshop_minimal import WebAgentTextEnv, init_basedir
 import random
 import string
@@ -42,7 +42,7 @@ RENDER_INSTRUCTIONS = [
 ]
 
 
-class WebShopEnv(MultiAgentsEnvironment):
+class WebShopEnv(Env):
     """
     WebShop environment for single agent shopping tasks.
     

@@ -1,4 +1,0 @@
-[2025-09-12 16:34:43] GPU0 | Task: math | Benchmark: AIME24 | Reasoning: true | Model: /home/lah003/models/Qwen3-1.7B | MaxTurns: 1
-[2025-09-12 16:34:55] GPU0 | Task: math | Benchmark: AIME24 | Reasoning: true | Model: /home/lah003/models/Qwen3-1.7B | MaxTurns: 3
-[2025-09-12 16:35:05] GPU0 | Task: math | Benchmark: AIME24 | Reasoning: true | Model: /home/lah003/models/Qwen3-1.7B | MaxTurns: 5
-[2025-09-12 16:35:17] GPU0 | Task: math | Benchmark: AIME24 | Reasoning: false | Model: /home/lah003/models/Qwen3-1.7B | MaxTurns: 1
