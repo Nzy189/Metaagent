@@ -34,7 +34,7 @@ readonly TORCHVISION_VERSION="0.22.1"
 readonly TORCHAUDIO_VERSION="2.7.1"
 readonly FLASH_ATTN_VERSION="2.8.3"
 readonly CUDA_VERSION="cu128"
-readonly REQUIREMENTS_FILE="requirements.txt"
+readonly REQUIREMENTS_FILE="requirements_venv.txt"
 
 # Utility functions
 log_info() {
@@ -90,10 +90,19 @@ check_prerequisites() {
     
     log_success "Prerequisites check passed"
 }
-
+# Create virtual environment
+setup_venv() {
+    print_header "Step 1/6: Setting up virtual environment"
+    
+    log_info "Creating virtual environment: ${VENV_NAME}"
+    rm -rf "${VENV_NAME}"
+    ${PYTHON_BIN} -m venv "${VENV_NAME}"
+    source "${VENV_NAME}/bin/activate"
+    log_success "Virtual environment created and activated"
+}
 # Initialize and update git submodules and install verl
 init_submodules() {
-    print_header "Step 1/6: Initializing git submodules and installing verl"
+    print_header "Step 2/6: Initializing git submodules and installing verl"
     
     log_info "Initializing and updating git submodules..."
     git submodule update --init --recursive
@@ -106,16 +115,7 @@ init_submodules() {
     log_success "Successfully installed verl"
 }
 
-# Create virtual environment
-setup_venv() {
-    print_header "Step 2/6: Setting up virtual environment"
-    
-    log_info "Creating virtual environment: ${VENV_NAME}"
-    rm -rf "${VENV_NAME}"
-    ${PYTHON_BIN} -m venv "${VENV_NAME}"
-    source "${VENV_NAME}/bin/activate"
-    log_success "Virtual environment created and activated"
-}
+
 
 # Upgrade pip tools
 upgrade_pip() {
@@ -190,14 +190,14 @@ main() {
     trap error_handler ERR
     
     print_header "PettingLLMs Environment Setup"
-    
     check_prerequisites
-    init_submodules
     setup_venv
+    init_submodules
     upgrade_pip
     install_pytorch
     install_flash_attn
     install_requirements
+    pip install -e .
     print_completion
 }
 

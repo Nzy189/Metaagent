@@ -85,13 +85,11 @@ def train_multi_agents(config):
     n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1)
     nnodes = getattr(config.resource, 'nnodes', 1)
     
-    # 打印配置
     pprint(OmegaConf.to_container(config, resolve=True))
     OmegaConf.resolve(config)
     
     multi_modal = getattr(config, 'multi_modal', False)
     
-    # 初始化tokenizer
     tokenizer_dict = {}
     processor_dict = {}
     ppo_trainer_config_dict = {}

@@ -192,7 +192,7 @@ nvidia-nvshmem-cu12==3.3.20
 nvidia-nvtx-cu12==12.8.55
 oauthlib==3.3.1
 omegaconf==2.3.0
-openai==1.99.0
+openai==1.90.0
 opencv-python-headless==4.11.0.86
 opentelemetry-api==1.30.0
 opentelemetry-sdk==1.30.0
@@ -206,7 +206,7 @@ pandas==2.3.1
 parso==0.8.4
 partial-json-parser==0.2.1.1.post6
 peft==0.17.0
--e git+https://github.com/NorahYujieZhao/PettingLLMs.git@7bdbc36217cb91c15c9ada1e05675ac8e777f7bd#egg=pettingllms
+vllm==0.10.2
 pexpect==4.9.0
 pillow==11.3.0
 platformdirs==4.3.8
@@ -324,10 +324,6 @@ unidiff==0.7.5
 urllib3==2.5.0
 uvicorn==0.35.0
 uvloop==0.21.0
-<<<<<<< HEAD
--e git+https://github.com/volcengine/verl.git@92e81cfcfd7c5a088032c78f2c80b4fc32b88119#egg=verl
-=======
->>>>>>> main
 vertexai==1.71.1
 virtualenv==20.34.0
 wandb==0.21.1
@@ -344,8 +340,4 @@ xformers==0.0.31
 xgrammar==0.1.21
 xxhash==3.5.0
 yarl==1.20.1
-<<<<<<< HEAD
 zipp==3.23.0
-=======
-zipp==3.23.0
->>>>>>> main
