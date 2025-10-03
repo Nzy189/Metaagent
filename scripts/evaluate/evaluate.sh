@@ -23,8 +23,8 @@ MODEL_PATHS=(
     "/home/nvidia/data/models/Qwen3-1.7B"
 )
 
-CONFIG_PATH="pettingllms/config/math"
-CONFIG_NAME="math_single_policy"
+CONFIG_PATH="pettingllms/config/code"
+CONFIG_NAME="code_eval"
 BASE_VLLM_PORT=8201
 BASE_PROXY_PORT=8220
 GPU_START_ID=0
@@ -188,6 +188,7 @@ cd "$(dirname "$0")/../.." || exit 1
 VLLM_ADDRESS="${HOST}:${BASE_PROXY_PORT}"
 
 python3 -m pettingllms.evaluate.evaluate \
+    --config-path "$CONFIG_PATH" \
     --config-name "$CONFIG_NAME" \
     +parallel=false \
     enable_thinking=false \

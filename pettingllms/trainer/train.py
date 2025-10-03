@@ -14,22 +14,9 @@ from omegaconf import OmegaConf, DictConfig
 from verl.single_controller.ray import RayWorkerGroup
 from verl.workers.fsdp_workers import AsyncActorRolloutRefWorker
 from pettingllms.trainer.multi_agents_ppo_trainer import MultiAgentsPPOTrainer
+from pettingllms.utils.cleanup import install_cleanup_hooks, cleanup_ray_and_tmp_dirs
 
-
-def cleanup_ray():
-  
-    if ray.is_initialized():
-        ray.shutdown()
-    
-    # clean up tmp directories
-    for tmp_path in ["/tmp/verl_ray", "/tmp/verl_spill"]:
-        tmp_dir = Path(tmp_path)
-        if tmp_dir.exists():
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-    print("Cleaned up temporary files")
-
-
-atexit.register(cleanup_ray)
+install_cleanup_hooks()
 
 
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)

@@ -12,7 +12,6 @@ from tqdm import tqdm
 import numpy as np
 import torch
 from omegaconf import OmegaConf
-from verl.trainer.ppo.reward import load_reward_manager
 from pettingllms.trainer.multi_agents_execution_engine import MultiAgentsExecutionEngine
 from verl import DataProto
 from verl.protocol import pad_dataproto_to_divisor
@@ -177,7 +176,7 @@ class MultiAgentsPPOTrainer:
         for idx, (model_name, trainer) in enumerate(self.ppo_trainer_dict.items(), 1):
             colorful_print(f"[{idx}/{len(self.ppo_trainer_dict)}] Initializing workers for: {model_name}", "blue")
             try:
-                trainer.init_workers()  # 内部会并行创建 Ray workers
+                trainer.init_workers()  
                 colorful_print(f"✓ [{idx}/{len(self.ppo_trainer_dict)}] Successfully initialized: {model_name}", "green")
             except Exception as e:
                 colorful_print(f"✗ Failed to initialize {model_name}: {str(e)}", "red")
