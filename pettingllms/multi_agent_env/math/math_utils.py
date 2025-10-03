@@ -386,7 +386,7 @@ def load_math_problem_batch(
     dataset_name: str = "train_polaris.parquet",
     config: dict = None,
     benchmark_name: str = "AIME24",
-    validate_samples: int = 8
+    validate_samples: int = 1
 ) -> List[Dict[str, Any]]:
     """
     Load a batch of mathematical problems.
