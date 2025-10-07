@@ -326,7 +326,7 @@ _RAY_DOCKER_ACTOR_POOL: List[Any] | None = None
 def load_math_problem_batch(
     env_indices: List[int],
     mode: str = "train",
-    dataset_name: str = "train_polaris.parquet",
+    dataset_name: str = "train_polaris",
     config: dict = None,
     benchmark_name: str = "AIME24",
     validate_samples: int = 1
