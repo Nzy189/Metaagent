@@ -609,11 +609,11 @@ def main():
     df_apps_test.to_parquet(test_dir / "apps_test.parquet", index=False)
     print(f"Saved: {test_dir / 'apps_test.parquet'}")
 
-    # 3. LiveCodeBench v6
+    # 3. LiveCodeBench v6 (save as livecodebench_test.parquet to match loader)
     df_lcb = process_livecodebench()
-    (test_dir / "livecodebench.parquet").unlink(missing_ok=True)
-    df_lcb.to_parquet(test_dir / "livecodebench.parquet", index=False)
-    print(f"Saved: {test_dir / 'livecodebench.parquet'}")
+    (test_dir / "livecodebench_test.parquet").unlink(missing_ok=True)
+    df_lcb.to_parquet(test_dir / "livecodebench_test.parquet", index=False)
+    print(f"Saved: {test_dir / 'livecodebench_test.parquet'}")
 
 if __name__ == "__main__":
     main()

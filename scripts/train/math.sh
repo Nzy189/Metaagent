@@ -1,6 +1,6 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -19,31 +19,29 @@ export LD_LIBRARY_PATH=$CUDA_HOME/targets/x86_64-linux/lib:${LD_LIBRARY_PATH}
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}
 
 model_0_config_path="models.model_0.ppo_trainer_config"
-train_data_size=32
-val_data_size=32
 model_0_data_dir=~/data/math/model_0
 
 
-model_0_USE_GRPO="$model_0_config_path.algorithm.adv_estimator=grpo $model_0_config_path.actor_rollout_ref.actor.use_kl_loss=False"
 
-model_0_resource="resource.n_gpus_per_node=2  $model_0_config_path.trainer.n_gpus_per_node=2 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=2"
+model_0_resource="resource.n_gpus_per_node=6  $model_0_config_path.trainer.n_gpus_per_node=6 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=6"
 
-model_0_data="+$model_0_config_path.data.train_files=$model_0_data_dir/text/train.parquet +$model_0_config_path.data.val_files=$model_0_data_dir/text/test.parquet"
 
 python3 -m pettingllms.trainer.train --config-path ../config/math --config-name math_single_policy \
-    $model_0_USE_GRPO $model_0_resource $model_0_data\
-    models.model_0.path=/home/lah003/models/Qwen3-8B\
-    benchmark=AIME25\
-    experiment_name=8b_Single_AIME25\
+    $model_0_resource $model_0_data\
+    models.model_0.path=/home/nvidia/data/models/Qwen3-1.7B\
+    experiment_name=math_single_policy_1.7B\
+    if_dapo=True\
+    enable_thinking=True\
+    benchmark=math\
     trainer.total_training_steps=400\
-    trainer.save_freq=150\
-    data.epoch_size=100\
+    trainer.save_freq=20\
+    data.epoch_size=20\
     data.gen_batch_size=128\
     data.gen_n_samples=4\
-    data.max_prompt_length=8192\
-    data.max_response_length=8192\
+    data.max_prompt_length=4096\
+    data.max_response_length=20000\
     data.resample_freq=1\
-    data.filter_method=mean\
-    data.filter_ratio=0.3\
+    data.filter_method=std\
+    data.filter_ratio=0\
     sample_mode=tree\
-    env.max_turns=3\
+    env.max_turns=2\

@@ -59,16 +59,8 @@ class StatefulEnv(Env):
 
 
 
-# -------------------------
-# Batch 构建器
-# -------------------------
 class StatefulEnvBatch:
-    """
-    与 MathTestEnvBatch 对齐的批量构建器：
-      - 从 load_plan_path_problem_batch 取题
-      - 为每个样本建立初始 State（包含 worker 与 worker_text）
-      - 复制 State 给多个 sample（samples>1 时）
-    """
+  
 
     def __init__(
         self,
@@ -120,7 +112,7 @@ class StatefulEnvBatch:
                 raise ValueError(f"Unsupported benchmark: {benchmark_name}")
             
             for s in range(samples):
-                env = StatefulEnv(env_idx=i, rollout_idx=rollout_idx_list[i * samples + s], max_turns=max_turns, config=None)
+                env = StatefulEnv(env_idx=i, rollout_idx=rollout_idx_list[i * samples + s], config=config, max_turns=max_turns)
                 
                 env.state = copy.deepcopy(state)
                 self.env_list.append(env)

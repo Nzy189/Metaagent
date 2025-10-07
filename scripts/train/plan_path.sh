@@ -1,6 +1,7 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -23,24 +24,29 @@ model_0_data_dir=~/data/math/model_0
 
 
 
-model_0_resource="resource.n_gpus_per_node=1  $model_0_config_path.trainer.n_gpus_per_node=1 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=1"
+model_0_resource="resource.n_gpus_per_node=8  $model_0_config_path.trainer.n_gpus_per_node=8 $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=8"
 
 
 python3 -m pettingllms.trainer.train --config-path ../config/stateful --config-name stateful_single_policy \
     $model_0_resource $model_0_data\
-    models.model_0.path=/home/nvidia/data/models/Qwen3-1.7B\
-    experiment_name=plan_path_single_policy_1.7B\
+    models.model_0.path=/home/nvidia/data/models/Qwen3-8B\
+    experiment_name=sokoban_single_policy_8B\
     if_dapo=True\
-    benchmark=plan_path\
+    benchmark=sokoban\
+    env.map_size=10\
     trainer.total_training_steps=400\
-    trainer.save_freq=20\
+    trainer.save_freq=50\
     data.epoch_size=20\
-    data.gen_batch_size=128\
+    data.gen_batch_size=32\
     data.gen_n_samples=4\
-    data.max_prompt_length=12000\
+    data.max_prompt_length=8192\
     data.max_response_length=2048\
     data.resample_freq=1\
     data.filter_method=std\
     data.filter_ratio=0\
+    $model_0_config_path.actor_rollout_ref.actor.ppo_mini_batch_size=32\
+    $model_0_config_path.actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4\
+    $model_0_config_path.actor_rollout_ref.rollout.gpu_memory_utilization=0.5\
+    $model_0_config_path.actor_rollout_ref.rollout.max_num_batched_tokens=65536\
     sample_mode=tree\
     env.max_turns=3\

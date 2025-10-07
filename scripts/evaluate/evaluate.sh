@@ -20,11 +20,14 @@ export LD_LIBRARY_PATH=$CUDA_HOME/targets/x86_64-linux/lib:$CUDA_HOME/lib64:$LD_
 # Configuration - Edit these parameters
 # ============================================
 MODEL_PATHS=(
-    "/home/nvidia/data/models/Qwen3-1.7B"
+    "/home/nvidia/data/models/Qwen3-8B"
 )
 
-CONFIG_PATH="pettingllms/config/code"
-CONFIG_NAME="code_eval"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CONFIG_PATH="$REPO_ROOT/pettingllms/config/stateful"
+CONFIG_NAME="stateful_single_policy"
+BENCHMARK="sokoban"
 BASE_VLLM_PORT=8201
 BASE_PROXY_PORT=8220
 GPU_START_ID=0
@@ -39,14 +42,26 @@ CHECK_INTERVAL=2  # Check interval in seconds
 echo "Starting with ${#MODEL_PATHS[@]} models"
 
 declare -a VLLM_PIDS PROXY_PIDS
+CLEANUP_DONE=0
 
 cleanup() {
+    if [ $CLEANUP_DONE -eq 1 ]; then
+        echo "Cleanup already in progress, force exiting..."
+        exit 1
+    fi
+    CLEANUP_DONE=1
+    
     echo "Cleaning up..."
-    for pid in "${VLLM_PIDS[@]}" "${PROXY_PIDS[@]}"; do kill $pid 2>/dev/null || true; done
-    for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-        lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 || true
-        lsof -ti:$((BASE_PROXY_PORT + i)) 2>/dev/null | xargs -r kill -9 || true
+    for pid in "${VLLM_PIDS[@]}" "${PROXY_PIDS[@]}"; do 
+        kill $pid 2>/dev/null || true
     done
+    sleep 1
+    for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
+        timeout 2 lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+        timeout 2 lsof -ti:$((BASE_PROXY_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+    done
+    
+    echo "Cleanup completed"
 }
 trap cleanup EXIT INT TERM
 
@@ -75,10 +90,10 @@ wait_for_endpoint() {
 # Kill existing processes
 echo "Cleaning existing processes..."
 for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-    lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 || true
-    lsof -ti:$((BASE_PROXY_PORT + i)) 2>/dev/null | xargs -r kill -9 || true
+    timeout 2 lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+    timeout 2 lsof -ti:$((BASE_PROXY_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
 done
-sleep 2
+sleep 1
 
 # Launch vLLM services
 echo "Launching vLLM services..."
@@ -193,7 +208,9 @@ python3 -m pettingllms.evaluate.evaluate \
     +parallel=false \
     enable_thinking=false \
     +vllm_address="$VLLM_ADDRESS" \
-    $MODEL_ARGS
+    env.map_size=6 \
+    $MODEL_ARGS \
+    benchmark="$BENCHMARK" \
 
 echo
 echo "======================================"

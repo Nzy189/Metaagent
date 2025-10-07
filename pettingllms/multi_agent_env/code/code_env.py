@@ -108,9 +108,9 @@ class CodeEnvBatch:
         for i,problem in enumerate(self.problem_list):
             ground_truth_test_input=problem["test_input"]
             ground_truth_test_output=problem["test_output"]
-            state=CodeTestEnvState(problem=problem["question"],ground_truth_test_input=ground_truth_test_input,ground_truth_test_output=ground_truth_test_output)
+            state=CodeEnvState(problem=problem["question"],ground_truth_test_input=ground_truth_test_input,ground_truth_test_output=ground_truth_test_output)
             for s in range(samples):
-                env=CodeTestEnv(env_idx=i, rollout_idx=rollout_idx_list[i*samples+s], max_turns=max_turns, config=None)
+                env=CodeEnv(env_idx=i, rollout_idx=rollout_idx_list[i*samples+s], max_turns=max_turns, config=None)
                 env.state=copy.deepcopy(state)
                 self.env_list.append(env)
         if len(self.env_list)!=len(rollout_idx_list):

@@ -1,0 +1,78 @@
+/* Custom CSS for PettingLLMs Documentation */
+
+/* Logo styling */
+.md-header__button.md-logo img {
+    filter: none;
+}
+
+/* Code block improvements */
+.highlight {
+    border-radius: 0.3em;
+}
+
+/* Table improvements */
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+table th {
+    background-color: var(--md-primary-fg-color);
+    color: var(--md-primary-bg-color);
+    font-weight: 600;
+}
+
+table tr:nth-child(even) {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Admonition improvements */
+.admonition {
+    border-left: 4px solid;
+    border-radius: 0.3em;
+}
+
+/* Image captions */
+figure {
+    text-align: center;
+}
+
+figcaption {
+    font-style: italic;
+    color: var(--md-default-fg-color--light);
+}
+
+/* Result tables */
+.result-table {
+    font-size: 0.9em;
+}
+
+.result-table td:first-child {
+    font-weight: 600;
+}
+
+/* Improvement highlights */
+.improvement-positive {
+    color: #4caf50;
+    font-weight: 600;
+}
+
+.improvement-negative {
+    color: #f44336;
+    font-weight: 600;
+}
+
+/* Code command styling */
+.command {
+    background-color: var(--md-code-bg-color);
+    padding: 0.2em 0.4em;
+    border-radius: 0.2em;
+    font-family: var(--md-code-font-family);
+}
+
+/* Responsive image sizing */
+img {
+    max-width: 100%;
+    height: auto;
+}
+

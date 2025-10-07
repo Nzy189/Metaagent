@@ -170,19 +170,20 @@ async def _worker_docker(
     timeout: float = 40.0,
     image: str = "python:3.11-slim"
 ) -> str:
-    try:
-        os.makedirs("tmp", exist_ok=True)
-    except Exception:
-        pass
+    os.makedirs("tmp", exist_ok=True)
     tmpdir = tempfile.mkdtemp(prefix="pllm_exec_", dir="tmp")
     script_path = os.path.join(tmpdir, "script.py")
     stdout_path = os.path.join(tmpdir, "stdout.txt")
-
-    with open(script_path, "w", encoding="utf-8") as f:
-        f.write(script)
-
-    stdout_file = open(stdout_path, "wb")
+    
+    proc = None
+    stdout_file = None
+    result = "timeout"
+    
     try:
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(script)
+        
+        stdout_file = open(stdout_path, "wb")
         proc = await asyncio.create_subprocess_exec(
             "python",
             script_path,
@@ -191,65 +192,35 @@ async def _worker_docker(
             cwd=tmpdir,
             start_new_session=True,
         )
-
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            try:
-                if proc.pid:
-                    try:
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError, OSError):
-                        pass
-                    
-                    proc.kill()
-                    
-                    try:
-                        await asyncio.wait_for(proc.wait(), timeout=2.0)
-                    except asyncio.TimeoutError:
-                        try:
-                            proc.terminate()
-                            await asyncio.wait_for(proc.wait(), timeout=1.0)
-                        except:
-                            pass
-            except Exception:
-                pass
-            finally:
-                try:
-                    if not stdout_file.closed:
-                        stdout_file.close()
-                    if os.path.exists(tmpdir):
-                        try:
-                            shutil.rmtree(tmpdir)
-                        except Exception:
-                            try:
-                                subprocess.run(['rm', '-rf', tmpdir], timeout=5, capture_output=True)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-                
-            return "timeout"
-    finally:
-        if not stdout_file.closed:
-            stdout_file.close()
-
-    try:
+        
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+        
+        stdout_file.close()
+        stdout_file = None
+        
         with open(stdout_path, "rb") as f_out:
             out_bytes = f_out.read()
         result = out_bytes.decode(errors="replace")
+        
+    except asyncio.TimeoutError:
+        if proc and proc.pid:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        result = "timeout"
+        
     finally:
-        try:
+        if stdout_file and not stdout_file.closed:
+            stdout_file.close()
+        
+        if proc and proc.returncode is None:
+            if proc.pid:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            proc.kill()
+            await asyncio.wait_for(proc.wait(), timeout=2.0)
+        
+        if os.path.exists(tmpdir):
+            shutil.rmtree(tmpdir, ignore_errors=True)
             if os.path.exists(tmpdir):
-                try:
-                    shutil.rmtree(tmpdir)
-                except Exception:
-                    try:
-                        subprocess.run(['rm', '-rf', tmpdir], timeout=5, capture_output=True)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                subprocess.run(['rm', '-rf', tmpdir], timeout=5, capture_output=True)
     
     return result
 
@@ -302,79 +273,51 @@ async def get_code_execution_output(
 
 
 def get_ray_docker_worker_cls():
-    try:
-        import ray
-    except Exception as e:
-        print(f"Failed to import ray: {e}")
-        return None
-
-    try:
-        _ensure_ray_initialized()
-    except Exception as e:
-        print(f"Failed to ensure ray initialized: {e}")
-        return None
+    _ensure_ray_initialized()
 
     if hasattr(get_ray_docker_worker_cls, "_cls"):
         return getattr(get_ray_docker_worker_cls, "_cls")
 
-    try:
-        _max_conc_env = os.getenv("RAY_ACTOR_MAX_CONCURRENCY")
-        try:
-            _max_conc = int(_max_conc_env) if _max_conc_env else 20
-        except (ValueError, TypeError):
-            print(f"Warning: invalid RAY_ACTOR_MAX_CONCURRENCY value: {_max_conc_env}, using default 20")
-            _max_conc = 20
+    @ray.remote(num_cpus=0.001, max_concurrency=2000)
+    class _RayDockerWorker:
+        def __init__(self, idx):
+            if isinstance(idx, (int, float)):
+                self.idx = int(idx)
+            elif isinstance(idx, str) and re.fullmatch(r"\s*-?\d+\s*", idx):
+                self.idx = int(idx)
+            else:
+                self.idx = 0
 
-        @ray.remote(num_cpus=0.001, max_concurrency=2000)
-        class _RayDockerWorker:
-            def __init__(self, idx):
-                if not isinstance(idx, (int, float)):
-                    print(f"Warning: idx parameter is not numeric: {type(idx)}, converting to int")
-                    try:
-                        self.idx = int(idx) if idx is not None else 0
-                    except (ValueError, TypeError):
-                        self.idx = 0
-                else:
-                    self.idx = int(idx)
+        def get_idx(self):
+            """Get the actor's index"""
+            return self.idx
 
-            def get_idx(self):
-                """Get the actor's index"""
-                return self.idx
-
-            async def run(
-                self,
-                script: str,
-                timeout: float = 40.0,
-                image: str = "python:3.11-slim",
-            ) -> str:
-                """
-                Execute Python script and return output.
+        async def run(
+            self,
+            script: str,
+            timeout: float = 40.0,
+            image: str = "python:3.11-slim",
+        ) -> str:
+            """
+            Execute Python script and return output.
+            
+            Args:
+                script: Python script to execute
+                timeout: Execution timeout
+                image: Docker image to use (not used in current implementation)
                 
-                Args:
-                    script: Python script to execute
-                    timeout: Execution timeout
-                    image: Docker image to use (not used in current implementation)
-                    
-                Returns:
-                    Script execution output as string
-                """
-                try:
-                    return await _worker_docker(
-                        script=script,
-                        timeout=timeout,
-                        image=image,
-                    )
-                except Exception as e:
-                    print(f"RayDockerWorker.run failed: {e}")
-                    return f"error: {e}"
+            Returns:
+                Script execution output as string
+            """
+            return await _worker_docker(
+                script=script,
+                timeout=timeout,
+                image=image,
+            )
 
-        RayDockerWorker = _RayDockerWorker
-        setattr(get_ray_docker_worker_cls, "_cls", RayDockerWorker)
-        return RayDockerWorker
-        
-    except Exception as e:
-        print(f"Failed to create RayDockerWorker class: {e}")
-        return None
+    RayDockerWorker = _RayDockerWorker
+    setattr(get_ray_docker_worker_cls, "_cls", RayDockerWorker)
+    return RayDockerWorker
 
 
 _RAY_DOCKER_ACTOR_POOL: List[Any] | None = None

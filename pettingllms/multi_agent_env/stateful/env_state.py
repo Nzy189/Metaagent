@@ -46,7 +46,7 @@ class EnvStateBase:
 
 @dataclass
 class EightQueensEnvState(EnvStateBase):
-    """N皇后问题：在NxN棋盘上放置N个皇后，使它们不互相攻击"""
+    """N-Queens problem: Place N queens on NxN board without attacking each other"""
     
     N: int = 8
     cols: List[int] = field(default_factory=lambda: [-1] * 8)
@@ -62,16 +62,16 @@ class EightQueensEnvState(EnvStateBase):
         self.reset()
 
     def reset(self):
-        """重置环境"""
-        self.cols = [-1] * self.N  # 每行皇后的列位置，-1表示未放置
-        self.positions = self.cols[:]  # prompt需要的positions属性
+        """Reset environment"""
+        self.cols = [-1] * self.N
+        self.positions = self.cols[:]
         self.done = False
         self.step_count = 0
         self.reward = 0.0
         self.observation = self.text_observation()
     
     def text_observation(self) -> str:
-        """文本观察"""
+        """Text observation"""
         board = []
         for r in range(self.N):
             row = ['.'] * self.N
@@ -81,7 +81,7 @@ class EightQueensEnvState(EnvStateBase):
         return '\n'.join(board)
     
     def available_actions(self) -> List[Tuple[int, int]]:
-        """可用动作：(row, col)，col=-1表示清空该行"""
+        """Available actions: (row, col), col=-1 means clear the row"""
         actions = []
         for r in range(self.N):
             for c in range(-1, self.N):
@@ -89,7 +89,7 @@ class EightQueensEnvState(EnvStateBase):
         return actions
     
     def _conflicts(self, cols: List[int]) -> int:
-        """计算冲突数量"""
+        """Calculate number of conflicts"""
         count = 0
         for r1 in range(len(cols)):
             c1 = cols[r1]
@@ -99,57 +99,56 @@ class EightQueensEnvState(EnvStateBase):
                 c2 = cols[r2]
                 if c2 < 0:
                     continue
-                # 同列或同对角线
+                # Same column or diagonal
                 if c1 == c2 or abs(c1 - c2) == abs(r1 - r2):
                     count += 1
         return count
     
     def _is_solved(self) -> bool:
-        """检查是否解决"""
+        """Check if solved"""
         return all(c >= 0 for c in self.cols) and self._conflicts(self.cols) == 0
 
     def step(self, action):
-        """执行动作，更新环境状态。动作格式：[col1, col2, ..., colN] JSON数组"""
+        """Execute action and update environment state. Action format: [col1, col2, ..., colN] JSON array"""
         if self.done:
             self.reward = 0.0
             return
         
-        # 解析动作：期望是包含N个列索引的列表
+        # Parse action: expect list with N column indices
         if not isinstance(action, list) or len(action) != self.N:
-            self.reward = -1.0  # 无效动作格式惩罚
+            self.reward = -1.0  # Invalid action format penalty
             return
         
-        # 检查所有列索引是否合法
+        # Check all column indices are valid
         for col in action:
             if not isinstance(col, int) or not (0 <= col < self.N):
-                self.reward = -1.0  # 无效列索引惩罚
+                self.reward = -1.0  # Invalid column index penalty
                 return
         
-        # 记录之前的状态
+        # Record previous state
         prev_conflicts = self._conflicts(self.cols)
         
-        # 设置新的皇后位置
+        # Set new queen positions
         self.cols = list(action)
-        self.positions = self.cols[:]  # 更新positions属性
+        self.positions = self.cols[:]
         
-        # 计算奖励
-        self.reward = -0.01  # 基础步数惩罚
+        # Calculate reward
+        self.reward = -0.01  # Base step penalty
         
-        # 检查冲突
+        # Check conflicts
         current_conflicts = self._conflicts(self.cols)
         if current_conflicts > 0:
-            # 有冲突的惩罚，但不回滚（允许中间状态）
+            # Conflict penalty (allow intermediate states)
             self.reward = -0.5 - current_conflicts * 0.1
         else:
-            # 无冲突时的奖励
-            self.reward += 0.5  # 无冲突奖励
+            # No conflict reward
+            self.reward += 0.5
             
-            # 检查是否完成
+            # Check completion
             if self._is_solved():
-                self.reward += 2.0  # 成功完成大奖励
-                # 效率奖励
+                self.reward += 2.0  # Success completion reward
                 self.step_count += 1
-                if self.step_count <= self.N:  # 最优步数
+                if self.step_count <= self.N:  # Optimal steps
                     self.reward += 0.5
                 self.done = True
         
@@ -164,7 +163,7 @@ class EightQueensEnvState(EnvStateBase):
 
 @dataclass
 class BlocksworldEnvState(EnvStateBase):
-    """方块世界：移动积木块到指定的堆叠配置"""
+    """Blocksworld: Move blocks to specified stack configuration"""
     
     init_stacks: List[List[str]]
     goal_stacks: List[List[str]]
@@ -183,16 +182,16 @@ class BlocksworldEnvState(EnvStateBase):
         self.reset()
 
     def reset(self):
-        """重置环境"""
+        """Reset environment"""
         self.stacks = [list(s) for s in self.init_stacks]
-        self.current_stacks = [list(s) for s in self.stacks]  # prompt需要的current_stacks属性
+        self.current_stacks = [list(s) for s in self.stacks]
         self.done = False
         self.step_count = 0
         self.reward = 0.0
         self.observation = self.text_observation()
     
     def text_observation(self) -> str:
-        """文本观察"""
+        """Text observation"""
         obs = []
         for i, stack in enumerate(self.stacks):
             if stack:
@@ -203,32 +202,32 @@ class BlocksworldEnvState(EnvStateBase):
         return '\n'.join(obs)
     
     def available_actions(self) -> List[Tuple[str, str]]:
-        """可用动作：(block, destination)，destination可以是block名或'table'"""
+        """Available actions: (block, destination), destination can be block name or 'table'"""
         actions = []
-        # 找到所有可移动的块（栈顶块）
+        # Find all movable blocks (top blocks)
         clear_blocks = []
         for stack in self.stacks:
             if stack:
                 clear_blocks.append(stack[-1])
         
         for block in clear_blocks:
-            # 移动到桌面
+            # Move to table
             actions.append((block, "table"))
-            # 移动到其他块上
+            # Move to other blocks
             for other_block in clear_blocks:
                 if other_block != block:
                     actions.append((block, other_block))
         return actions
     
     def _is_clear(self, block: str) -> bool:
-        """检查块是否在栈顶"""
+        """Check if block is on top of stack"""
         for stack in self.stacks:
             if stack and stack[-1] == block:
                 return True
         return False
     
     def _find_block(self, block: str) -> Tuple[int, int]:
-        """找到块的位置：(stack_index, position_in_stack)"""
+        """Find block position: (stack_index, position_in_stack)"""
         for si, stack in enumerate(self.stacks):
             for pi, b in enumerate(stack):
                 if b == block:
@@ -236,18 +235,18 @@ class BlocksworldEnvState(EnvStateBase):
         raise ValueError(f"Block {block} not found")
     
     def _is_goal_reached(self) -> bool:
-        """检查是否达到目标"""
-        # 简单比较，忽略空栈
+        """Check if goal is reached"""
+        # Simple comparison, ignore empty stacks
         current = [stack for stack in self.stacks if stack]
         goal = [stack for stack in self.goal_stacks if stack]
         return sorted([tuple(s) for s in current]) == sorted([tuple(s) for s in goal])
     
     def _calculate_goal_similarity(self) -> float:
-        """计算当前配置与目标配置的相似度 (0-1)"""
+        """Calculate similarity between current and goal configuration (0-1)"""
         total_blocks = len(self.all_blocks)
         correct_positions = 0
         
-        # 为每个块检查是否在正确的相对位置
+        # Check if each block is in correct relative position
         for block in self.all_blocks:
             current_pos = self._get_block_context(block, self.stacks)
             goal_pos = self._get_block_context(block, self.goal_stacks)
@@ -258,7 +257,7 @@ class BlocksworldEnvState(EnvStateBase):
         return correct_positions / total_blocks if total_blocks > 0 else 0.0
     
     def _get_block_context(self, block: str, stacks: List[List[str]]) -> Tuple:
-        """获取块的上下文：(下面的块, 上面的块)"""
+        """Get block context: (block_below, block_above)"""
         for stack in stacks:
             if block in stack:
                 idx = stack.index(block)
@@ -268,102 +267,102 @@ class BlocksworldEnvState(EnvStateBase):
         return (None, None)
 
     def step(self, action):
-        """执行动作，更新环境状态。动作格式：[{"move": ["B","table"]}, {"move": ["C","B"]}] JSON数组"""
+        """Execute action and update environment state. Action format: [{"move": ["B","table"]}, {"move": ["C","B"]}] JSON array"""
         if self.done:
             self.reward = 0.0
             return
         
-        # 解析动作：期望是包含move操作的字典列表
+        # Parse action: expect list of move operation dictionaries
         if not isinstance(action, list):
-            self.reward = -1.0  # 无效动作格式惩罚
+            self.reward = -1.0  # Invalid action format penalty
             return
         
         total_reward = 0.0
         
-        # 执行每个动作
+        # Execute each action
         for move_action in action:
             if not isinstance(move_action, dict) or "move" not in move_action:
-                total_reward += -0.5  # 无效动作格式惩罚
+                total_reward += -0.5  # Invalid action format penalty
                 continue
             
             move = move_action["move"]
             if not isinstance(move, list) or len(move) != 2:
-                total_reward += -0.5  # 无效move格式惩罚
+                total_reward += -0.5  # Invalid move format penalty
                 continue
             
             block, dest = move
-            step_reward = -0.01  # 基础步数惩罚
+            step_reward = -0.01  # Base step penalty
             
-            # 检查块是否可移动（在栈顶）
+            # Check if block is movable (on top of stack)
             if not self._is_clear(block):
-                step_reward = -0.3  # 块不在栈顶惩罚
+                step_reward = -0.3  # Block not on top penalty
                 total_reward += step_reward
                 continue
             
-            # 记录移动前的相似度
+            # Record similarity before move
             prev_similarity = self._calculate_goal_similarity()
             
-            # 执行移动
+            # Execute move
             try:
                 stack_idx, pos = self._find_block(block)
                 
-                # 检查目标是否有效
+                # Check if destination is valid
                 if dest != "table" and (dest not in self.all_blocks or not self._is_clear(dest)):
-                    step_reward = -0.3  # 目标块不可用惩罚
+                    step_reward = -0.3  # Invalid destination penalty
                     total_reward += step_reward
                     continue
                 
-                # 执行移动
-                self.stacks[stack_idx].pop()  # 移除块
+                # Execute move
+                self.stacks[stack_idx].pop()  # Remove block
                 
                 if dest == "table":
-                    # 移动到桌面（创建新栈）
+                    # Move to table (create new stack)
                     self.stacks.append([block])
                 else:
-                    # 移动到其他块上
+                    # Move to other block
                     dest_stack_idx, _ = self._find_block(dest)
                     self.stacks[dest_stack_idx].append(block)
                 
-                # 更新current_stacks属性
+                # Update current_stacks attribute
                 self.current_stacks = [list(s) for s in self.stacks]
                 
-                # 计算移动后的相似度
+                # Calculate similarity after move
                 current_similarity = self._calculate_goal_similarity()
                 
-                # 稠密奖励设计
-                # 1. 基于目标相似度的改进
+                # Dense reward design
+                # 1. Based on goal similarity improvement
                 similarity_improvement = current_similarity - prev_similarity
                 if similarity_improvement > 0:
-                    step_reward += similarity_improvement * 0.5  # 正向进步奖励
+                    step_reward += similarity_improvement * 0.5  # Positive progress reward
                 elif similarity_improvement < 0:
-                    step_reward += similarity_improvement * 0.3  # 负向进步惩罚
+                    step_reward += similarity_improvement * 0.3  # Negative progress penalty
                 
-                # 2. 基于当前相似度的奖励
+                # 2. Based on current similarity reward
                 step_reward += current_similarity * 0.1
                 
-                # 3. 特殊情况奖励
-                # 如果块移动到了目标位置的正确上下文中
+                # 3. Special case reward
+                # If block moved to correct position context
                 target_context = self._get_block_context(block, self.goal_stacks)
                 current_context = self._get_block_context(block, self.stacks)
                 if target_context == current_context and target_context != (None, None):
-                    step_reward += 0.2  # 正确位置奖励
+                    step_reward += 0.2  # Correct position reward
                 
             except ValueError:
-                step_reward = -0.3  # 块不存在
+                step_reward = -0.3  # Block not found
             
             total_reward += step_reward
             self.step_count += 1
         
-        # 检查是否完成
+        # Check completion
         if self._is_goal_reached():
-            total_reward += 2.0  # 成功完成大奖励
-            # 效率奖励
+            total_reward += 2.0  # Success completion reward
+            # Efficiency reward
             if self.step_count <= len(self.all_blocks) * 2:
-                total_reward += 0.5  # 高效完成奖励
+                total_reward += 0.5  # Efficient completion reward
             self.done = True
         
         self.reward = total_reward
-        self.current_stacks = [list(s) for s in self.stacks]  # 更新current_stacks属性
+        self.current_stacks = [list(s) for s in self.stacks]  # Update current_stacks attribute
         self.observation = self.text_observation()
 
 
@@ -373,11 +372,11 @@ class BlocksworldEnvState(EnvStateBase):
 
 @dataclass
 class Sudoku4x4EnvState(EnvStateBase):
-    """动态大小数独：填充NxN网格，满足行列和子网格约束（保留4x4名称以兼容现有代码）"""
+    """Dynamic size Sudoku: Fill NxN grid satisfying row, column and sub-grid constraints (keep 4x4 name for compatibility)"""
     
     puzzle: Optional[List[List[int]]] = None
     seed: Optional[int] = None
-    size: int = 4  # 数独大小，默认4x4
+    size: int = 4  # Sudoku size, default 4x4
     config: Optional[dict] = None
     init_grid: List[List[int]] = field(default_factory=list)
     grid: List[List[int]] = field(default_factory=list)
@@ -388,40 +387,38 @@ class Sudoku4x4EnvState(EnvStateBase):
     def __post_init__(self):
         super().__post_init__()
         
-        # 从config中读取map_size参数，如果存在的话
-        if self.config and hasattr(self.config, 'map_size'):
-            self.size = self.config.map_size
-        elif self.config and isinstance(self.config, dict) and 'map_size' in self.config:
-            self.size = self.config['map_size']
+        # Read map_size parameter from config if exists
+        if self.config and hasattr(self.config, 'env') and hasattr(self.config.env, 'map_size'):
+            self.size = self.config.env.map_size
         if self.size is None:
             self.size = 16
         
-        # 如果提供了puzzle，直接使用
+        # If puzzle provided, use directly
         if self.puzzle is not None:
-            assert len(self.puzzle) == self.size and all(len(row) == self.size for row in self.puzzle), f"必须是{self.size}x{self.size}网格"
+            assert len(self.puzzle) == self.size and all(len(row) == self.size for row in self.puzzle), f"Must be {self.size}x{self.size} grid"
             self.init_grid = [row[:] for row in self.puzzle]
-        # 如果提供了seed，基于seed生成puzzle
+        # If seed provided, generate puzzle based on seed
         elif self.seed is not None:
             self.puzzle = self._generate_puzzle_from_seed(self.seed, self.size)
             self.init_grid = [row[:] for row in self.puzzle]
         else:
-            # 使用默认puzzle
+            # Use default puzzle
             self.puzzle = self._get_default_puzzle(self.size)
             self.init_grid = [row[:] for row in self.puzzle]
             
-        self.puzzle = [row[:] for row in self.puzzle]  # prompt需要的puzzle属性
+        self.puzzle = [row[:] for row in self.puzzle]  # Update puzzle attribute
         self.reset()
     
     def _generate_puzzle_from_seed(self, seed: int, size: int) -> List[List[int]]:
-        """基于seed从预生成的JSON文件中读取NxN数独puzzle"""
+        """Generate NxN Sudoku puzzle from pre-generated JSON file based on seed"""
         import json
         import os
         import random
         
-        # 设置随机种子确保可重现性
+        # Set random seed for reproducibility
         random.seed(seed)
         
-        # 构建JSON文件路径
+        # Build JSON file path
         json_file_path = os.path.join(
             os.path.dirname(__file__), 
             "..", "..", "..", 
@@ -430,45 +427,45 @@ class Sudoku4x4EnvState(EnvStateBase):
         )
         
         try:
-            # 读取预生成的环境
+            # Read pre-generated environments
             with open(json_file_path, 'r', encoding='utf-8') as f:
                 environments = json.load(f)
             
             if not environments:
-                print(f"[WARN] JSON文件 {json_file_path} 为空，使用默认puzzle")
+                print(f"[WARN] JSON file {json_file_path} is empty, using default puzzle")
                 return self._get_default_puzzle(size)
             
-            # 根据seed选择环境（确保可重现性）
+            # Select environment based on seed (ensure reproducibility)
             env_index = seed % len(environments)
             selected_env = environments[env_index]
             
-            # 返回选中的puzzle
+            # Return selected puzzle
             puzzle = selected_env["puzzle"]
             
-            # 验证puzzle大小
+            # Validate puzzle size
             if len(puzzle) != size or any(len(row) != size for row in puzzle):
-                print(f"[WARN] 选中的puzzle大小不匹配，期望{size}x{size}，实际{len(puzzle)}x{len(puzzle[0]) if puzzle else 0}")
+                print(f"[WARN] Selected puzzle size mismatch, expected {size}x{size}, actual {len(puzzle)}x{len(puzzle[0]) if puzzle else 0}")
                 return self._get_default_puzzle(size)
             
             return puzzle
             
         except FileNotFoundError:
-            print(f"[WARN] 未找到预生成的环境文件: {json_file_path}")
-            print(f"[INFO] 使用默认puzzle代替")
+            print(f"[WARN] Pre-generated environment file not found: {json_file_path}")
+            print(f"[INFO] Using default puzzle instead")
             return self._get_default_puzzle(size)
             
         except json.JSONDecodeError as e:
-            print(f"[ERROR] JSON文件解析错误: {e}")
+            print(f"[ERROR] JSON file parsing error: {e}")
             return self._get_default_puzzle(size)
             
         except Exception as e:
-            print(f"[ERROR] 读取环境文件时出错: {e}")
+            print(f"[ERROR] Error reading environment file: {e}")
             return self._get_default_puzzle(size)
     
     
     def _get_default_puzzle(self, size: int) -> List[List[int]]:
-        """获取默认的NxN数独puzzle"""
-        # 对于不同大小使用不同的默认puzzle
+        """Get default NxN Sudoku puzzle"""
+        # Use different default puzzles for different sizes
         if size == 4:
             return [[1, 0, 0, 4],
                     [0, 0, 1, 0], 
@@ -487,45 +484,45 @@ class Sudoku4x4EnvState(EnvStateBase):
                 [0, 0, 0, 0, 8, 0, 0, 7, 9]
             ]
         elif size == 16:
-            # 16x16数独的默认puzzle（简化版）
+            # Default 16x16 Sudoku puzzle (simplified)
             puzzle = [[0 for _ in range(16)] for _ in range(16)]
-            # 填充一些基本数字
+            # Fill some basic numbers
             puzzle[0] = [1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
             puzzle[1] = [0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0]
             return puzzle
         else:
-            # 对于其他大小，生成一个基本的puzzle
+            # For other sizes, generate a basic puzzle
             return self._generate_puzzle_from_seed(42, size)
 
     def reset(self):
-        """重置环境"""
+        """Reset environment"""
         self.grid = [row[:] for row in self.init_grid]
-        self.puzzle = [row[:] for row in self.init_grid]  # 更新puzzle属性
+        self.puzzle = [row[:] for row in self.init_grid]  # Update puzzle attribute
         self.done = False
         self.step_count = 0
         self.reward = 0.0
         self.observation = self.text_observation()
     
     def text_observation(self) -> str:
-        """文本观察"""
+        """Text observation"""
         obs = []
         for row in self.grid:
             obs.append(' '.join(str(x) if x != 0 else '.' for x in row))
         return '\n'.join(obs)
     
     def available_actions(self) -> List[Tuple[int, int, int]]:
-        """可用动作：(row, col, value)"""
+        """Available actions: (row, col, value)"""
         actions = []
         for r in range(self.size):
             for c in range(self.size):
-                if self.grid[r][c] == 0:  # 只能在空格填数
+                if self.grid[r][c] == 0:  # Only fill empty cells
                     for v in range(1, self.size + 1):
                         actions.append((r, c, v))
         return actions
     
     def _is_valid_placement(self, r: int, c: int, v: int) -> bool:
-        """检查在(r,c)放置v是否合法"""
-        # 类型转换和验证
+        """Check if placing v at (r,c) is valid"""
+        # Type conversion and validation
         try:
             r = int(r)
             c = int(c) 
@@ -536,18 +533,18 @@ class Sudoku4x4EnvState(EnvStateBase):
         if not (0 <= r < self.size and 0 <= c < self.size and 1 <= v <= self.size):
             return False
         
-        if self.grid[r][c] != 0:  # 非空格
+        if self.grid[r][c] != 0:  # Non-empty cell
             return False
         
-        # 检查行
+        # Check row
         if v in self.grid[r]:
             return False
         
-        # 检查列
+        # Check column
         if any(self.grid[rr][c] == v for rr in range(self.size)):
             return False
         
-        # 检查子网格
+        # Check sub-grid
         box_size = int(self.size ** 0.5)
         box_r, box_c = (r // box_size) * box_size, (c // box_size) * box_size
         for rr in range(box_r, box_r + box_size):
@@ -558,17 +555,17 @@ class Sudoku4x4EnvState(EnvStateBase):
         return True
     
     def _is_solved(self) -> bool:
-        """检查是否解决"""
-        # 检查是否填满
+        """Check if solved"""
+        # Check if filled
         for row in self.grid:
             if 0 in row:
                 return False
         
-        # 检查规则
+        # Check rules
         for r in range(self.size):
             for c in range(self.size):
                 v = self.grid[r][c]
-                # 临时清空检查唯一性
+                # Temporarily clear to check uniqueness
                 self.grid[r][c] = 0
                 valid = self._is_valid_placement(r, c, v)
                 self.grid[r][c] = v
@@ -577,29 +574,29 @@ class Sudoku4x4EnvState(EnvStateBase):
         return True
     
     def _calculate_progress(self) -> float:
-        """计算解题进度 (0-1)"""
+        """Calculate solving progress (0-1)"""
         total_cells = self.size * self.size
         filled_cells = sum(1 for r in range(self.size) for c in range(self.size) if self.grid[r][c] != 0)
         return filled_cells / total_cells
     
     def _count_constraints_satisfied(self) -> int:
-        """计算满足的约束数量"""
+        """Count satisfied constraints"""
         satisfied = 0
         box_size = int(self.size ** 0.5)
         
-        # 检查行约束
+        # Check row constraints
         for r in range(self.size):
             values = [self.grid[r][c] for c in range(self.size) if self.grid[r][c] != 0]
-            if len(values) == len(set(values)):  # 无重复
+            if len(values) == len(set(values)):  # No duplicates
                 satisfied += len(values) - 1 if len(values) > 1 else 0
         
-        # 检查列约束  
+        # Check column constraints  
         for c in range(self.size):
             values = [self.grid[r][c] for r in range(self.size) if self.grid[r][c] != 0]
-            if len(values) == len(set(values)):  # 无重复
+            if len(values) == len(set(values)):  # No duplicates
                 satisfied += len(values) - 1 if len(values) > 1 else 0
         
-        # 检查子网格约束
+        # Check sub-grid constraints
         for box_r in range(0, self.size, box_size):
             for box_c in range(0, self.size, box_size):
                 values = []
@@ -607,30 +604,30 @@ class Sudoku4x4EnvState(EnvStateBase):
                     for c in range(box_c, box_c + box_size):
                         if self.grid[r][c] != 0:
                             values.append(self.grid[r][c])
-                if len(values) == len(set(values)):  # 无重复
+                if len(values) == len(set(values)):  # No duplicates
                     satisfied += len(values) - 1 if len(values) > 1 else 0
         
         return satisfied
     
     def _get_possible_values(self, r: int, c: int) -> Set[int]:
-        """获取位置(r,c)的可能取值"""
+        """Get possible values for position (r,c)"""
         if self.grid[r][c] != 0:
             return set()
         
         possible = set(range(1, self.size + 1))
         box_size = int(self.size ** 0.5)
         
-        # 排除同行的值
+        # Exclude values in same row
         for cc in range(self.size):
             if self.grid[r][cc] in possible:
                 possible.remove(self.grid[r][cc])
         
-        # 排除同列的值
+        # Exclude values in same column
         for rr in range(self.size):
             if self.grid[rr][c] in possible:
                 possible.remove(self.grid[rr][c])
         
-        # 排除同子网格的值
+        # Exclude values in same sub-grid
         box_r, box_c = (r // box_size) * box_size, (c // box_size) * box_size
         for rr in range(box_r, box_r + box_size):
             for cc in range(box_c, box_c + box_size):
@@ -640,17 +637,17 @@ class Sudoku4x4EnvState(EnvStateBase):
         return possible
 
     def step(self, action):
-        """执行动作，更新环境状态。动作格式：完整NxN网格 或 填入步骤列表[[r,c,v],...]"""
+        """Execute action and update environment state. Action format: complete NxN grid or fill step list [[r,c,v],...]"""
         if self.done:
             self.reward = 0.0
             return
         
-        # 检查动作格式
+        # Check action format
         if isinstance(action, list) and len(action) == self.size and all(isinstance(row, list) and len(row) == self.size for row in action):
-            # 格式1：完整NxN网格 [[1,2,3,4],[3,4,1,2],...]
+            # Format 1: Complete NxN grid [[1,2,3,4],[3,4,1,2],...]
             new_grid = action
             
-            # 验证网格格式并进行类型转换
+            # Validate grid format and perform type conversion
             try:
                 converted_grid = []
                 for row in new_grid:
@@ -658,36 +655,36 @@ class Sudoku4x4EnvState(EnvStateBase):
                     for val in row:
                         int_val = int(val)
                         if not (1 <= int_val <= self.size):
-                            self.reward = -1.0  # 无效网格值惩罚
+                            self.reward = -1.0  # Invalid grid value penalty
                             return
                         converted_row.append(int_val)
                     converted_grid.append(converted_row)
                 new_grid = converted_grid
             except (ValueError, TypeError):
-                self.reward = -1.0  # 无效网格值惩罚
+                self.reward = -1.0  # Invalid grid value penalty
                 return
             
-            # 记录填入前的状态
+            # Record state before filling
             prev_progress = self._calculate_progress()
             prev_constraints = self._count_constraints_satisfied()
             
-            # 更新网格
+            # Update grid
             self.grid = [row[:] for row in new_grid]
-            self.puzzle = [row[:] for row in self.grid]  # 更新puzzle属性
+            self.puzzle = [row[:] for row in self.grid]  # Update puzzle attribute
             
-            # 计算奖励
-            self.reward = -0.01  # 基础步数惩罚
+            # Calculate reward
+            self.reward = -0.01  # Base step penalty
             
-            # 验证解决方案的正确性
+            # Validate solution correctness
             if self._is_solved():
-                self.reward += 2.0  # 成功完成大奖励
-                # 效率奖励
+                self.reward += 2.0  # Success completion reward
+                # Efficiency reward
                 empty_count = sum(1 for r in range(self.size) for c in range(self.size) if self.init_grid[r][c] == 0)
-                if self.step_count <= empty_count:  # 最优步数
+                if self.step_count <= empty_count:  # Optimal steps
                     self.reward += 0.5
                 self.done = True
             else:
-                # 部分正确的奖励
+                # Partial correctness reward
                 current_progress = self._calculate_progress()
                 current_constraints = self._count_constraints_satisfied()
                 
@@ -695,49 +692,49 @@ class Sudoku4x4EnvState(EnvStateBase):
                 constraint_improvement = current_constraints - prev_constraints
                 self.reward += progress_reward + constraint_improvement * 0.02
                 
-                # 如果有错误，给予惩罚
+                # If there are errors, give penalty
                 if not self._is_grid_valid():
                     self.reward -= 0.5
         
         elif isinstance(action, list) and all(isinstance(step, list) and len(step) == 3 for step in action):
-            # 格式2：填入步骤列表 [[r,c,v], [r,c,v], ...]
+            # Format 2: Fill step list [[r,c,v], [r,c,v], ...]
             total_reward = 0.0
             
             for step in action:
                 try:
                     r, c, v = step
-                    # 确保类型正确
+                    # Ensure correct types
                     r, c, v = int(r), int(c), int(v)
                 except (ValueError, TypeError, IndexError):
-                    # 跳过无效的步骤
+                    # Skip invalid steps
                     continue
                     
-                step_reward = -0.01  # 基础步数惩罚
+                step_reward = -0.01  # Base step penalty
                 
-                # 记录填入前的状态
+                # Record state before filling
                 prev_progress = self._calculate_progress()
                 prev_constraints = self._count_constraints_satisfied()
                 
                 if self._is_valid_placement(r, c, v):
-                    # 智能填入奖励
+                    # Smart fill reward
                     possible_values = self._get_possible_values(r, c)
                     if len(possible_values) == 1:
-                        step_reward += 0.2  # 唯一解奖励
+                        step_reward += 0.2  # Unique solution reward
                     elif len(possible_values) <= 2:
-                        step_reward += 0.1  # 选择少奖励
+                        step_reward += 0.1  # Few choices reward
                     
                     self.grid[r][c] = v
                     
-                    # 计算填入后的状态
+                    # Calculate state after filling
                     current_progress = self._calculate_progress()
                     current_constraints = self._count_constraints_satisfied()
                     
-                    # 稠密奖励设计
+                    # Dense reward design
                     progress_reward = (current_progress - prev_progress) * 0.5
                     constraint_improvement = current_constraints - prev_constraints
                     step_reward += progress_reward + constraint_improvement * 0.02 + current_progress * 0.1
                     
-                    # 策略奖励
+                    # Strategy reward
                     empty_cells = [(rr, cc) for rr in range(self.size) for cc in range(self.size) if self.grid[rr][cc] == 0]
                     if empty_cells:
                         current_constraints_count = len(self._get_possible_values(r, c))
@@ -745,14 +742,14 @@ class Sudoku4x4EnvState(EnvStateBase):
                         if current_constraints_count <= avg_constraints:
                             step_reward += 0.05
                 else:
-                    step_reward = -0.3  # 无效动作惩罚
+                    step_reward = -0.3  # Invalid action penalty
                 
                 total_reward += step_reward
                 self.step_count += 1
             
-            # 检查是否完成
+            # Check completion
             if self._is_solved():
-                total_reward += 2.0  # 成功完成大奖励
+                total_reward += 2.0  # Success completion reward
                 empty_count = sum(1 for r in range(self.size) for c in range(self.size) if self.init_grid[r][c] == 0)
                 if self.step_count <= empty_count:
                     total_reward += 0.5
@@ -760,30 +757,30 @@ class Sudoku4x4EnvState(EnvStateBase):
             
             self.reward = total_reward
         else:
-            self.reward = -1.0  # 无效动作格式惩罚
+            self.reward = -1.0  # Invalid action format penalty
             return
         
         self.step_count += 1
-        self.puzzle = [row[:] for row in self.grid]  # 更新puzzle属性
+        self.puzzle = [row[:] for row in self.grid]  # Update puzzle attribute
         self.observation = self.text_observation()
     
     def _is_grid_valid(self) -> bool:
-        """检查当前网格是否违反数独规则"""
+        """Check if current grid violates Sudoku rules"""
         box_size = int(self.size ** 0.5)
         
-        # 检查行
+        # Check rows
         for r in range(self.size):
             values = [self.grid[r][c] for c in range(self.size) if self.grid[r][c] != 0]
             if len(values) != len(set(values)):
                 return False
         
-        # 检查列
+        # Check columns
         for c in range(self.size):
             values = [self.grid[r][c] for r in range(self.size) if self.grid[r][c] != 0]
             if len(values) != len(set(values)):
                 return False
         
-        # 检查子网格
+        # Check sub-grids
         for box_r in range(0, self.size, box_size):
             for box_c in range(0, self.size, box_size):
                 values = []
@@ -800,11 +797,11 @@ class Sudoku4x4EnvState(EnvStateBase):
 @dataclass
 class PlanPathGridEnvState(EnvStateBase):
     """
-    2D 网格路径规划 worker（BFS 基准） + 动作/奖励接口。
-    - 网格: '.' 可通行, '#' 不可通行
-    - 动作: U/D/L/R（4-邻域）
-    - 用法：逐步交互: reset_agent() -> step(action_list) ... -> done
-    - 动作格式：动作序列 ["R", "R", "D", "D"]
+    2D grid path planning worker (BFS baseline) + action/reward interface.
+    - Grid: '.' passable, '#' impassable
+    - Actions: U/D/L/R (4-neighborhood)
+    - Usage: step-by-step interaction: reset_agent() -> step(action_list) ... -> done
+    - Action format: action sequence ["R", "R", "D", "D"]
     """
     
     seed: int
@@ -821,7 +818,7 @@ class PlanPathGridEnvState(EnvStateBase):
     max_steps: Optional[int] = None
     config: Optional[dict] = None
     
-    # 环境状态属性
+    # Environment state attributes
     grid: str = ""
     grid_list: List[str] = field(default_factory=list)
     h: int = 0
@@ -830,7 +827,7 @@ class PlanPathGridEnvState(EnvStateBase):
     goal: Tuple[int, int] = field(default_factory=lambda: (0, 0))
     _shortest_path_cache: Optional[List[Tuple[int, int]]] = None
     
-    # 逐步交互状态
+    # Step-by-step interaction state
     pos: Tuple[int, int] = field(default_factory=lambda: (0, 0))
     done: bool = False
     steps: int = 0
@@ -840,15 +837,15 @@ class PlanPathGridEnvState(EnvStateBase):
     reward: float = 0.0
     _last_phi: float = 0.0
 
-    # ====== 默认奖励系数（可按需改/在 __init__ 里覆写）======
-    DEFAULT_R_STEP: ClassVar[float] = -0.01   # 每步轻微惩罚
-    DEFAULT_R_INVALID: ClassVar[float] = -0.10   # 非法动作惩罚（越界/撞墙/非邻接）
-    DEFAULT_R_GOAL: ClassVar[float] = +1.00   # 抵达终点奖励
-    DEFAULT_R_OPT: ClassVar[float] = +0.50   # 最短路加成（若最短）
-    DEFAULT_R_FAIL: ClassVar[float] = -1.00   # 失败（终止但未达）/不可行
-    DEFAULT_GAMMA: ClassVar[float] = 0.99    # 折扣仅用于 shaping
-    DEFAULT_LAMBDA_POT: ClassVar[float] = 1.00    # shaping 系数
-    DEFAULT_MAX_STEPS: ClassVar[int] = 10_000  # 上限（防死循环）
+    # ====== Default reward coefficients (can be overridden in __init__) ======
+    DEFAULT_R_STEP: ClassVar[float] = -0.01   # Light penalty per step
+    DEFAULT_R_INVALID: ClassVar[float] = -0.10   # Illegal action penalty (out of bounds/hit wall/non-adjacent)
+    DEFAULT_R_GOAL: ClassVar[float] = +1.00   # Reach goal reward
+    DEFAULT_R_OPT: ClassVar[float] = +0.50   # Shortest path bonus (if optimal)
+    DEFAULT_R_FAIL: ClassVar[float] = -1.00   # Failure (terminated but not reached)/infeasible
+    DEFAULT_GAMMA: ClassVar[float] = 0.99    # Discount only for shaping
+    DEFAULT_LAMBDA_POT: ClassVar[float] = 1.00    # Shaping coefficient
+    DEFAULT_MAX_STEPS: ClassVar[int] = 10_000  # Upper limit (prevent infinite loops)
 
     ACTIONS: ClassVar[Dict[str, Tuple[int,int]]] = {
         "U": (-1, 0),
@@ -859,27 +856,27 @@ class PlanPathGridEnvState(EnvStateBase):
 
     def __post_init__(self):
         super().__post_init__()
-        # 从config中读取map_size参数，如果存在的话
-        if self.config and hasattr(self.config, 'map_size'):
-            self.grid_h = self.config.map_size
-            self.grid_w = self.config.map_size
-        elif self.config and isinstance(self.config, dict) and 'map_size' in self.config:
-            self.grid_h = self.config['map_size']
-            self.grid_w = self.config['map_size']
+        # Read map_size parameter from config if exists
+        if self.config and hasattr(self.config, 'env') and hasattr(self.config.env, 'map_size'):
+            self.grid_h = self.config.env.map_size
+            self.grid_w = self.config.env.map_size
+        elif self.config and isinstance(self.config, dict) and 'env' in self.config and 'map_size' in self.config['env']:
+            self.grid_h = self.config['env']['map_size']
+            self.grid_w = self.config['env']['map_size']
         
-        # 根据seed生成随机环境
+        # Generate random environment based on seed
         grid, start, goal = self._generate_random_environment(self.seed, self.grid_h, self.grid_w, self.block_ratio)
         
-        # 地图/基础
-        self.grid = '\n'.join(grid)  # prompt需要的字符串格式
-        self.grid_list = grid  # 保留列表格式供内部使用
+        # Map/basic
+        self.grid = '\n'.join(grid)  # String format for prompt
+        self.grid_list = grid  # Keep list format for internal use
         self.h = len(grid)
         self.w = len(grid[0]) if self.h > 0 else 0
         self.start = tuple(start)
         self.goal = tuple(goal)
         self._shortest_path_cache = None
 
-        # 奖励参数
+        # Reward parameters
         self.r_step     = self.DEFAULT_R_STEP     if self.r_step     is None else self.r_step
         self.r_invalid  = self.DEFAULT_R_INVALID  if self.r_invalid  is None else self.r_invalid
         self.r_goal     = self.DEFAULT_R_GOAL     if self.r_goal     is None else self.r_goal
@@ -889,41 +886,41 @@ class PlanPathGridEnvState(EnvStateBase):
         self.lambda_pot = self.DEFAULT_LAMBDA_POT if self.lambda_pot is None else self.lambda_pot
         self.max_steps  = self.DEFAULT_MAX_STEPS  if self.max_steps  is None else self.max_steps
 
-        # 逐步交互状态
+        # Step-by-step interaction state
         self.reset_agent()
         
-        # 为新step方法添加的属性
+        # Add attributes for new step method
         self.reward = 0.0
         self.done = False
         self.step_count = 0
         self.observation = self.text_observation()
     
     def _generate_random_environment(self, seed: int, grid_h: int, grid_w: int, block_ratio: float) -> Tuple[List[str], Tuple[int, int], Tuple[int, int]]:
-        """根据seed生成随机的grid、起始点和终点"""
-        # 设置随机种子确保可重现性
+        """Generate random grid, start and goal based on seed"""
+        # Set random seed for reproducibility
         rng = random.Random(seed)
         np.random.seed(seed)
         
-        max_trials = max(2000, 50)  # 最大尝试次数
+        max_trials = max(2000, 50)  # Maximum number of attempts
         for _ in range(max_trials):
-            # 生成随机网格 (0=可通行, 1=障碍物)
+            # Generate random grid (0=passable, 1=obstacle)
             grid_array = (np.random.rand(grid_h, grid_w) < block_ratio).astype(int)
             
-            # 找到所有可通行的位置
+            # Find all passable positions
             free_positions = [(r, c) for r in range(grid_h) for c in range(grid_w) if grid_array[r, c] == 0]
             
-            if len(free_positions) < 2:  # 至少需要两个可通行位置
+            if len(free_positions) < 2:  # Need at least two passable positions
                 continue
                 
-            # 随机选择起始点和终点
+            # Randomly select start and goal
             start = rng.choice(free_positions)
             goal = rng.choice(free_positions)
-            while goal == start:  # 确保起始点和终点不同
+            while goal == start:  # Ensure start and goal are different
                 goal = rng.choice(free_positions)
             
-            # 检查是否存在从起始点到终点的路径
+            # Check if path exists from start to goal
             if self._bfs_check_reachable(grid_array, start, goal):
-                # 将numpy数组转换为字符串列表格式
+                # Convert numpy array to string list format
                 grid_str = []
                 for row in grid_array:
                     row_str = ''.join('.' if cell == 0 else '#' for cell in row)
@@ -931,12 +928,12 @@ class PlanPathGridEnvState(EnvStateBase):
                 
                 return grid_str, start, goal
         
-        # 如果无法生成有效环境，创建一个简单的默认环境
-        print(f"[WARN] 无法为seed {seed}生成有效环境，使用默认环境")
+        # If unable to generate valid environment, create simple default environment
+        print(f"[WARN] Unable to generate valid environment for seed {seed}, using default environment")
         return self._create_default_environment(grid_h, grid_w)
     
     def _bfs_check_reachable(self, grid_array: np.ndarray, start: Tuple[int, int], goal: Tuple[int, int]) -> bool:
-        """使用BFS检查从起始点到终点是否可达"""
+        """Use BFS to check if goal is reachable from start"""
         h, w = grid_array.shape
         visited = set()
         queue = deque([start])
@@ -947,7 +944,7 @@ class PlanPathGridEnvState(EnvStateBase):
             if (r, c) == goal:
                 return True
                 
-            # 检查四个方向的邻居
+            # Check four-directional neighbors
             for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 nr, nc = r + dr, c + dc
                 if (0 <= nr < h and 0 <= nc < w and 
@@ -958,28 +955,28 @@ class PlanPathGridEnvState(EnvStateBase):
         return False
     
     def _create_default_environment(self, grid_h: int, grid_w: int) -> Tuple[List[str], Tuple[int, int], Tuple[int, int]]:
-        """创建一个简单的默认环境（全部可通行）"""
+        """Create simple default environment (all passable)"""
         grid = ['.' * grid_w for _ in range(grid_h)]
         start = (0, 0)
         goal = (grid_h - 1, grid_w - 1)
         return grid, start, goal
     
     def text_observation(self) -> str:
-        """文本观察"""
+        """Text observation"""
         obs_lines = []
         for r in range(self.h):
             row = ""
             for c in range(self.w):
                 if (r, c) == self.pos:
-                    row += "S"  # 当前位置
+                    row += "S"  # Current position
                 elif (r, c) == self.goal:
-                    row += "G"  # 目标位置
+                    row += "G"  # Goal position
                 else:
                     row += self.grid_list[r][c]
             obs_lines.append(row)
         return "\n".join(obs_lines)
 
-    # ============== 几何/图搜索 ==============
+    # ============== Geometry/Graph Search ==============
     def in_bounds(self, r: int, c: int) -> bool:
         return 0 <= r < self.h and 0 <= c < self.w
 
@@ -993,7 +990,7 @@ class PlanPathGridEnvState(EnvStateBase):
                 yield (nr, nc)
 
     def shortest_path(self) -> Optional[List[Tuple[int, int]]]:
-        """BFS 求最短路（含起终点）；不可达返回 None"""
+        """BFS find shortest path (including start and goal); return None if unreachable"""
         if self._shortest_path_cache is not None:
             return self._shortest_path_cache
         from collections import deque
@@ -1017,7 +1014,7 @@ class PlanPathGridEnvState(EnvStateBase):
         return None
 
 
-    # ============== 表示/描述 ==============
+    # ============== Representation/Description ==============
 
     def describe(self) -> str:
         return (
@@ -1025,9 +1022,9 @@ class PlanPathGridEnvState(EnvStateBase):
             "'.' passable, '#' blocked; moves: U/D/L/R (4-neighborhood)."
         )
 
-    # ============== 动作接口（逐步交互）===============
+    # ============== Action Interface (Step-by-step Interaction) ===============
     def reset_agent(self):
-        """重置逐步交互状态"""
+        """Reset step-by-step interaction state"""
         self.pos: Tuple[int,int] = self.start
         self.done: bool = False
         self.steps: int = 0
@@ -1039,7 +1036,7 @@ class PlanPathGridEnvState(EnvStateBase):
         self.observation = self.text_observation()
 
     def get_valid_actions(self, pos: Optional[Tuple[int,int]] = None) -> List[str]:
-        """返回当前位置可行动作集合（不含越界/撞墙）"""
+        """Return valid action set for current position (excluding out of bounds/hit wall)"""
         if pos is None: pos = self.pos
         valid = []
         for a, (dr, dc) in self.ACTIONS.items():
@@ -1049,11 +1046,11 @@ class PlanPathGridEnvState(EnvStateBase):
         return valid
 
     def _potential(self, pos: Tuple[int,int]) -> float:
-        """势能: 负的 Manhattan 距离（越接近目标值越大）"""
+        """Potential: negative Manhattan distance (closer to goal = higher value)"""
         return - (abs(pos[0] - self.goal[0]) + abs(pos[1] - self.goal[1]))
 
     def _apply_action(self, pos: Tuple[int,int], action: str) -> Tuple[Tuple[int,int], bool]:
-        """尝试应用动作；返回 (next_pos, is_valid)"""
+        """Try to apply action; return (next_pos, is_valid)"""
         if action not in self.ACTIONS:
             return pos, False
         dr, dc = self.ACTIONS[action]
@@ -1064,22 +1061,22 @@ class PlanPathGridEnvState(EnvStateBase):
 
     def step(self, action):
         """
-        执行动作，更新环境状态。动作格式：
-        动作序列: ["R", "R", "D", "D"]
+        Execute action and update environment state. Action format:
+        Action sequence: ["R", "R", "D", "D"]
         """
         if self.done:
             self.reward = 0.0
             return
         
-        # 检查动作格式
+        # Check action format
         if isinstance(action, list) and all(isinstance(item, str) for item in action):
-            # 动作序列 ["R", "R", "D", "D"]
+            # Action sequence ["R", "R", "D", "D"]
             self._execute_action_sequence(action)
         else:
-            self.reward = -1.0  # 无效动作格式
+            self.reward = -1.0  # Invalid action format
     
     def _execute_action_sequence(self, actions: List[str]):
-        """执行动作序列"""
+        """Execute action sequence"""
         total_reward = 0.0
         for action in actions:
             pos, reward, done, _ = self.step_single(action)
@@ -1091,16 +1088,16 @@ class PlanPathGridEnvState(EnvStateBase):
     
     def step_single(self, action: str) -> Tuple[Tuple[int,int], float, bool, Dict[str,Any]]:
         """
-        执行单个动作一步，并返回:
+        Execute single action step and return:
           next_pos, reward, done, info
-        奖励 = 基础步惩罚/非法惩罚 + potential-based shaping (+ 终止奖励/最优加成)
+        Reward = base step penalty/illegal penalty + potential-based shaping (+ termination reward/optimal bonus)
         """
         if self.done:
             return self.pos, 0.0, True, {"msg": "episode already done"}
         prev_pos = self.pos
         next_pos, valid = self._apply_action(prev_pos, action)
 
-        # 基础奖励
+        # Base reward
         reward = 0.0
         if valid:
             reward += self.r_step
@@ -1108,29 +1105,29 @@ class PlanPathGridEnvState(EnvStateBase):
             reward += self.r_invalid
             self.invalid_count += 1
 
-        # Shaping（不改变最优策略）
+        # Shaping (doesn't change optimal policy)
         cur_phi = self._last_phi
         nxt_phi = self._potential(next_pos)
         shaping = self.lambda_pot * (self.gamma * nxt_phi - cur_phi)
         reward += shaping
 
-        # 状态更新
+        # State update
         self.pos = next_pos if valid else prev_pos
         self._last_phi = self._potential(self.pos)
         self.steps += 1
 
-        # 终止判定
+        # Termination check
         if self.pos == self.goal:
-            # 抵达终点
+            # Reach goal
             reward += self.r_goal
-            # 最优加成（如果可达）
+            # Optimal bonus (if reachable)
             sp = self.shortest_path()
             if sp is not None:
-                if self.steps == len(sp) - 1:  # 注意：steps 是"动作步数"，sp 是"节点数"
+                if self.steps == len(sp) - 1:  # Note: steps is "action steps", sp is "node count"
                     reward += self.r_opt
             self.done = True
         elif self.steps >= self.max_steps:
-            # 超步失败
+            # Timeout failure
             reward += self.r_fail
             self.done = True
 
@@ -1144,67 +1141,28 @@ class PlanPathGridEnvState(EnvStateBase):
             "goal": self.goal,
             "done": self.done,
         }
-        return self.pos, reward, self.done, info
-
-    
-
-
-
-# =========================================================
-# Benchmark Registration System
-# =========================================================
-
-# 注册所有可用的状态类
-STATE_REGISTRY = {
-    "EightQueens": EightQueensEnvState,
-    "Blocksworld": BlocksworldEnvState, 
-    "sudoku4x4": Sudoku4x4EnvState,
-    "plan_path": PlanPathGridEnvState,
-    "sokoban": None,  # 占位，稍后在类定义后注册具体类
-    # 可以根据需要添加更多benchmark
-}
-
-
-def get_state_class_by_benchmark(benchmark_name: str):
-
-
-    if benchmark_name not in STATE_REGISTRY:
-        available_benchmarks = list(STATE_REGISTRY.keys())
-        raise ValueError(f"未知的benchmark名称: {benchmark_name}. 可用的benchmark有: {available_benchmarks}")
-    
-    return STATE_REGISTRY[benchmark_name]
-
-
-def register_state_class(benchmark_name: str, state_class):
-    STATE_REGISTRY[benchmark_name] = state_class
-
-
-def list_available_benchmarks() -> List[str]:
-    return list(STATE_REGISTRY.keys())
-
-
-# =========================================================
-# 3) Sokoban (推箱子) EnvState
+        return self.pos, reward, self.done, info# =========================================================
+# State Registry - Initialize before any register calls
 # =========================================================
 
 @dataclass
 class SokobanGridEnvState(EnvStateBase):
     """
-    Sokoban 推箱子环境 - 将所有箱子推到目标位置
-    - 符号说明：
-      '#' 墙壁（不可通过）
-      ' ' 空地（可通过）
-      '.' 目标位置（箱子需要推到这里）
-      '$' 箱子
-      '@' 玩家
-      '*' 箱子在目标位置上
-      '+' 玩家在目标位置上
-    - 动作: U/D/L/R（4-邻域）
-    - 胜利条件：所有箱子都在目标位置上
+    Sokoban push boxes environment - push all boxes to target positions
+    - Symbols:
+      '#' wall (impassable)
+      ' ' empty space (passable)
+      '.' target position (boxes need to be pushed here)
+      '$' box
+      '@' player
+      '*' box on target position
+      '+' player on target position
+    - Actions: U/D/L/R (4-neighborhood)
+    - Win condition: all boxes are on target positions
     """
     
     seed: int
-    level: int = 1  # 关卡编号，用于选择预定义关卡
+    level: int = 1  # Level number for selecting predefined levels
     r_step: Optional[float] = None
     r_invalid: Optional[float] = None
     r_box_on_goal: Optional[float] = None
@@ -1216,41 +1174,41 @@ class SokobanGridEnvState(EnvStateBase):
     max_steps: Optional[int] = None
     config: Optional[dict] = None
     
-    # 环境状态属性
+    # Environment state attributes
     grid: str = ""
     grid_list: List[str] = field(default_factory=list)
     h: int = 0
     w: int = 0
     player_pos: Tuple[int, int] = field(default_factory=lambda: (0, 0))
-    boxes: Set[Tuple[int, int]] = field(default_factory=set)  # 箱子位置
-    goals: Set[Tuple[int, int]] = field(default_factory=set)  # 目标位置
-    walls: Set[Tuple[int, int]] = field(default_factory=set)  # 墙壁位置
-    # utils.py 生成的底层状态（数值网格）
-    room_structure: Optional[np.ndarray] = field(default=None, init=False)  # 固定结构：0墙/1空/2目标
-    room_state: Optional[np.ndarray] = field(default=None, init=False)      # 可变状态：含玩家/箱子
+    boxes: Set[Tuple[int, int]] = field(default_factory=set)  # Box positions
+    goals: Set[Tuple[int, int]] = field(default_factory=set)  # Target positions
+    walls: Set[Tuple[int, int]] = field(default_factory=set)  # Wall positions
+    # Low-level state generated by utils.py (numerical grid)
+    room_structure: Optional[np.ndarray] = field(default=None, init=False)  # Fixed structure: 0 wall/1 empty/2 target
+    room_state: Optional[np.ndarray] = field(default=None, init=False)      # Variable state: contains player/boxes
     box_mapping: Dict[Tuple[int,int], Tuple[int,int]] = field(default_factory=dict, init=False)
     action_sequence: List[int] = field(default_factory=list, init=False)
     
-    # 逐步交互状态
+    # Step-by-step interaction state
     done: bool = False
     steps: int = 0
     step_count: int = 0
     invalid_count: int = 0
     total_reward: float = 0.0
     reward: float = 0.0
-    boxes_on_goals: int = 0  # 在目标位置上的箱子数量
+    boxes_on_goals: int = 0  # Number of boxes on target positions
     _last_phi: float = 0.0
 
-    # ====== 默认奖励系数 ======
-    DEFAULT_R_STEP: ClassVar[float] = -0.01      # 每步轻微惩罚
-    DEFAULT_R_INVALID: ClassVar[float] = -0.05   # 非法动作惩罚
-    DEFAULT_R_BOX_ON_GOAL: ClassVar[float] = +1.0   # 箱子推到目标位置
-    DEFAULT_R_BOX_OFF_GOAL: ClassVar[float] = -0.5  # 箱子离开目标位置
-    DEFAULT_R_WIN: ClassVar[float] = +10.0       # 胜利奖励
-    DEFAULT_R_FAIL: ClassVar[float] = -5.0       # 失败惩罚
-    DEFAULT_GAMMA: ClassVar[float] = 0.99        # 折扣因子
-    DEFAULT_LAMBDA_POT: ClassVar[float] = 0.1    # shaping 系数
-    DEFAULT_MAX_STEPS: ClassVar[int] = 200       # 最大步数
+    # ====== Default reward coefficients ======
+    DEFAULT_R_STEP: ClassVar[float] = -0.01      # Light penalty per step
+    DEFAULT_R_INVALID: ClassVar[float] = -0.05   # Illegal action penalty
+    DEFAULT_R_BOX_ON_GOAL: ClassVar[float] = +1.0   # Push box to target position
+    DEFAULT_R_BOX_OFF_GOAL: ClassVar[float] = -0.5  # Box leaves target position
+    DEFAULT_R_WIN: ClassVar[float] = +10.0       # Win reward
+    DEFAULT_R_FAIL: ClassVar[float] = -5.0       # Failure penalty
+    DEFAULT_GAMMA: ClassVar[float] = 0.99        # Discount factor
+    DEFAULT_LAMBDA_POT: ClassVar[float] = 0.1    # Shaping coefficient
+    DEFAULT_MAX_STEPS: ClassVar[int] = 200       # Maximum steps
 
     ACTIONS: ClassVar[Dict[str, Tuple[int,int]]] = {
         "U": (-1, 0),
@@ -1259,35 +1217,41 @@ class SokobanGridEnvState(EnvStateBase):
         "R": ( 0,+1),
     }
     
-    # 移除旧的预定义关卡，统一使用 utils.generate_room 生成
+    # Remove old predefined levels, use utils.generate_room uniformly
 
     def __post_init__(self):
         super().__post_init__()
+         # Read map_size parameter from config if exists
+        self.size = None
+        if self.config and hasattr(self.config, 'env') and hasattr(self.config.env, 'map_size'):
+            self.size = self.config.env.map_size
         
-        # ========== 基于 utils.py 的生成逻辑：固定 6x6 + 1 箱子 ==========
-        if self.seed is not None:
-            random.seed(self.seed)
-            np.random.seed(self.seed)
-
-        assert generate_room is not None, "无法导入 generate_room，请确认 utils.py 可用"
+        if self.size is None:
+            self.size = 16
+        
+        # ========== Generation logic based on utils.py: fixed 6x6 + 1 box ==========
+        assert generate_room is not None, "Cannot import generate_room, please confirm utils.py is available"
 
         room_structure, room_state, box_mapping, action_sequence = generate_room(
-            dim=(6, 6),
+            dim=(self.size, self.size),
             p_change_directions=0.35,
             num_steps=25,
             num_boxes=1,
             tries=4,
             second_player=False,
             search_depth=100,
+            min_box_distance=2,  # Minimum distance between boxes and targets
+            min_difficulty_score=None,  # Will default to num_boxes * min_box_distance
+            seed=self.seed,  # Pass seed to ensure reproducible room generation
         )
 
-        # 保存底层网格与搜索信息
+        # Save low-level grid and search information
         self.room_structure = room_structure
         self.room_state = room_state
         self.box_mapping = {tuple(k): tuple(v) for k, v in box_mapping.items()}
         self.action_sequence = list(action_sequence)
 
-        # 解析数值网格为集合/ASCII
+        # Parse numerical grid to sets/ASCII
         self.h, self.w = room_structure.shape
         self.walls = set(map(tuple, np.argwhere(room_structure == 0)))
         self.goals = set(map(tuple, np.argwhere(room_structure == 2)))
@@ -1324,7 +1288,7 @@ class SokobanGridEnvState(EnvStateBase):
 
         self.boxes_on_goals = len(self.boxes & self.goals)
 
-        # 奖励参数
+        # Reward parameters
         self.r_step     = self.DEFAULT_R_STEP     if self.r_step     is None else self.r_step
         self.r_invalid  = self.DEFAULT_R_INVALID  if self.r_invalid  is None else self.r_invalid
         self.r_box_on_goal  = self.DEFAULT_R_BOX_ON_GOAL  if self.r_box_on_goal  is None else self.r_box_on_goal
@@ -1335,7 +1299,7 @@ class SokobanGridEnvState(EnvStateBase):
         self.lambda_pot = self.DEFAULT_LAMBDA_POT if self.lambda_pot is None else self.lambda_pot
         self.max_steps  = self.DEFAULT_MAX_STEPS  if self.max_steps  is None else self.max_steps
 
-        # 逐步交互初始状态（不重新生成关卡）
+        # Step-by-step interaction initial state (don't regenerate level)
         self.done = False
         self.steps = 0
         self.step_count = 0
@@ -1345,10 +1309,10 @@ class SokobanGridEnvState(EnvStateBase):
         self._last_phi = self._potential()
         self.observation = self.text_observation()
     
-    # 删除旧的关卡字符串解析与生成方法（统一走 utils.generate_room）
+    # Remove old level string parsing and generation methods (unified through utils.generate_room)
 
     def text_observation(self) -> str:
-        """文本观察"""
+        """Text observation"""
         obs_lines = []
         for r in range(self.h):
             row = ""
@@ -1358,18 +1322,18 @@ class SokobanGridEnvState(EnvStateBase):
                     row += "#"
                 elif pos == self.player_pos:
                     if pos in self.goals:
-                        row += "+"  # 玩家在目标位置上
+                        row += "+"  # Player on target position
                     else:
-                        row += "@"  # 玩家
+                        row += "@"  # Player
                 elif pos in self.boxes:
                     if pos in self.goals:
-                        row += "*"  # 箱子在目标位置上
+                        row += "*"  # Box on target position
                     else:
-                        row += "$"  # 箱子
+                        row += "$"  # Box
                 elif pos in self.goals:
-                    row += "."  # 空的目标位置
+                    row += "."  # Empty target position
                 else:
-                    row += " "  # 空地
+                    row += " "  # Empty space
             obs_lines.append(row)
         return "\n".join(obs_lines)
 
@@ -1380,10 +1344,10 @@ class SokobanGridEnvState(EnvStateBase):
         )
 
     def reset_agent(self):
-        """重置逐步交互状态到最初由 utils.generate_room 生成的状态"""
+        """Reset step-by-step interaction state to initial state generated by utils.generate_room"""
         assert self.room_structure is not None and self.room_state is not None
 
-        # 依据保存的数值网格恢复集合/ASCII
+        # Restore sets/ASCII based on saved numerical grid
         room_structure = self.room_structure
         room_state = self.room_state
 
@@ -1432,7 +1396,7 @@ class SokobanGridEnvState(EnvStateBase):
         self.observation = self.text_observation()
 
     def get_valid_actions(self, pos: Optional[Tuple[int,int]] = None) -> List[str]:
-        """返回当前位置可行动作集合"""
+        """Return valid action set for current position"""
         if pos is None: 
             pos = self.player_pos
         valid = []
@@ -1440,17 +1404,17 @@ class SokobanGridEnvState(EnvStateBase):
             nr, nc = pos[0] + dr, pos[1] + dc
             next_pos = (nr, nc)
             
-            # 检查是否越界或撞墙
+            # Check if out of bounds or hit wall
             if not self.in_bounds(nr, nc) or next_pos in self.walls:
                 continue
                 
-            # 检查是否推箱子
+            # Check if pushing box
             if next_pos in self.boxes:
-                # 计算箱子的下一个位置
+                # Calculate box's next position
                 box_nr, box_nc = nr + dr, nc + dc
                 box_next_pos = (box_nr, box_nc)
                 
-                # 箱子不能推到墙上或另一个箱子上
+                # Box cannot be pushed to wall or another box
                 if (not self.in_bounds(box_nr, box_nc) or 
                     box_next_pos in self.walls or 
                     box_next_pos in self.boxes):
@@ -1463,7 +1427,7 @@ class SokobanGridEnvState(EnvStateBase):
         return 0 <= r < self.h and 0 <= c < self.w
 
     def _potential(self) -> float:
-        """势能函数：基于箱子到最近目标的距离"""
+        """Potential function: based on distance from boxes to nearest goal"""
         if not self.boxes or not self.goals:
             return 0.0
         
@@ -1473,15 +1437,15 @@ class SokobanGridEnvState(EnvStateBase):
                           for goal in self.goals)
             total_distance += min_dist
         
-        # 返回负距离（越小的距离对应越大的势能）
+        # Return negative distance (smaller distance = higher potential)
         return -total_distance
 
     def _is_won(self) -> bool:
-        """检查是否胜利（所有箱子都在目标位置上）"""
+        """Check if won (all boxes are on target positions)"""
         return len(self.boxes & self.goals) == len(self.boxes)
 
     def _apply_action(self, action: str) -> Tuple[Tuple[int,int], bool, Dict[str,Any]]:
-        """尝试应用动作；返回 (next_player_pos, is_valid, info)"""
+        """Try to apply action; return (next_player_pos, is_valid, info)"""
         if action not in self.ACTIONS:
             return self.player_pos, False, {"msg": "invalid action"}
         
@@ -1489,58 +1453,58 @@ class SokobanGridEnvState(EnvStateBase):
         nr, nc = self.player_pos[0] + dr, self.player_pos[1] + dc
         next_pos = (nr, nc)
         
-        # 检查是否越界或撞墙
+        # Check if out of bounds or hit wall
         if not self.in_bounds(nr, nc) or next_pos in self.walls:
             return self.player_pos, False, {"msg": "hit wall or out of bounds"}
         
         info = {"pushed_box": False, "box_on_goal_change": 0}
         
-        # 检查是否推箱子
+        # Check if pushing box
         if next_pos in self.boxes:
-            # 计算箱子的下一个位置
+            # Calculate box's next position
             box_nr, box_nc = nr + dr, nc + dc
             box_next_pos = (box_nr, box_nc)
             
-            # 箱子不能推到墙上或另一个箱子上
+            # Box cannot be pushed to wall or another box
             if (not self.in_bounds(box_nr, box_nc) or 
                 box_next_pos in self.walls or 
                 box_next_pos in self.boxes):
                 return self.player_pos, False, {"msg": "cannot push box"}
             
-            # 推箱子
+            # Push box
             self.boxes.remove(next_pos)
             self.boxes.add(box_next_pos)
             info["pushed_box"] = True
             
-            # 检查箱子在目标位置上的变化
+            # Check box on goal position change
             old_on_goal = next_pos in self.goals
             new_on_goal = box_next_pos in self.goals
             
             if old_on_goal and not new_on_goal:
-                info["box_on_goal_change"] = -1  # 箱子离开目标位置
+                info["box_on_goal_change"] = -1  # Box leaves target position
             elif not old_on_goal and new_on_goal:
-                info["box_on_goal_change"] = +1  # 箱子到达目标位置
+                info["box_on_goal_change"] = +1  # Box reaches target position
         
         return next_pos, True, info
 
     def step(self, action):
         """
-        执行动作，更新环境状态。动作格式：
-        动作序列: ["R", "R", "D", "D"]
+        Execute action and update environment state. Action format:
+        Action sequence: ["R", "R", "D", "D"]
         """
         if self.done:
             self.reward = 0.0
             return
         
-        # 检查动作格式
+        # Check action format
         if isinstance(action, list) and all(isinstance(item, str) for item in action):
-            # 动作序列 ["R", "R", "D", "D"]
+            # Action sequence ["R", "R", "D", "D"]
             self._execute_action_sequence(action)
         else:
-            self.reward = -1.0  # 无效动作格式
+            self.reward = -1.0  # Invalid action format
     
     def _execute_action_sequence(self, actions: List[str]):
-        """执行动作序列"""
+        """Execute action sequence"""
         total_reward = 0.0
         for action in actions:
             pos, reward, done, _ = self.step_single(action)
@@ -1551,7 +1515,7 @@ class SokobanGridEnvState(EnvStateBase):
     
     def step_single(self, action: str) -> Tuple[Tuple[int,int], float, bool, Dict[str,Any]]:
         """
-        执行单个动作一步，并返回:
+        Execute single action step and return:
           next_pos, reward, done, info
         """
         if self.done:
@@ -1562,7 +1526,7 @@ class SokobanGridEnvState(EnvStateBase):
         
         next_pos, valid, action_info = self._apply_action(action)
 
-        # 基础奖励
+        # Base reward
         reward = 0.0
         if valid:
             reward += self.r_step
@@ -1570,7 +1534,7 @@ class SokobanGridEnvState(EnvStateBase):
             reward += self.r_invalid
             self.invalid_count += 1
 
-        # 箱子在目标位置变化的奖励
+        # Box on goal position change reward
         if valid and action_info["pushed_box"]:
             if action_info["box_on_goal_change"] > 0:
                 reward += self.r_box_on_goal
@@ -1583,22 +1547,22 @@ class SokobanGridEnvState(EnvStateBase):
         shaping = self.lambda_pot * (self.gamma * nxt_phi - cur_phi)
         reward += shaping
 
-        # 状态更新
+        # State update
         if valid:
             self.player_pos = next_pos
         self._last_phi = self._potential()
         self.steps += 1
         
-        # 更新箱子在目标位置上的数量
+        # Update number of boxes on target positions
         self.boxes_on_goals = len(self.boxes & self.goals)
 
-        # 终止判定
+        # Termination check
         if self._is_won():
-            # 胜利
+            # Win
             reward += self.r_win
             self.done = True
         elif self.steps >= self.max_steps:
-            # 超步失败
+            # Timeout failure
             reward += self.r_fail
             self.done = True
 
@@ -1619,6 +1583,19 @@ class SokobanGridEnvState(EnvStateBase):
         }
         return self.player_pos, reward, self.done, info
 
+STATE_REGISTRY = {
+    "EightQueens": EightQueensEnvState,
+    "Blocksworld": BlocksworldEnvState, 
+    "sudoku4x4": Sudoku4x4EnvState,
+    "plan_path": PlanPathGridEnvState,
+    "sokoban": SokobanGridEnvState,  
+}
 
-# 在类定义完成后注册 sokoban，避免前向引用问题
-register_state_class("sokoban", SokobanGridEnvState)
+def get_state_class_by_benchmark(benchmark_name: str):
+    if benchmark_name not in STATE_REGISTRY:
+        raise ValueError(
+            f"Unknown benchmark: {benchmark_name}. "
+            f"Available benchmarks: {list(STATE_REGISTRY.keys())}"
+        )
+    return STATE_REGISTRY[benchmark_name]
+
