@@ -6,89 +6,273 @@ This guide provides a comprehensive overview of setting up the PettingLLMs frame
 
 ## Table of Contents
 
+0. [Data Preparation](#data-preparation)
 1. [Environment Setup](#environment-setup)
-2. [Core Architecture Overview](#core-architecture-overview)
-3. [Key Functions Explained](#key-functions-explained)
+2. [Environment and Agent Registration](#environment-and-agent-registration)
+3. [Recipe and Config Setup](#recipe-and-config-setup)
+4. [Core Architecture Overview](#core-architecture-overview)
+5. [Key Functions Explained](#key-functions-explained)
    - [update_from_env](#update_from_env)
    - [update_from_model](#update_from_model)
    - [step](#step)
-4. [Environment State as Shared Information Hub](#environment-state-as-shared-information-hub)
-5. [Complete Workflow Example](#complete-workflow-example)
+6. [Environment State as Shared Information Hub](#environment-state-as-shared-information-hub)
+7. [Complete Workflow Example](#complete-workflow-example)
 
 ---
 
-## Environment Setup
+## Data Preparation
 
-### Prerequisites
+Before running any training or evaluation, prepare the task-specific datasets:
 
-- Python 3.10 or higher
-- CUDA 12.x (for GPU support)
-- Docker (for code execution sandbox)
-- Git
-
-### Installation Steps
-
-1. **Clone the repository:**
+### Quick Start
 
 ```bash
-git clone https://github.com/NorahYujieZhao/PettingLLMs.git
-cd PettingLLMs
-```
-
-2. **Run the setup script:**
-
-```bash
-bash setup.bash
-```
-
-This script will:
-- Create a Python virtual environment
-- Install all dependencies from `requirements_venv.txt`
-- Set up the package in development mode
-
-3. **Activate the virtual environment:**
-
-```bash
-source pettingllms_venv/bin/activate
-```
-
-4. **Verify installation:**
-
-```bash
-python -c "import pettingllms; print('Installation successful!')"
-```
-
-### Key Dependencies
-
-The framework relies on several major dependencies:
-
-- **transformers** (4.55.2) - LLM model loading and inference
-- **vllm** (0.10.0) - High-performance LLM serving
-- **ray** (2.48.0) - Distributed computing and environment parallelization
-- **wandb** (0.21.1) - Experiment tracking
-- **docker** (7.1.0) - Sandboxed code execution
-- **datasets** (4.0.0) - Dataset loading and processing
-- **accelerate** (1.10.0) - Training acceleration
-
-### Dataset Preparation
-
-Before training, prepare the datasets:
-
-```bash
-# For code generation tasks (APPS, CodeContests, LiveCodeBench)
+# Code generation tasks (APPS, CodeContests, LiveCodeBench)
 python scripts/dataprocess/load_code.py
 
-# For math reasoning tasks (AIME24/25, OlympiadBench)
+# Math reasoning tasks (AIME24/25, OlympiadBench)
 python scripts/dataprocess/load_math.py
 
-# For planning/game tasks (Sokoban, Sudoku)
+# Planning/game tasks (Sokoban, Sudoku)
 python scripts/dataprocess/load_sokoban.py
 ```
 
-Datasets will be saved to:
-- `datasets/code/` - Code generation problems
-- `datasets/math/` - Math problems
-- `datasets/sudoku_environments/` - Game environments
+### Data Processing Workflow
+
+The data preparation scripts (`scripts/dataprocess/load_*.py`) follow a standardized pattern:
+
+1. **Load from HuggingFace**: Download datasets from HuggingFace Hub
+2. **Process and normalize**: Convert to framework-compatible format
+3. **Split train/test**: Separate data for training and evaluation
+4. **Save as Parquet**: Store in `datasets/{task}/{split}/{dataset}.parquet`
+
+**Example**: `load_code.py` processes three datasets:
+- **APPS**: 4000 training samples, 500 test samples
+- **CodeContests**: Full train/test splits from deepmind/code_contests
+- **LiveCodeBench**: 250+ recent competitive programming problems
+
+Output structure:
+```
+datasets/
+├── code/
+│   ├── train/
+│   │   ├── apps_train.parquet
+│   │   └── code_contests_train.parquet
+│   └── test/
+│       ├── apps_test.parquet
+│       ├── code_contests_test.parquet
+│       └── livecodebench_test.parquet
+├── math/
+│   ├── train/
+│   └── test/
+└── ...
+```
+
+
+---
+
+
+
+
+## Environment and Agent Registration
+
+The framework uses a centralized registration system to map string identifiers to environment and agent classes. This enables flexible configuration-based instantiation.
+
+### Registration File
+
+All registrations are defined in `pettingllms/trainer/multiagentssys_register.py`:
+
+```python
+# Import from relative paths
+from ..multi_agent_env.code.code_env import CodeEnv
+from ..multi_agent_env.math.math_env import MathEnv
+from ..multi_agent_env.stateful.stateful_env import StatefulEnv
+
+from ..multi_agent_env.code.agents.code_agent import CodeGenerationAgent
+from ..multi_agent_env.code.agents.test_agent import UnitTestGenerationAgent
+from ..multi_agent_env.math.agents.reasoning_agent import ReasoningAgent
+from ..multi_agent_env.math.agents.tool_agent import ToolAgent
+from ..multi_agent_env.stateful.agents.plan_agent import PlanAgent
+
+ENV_CLASSES = {
+    "code_env": CodeEnv,
+    "math_env": MathEnv,
+    "stateful_env": StatefulEnv,
+    ...
+}
+
+AGENT_CLASSES = {
+    "code_generator": CodeGenerationAgent,
+    "test_generator": UnitTestGenerationAgent,
+    "reasoning_agent": ReasoningAgent,
+    "tool_agent": ToolAgent,
+    "plan_agent": PlanAgent,
+    ...
+}
+```
+
+### ⚠️ Critical Requirement: Unique Keys
+
+**All environment and agent keys MUST be globally unique within their respective registries.**
+
+❌ **WRONG** - Duplicate keys will cause conflicts:
+```python
+ENV_CLASSES = {
+    "code_env": CodeEnvV1,
+    "code_env": CodeEnvV2,  # Overwrites previous entry!
+}
+```
+
+✅ **CORRECT** - Use unique, descriptive keys:
+```python
+ENV_CLASSES = {
+    "code_env": CodeEnv,
+    "code_env_single_agent": CodeEnvSingleAgent,
+}
+```
+
+### Registration Categories
+
+1. **ENV_CLASSES**: Single environment instances
+   - Used for validation and single-episode testing
+   - Example: `code_env` → `CodeEnv`
+
+2. **ENV_BATCH_CLASSES**: Batched environment managers
+   - Used for parallel training with multiple environments
+   - Example: `code_env` → `CodeEnvBatch`
+
+3. **AGENT_CLASSES**: Agent implementations
+   - Maps agent names to their implementation classes
+   - Used in `turn_order` configuration
+   - Example: `code_generator` → `CodeGenerationAgent`
+
+4. **ENV_WORKER_CLASSES**: Ray-based execution workers
+   - Provides sandboxed execution environments (Docker/subprocess)
+   - Example: `code_env` → `get_ray_docker_worker_cls()`
+
+### Adding Custom Environments/Agents
+
+To add new environments or agents:
+
+1. **Implement the class** following the base interface:
+   ```python
+   # pettingllms/multi_agent_env/my_task/my_env.py
+   from pettingllms.multi_agent_env.base.env import Env
+   
+   class MyCustomEnv(Env):
+       def __init__(self, ...):
+           super().__init__(...)
+           # Your initialization
+   ```
+
+2. **Register in `multiagentssys_register.py`**:
+   ```python
+   ENV_CLASSES = {
+       ...
+       "my_custom_env": safe_import("pettingllms.multi_agent_env.my_task.my_env", "MyCustomEnv"),
+   }
+   ```
+
+3. **Use in config** with the registered key:
+   ```yaml
+   env:
+     name: my_custom_env  # Must match registration key
+   ```
+
+### Registration Pattern Example
+
+**Multi-Agent Code Environment:**
+```yaml
+env:
+  name: code_env  # → CodeEnv
+  
+multi_agent_interaction:
+  turn_order: ["code_generator", "test_generator"]  # → CodeGenerationAgent, UnitTestGenerationAgent
+```
+
+This pattern applies to all environments - the `name` field maps to `ENV_CLASSES`, and the `turn_order` entries map to `AGENT_CLASSES`.
+
+
+## Recipe and Config Setup
+
+The framework uses **Hydra** for hierarchical configuration management. Configs define all aspects of training: models, agents, environments, data, and training hyperparameters.
+
+### Config File Structure
+
+```
+pettingllms/config/
+├── code/                             # Task-specific configs
+│   ├── code_single_policy.yaml       # Single policy for all agents
+│   ├── code_two_policies.yaml        # Separate policies per agent
+│   └── ...
+├── math/                             # Other task configs (math, stateful, etc.)
+└── ppo_trainer/                      # Trainer configs
+    ├── base.yaml                     # Base trainer config
+    ├── eval.yaml                     # Evaluation-specific overrides
+    └── ...
+```
+
+### Training Script Structure
+
+Training scripts (`scripts/train/*.sh`) set environment variables and override config values:
+
+```bash
+# scripts/train/code.sh
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5
+export VLLM_ATTENTION_BACKEND=FLASH_ATTN
+
+python3 -m pettingllms.trainer.train \
+    --config-path ../config/code \
+    --config-name code_single_policy \
+    models.model_0.path=/path/to/model \
+    trainer.total_training_steps=400 \
+    data.gen_batch_size=128 \
+    ...
+```
+
+### Detailed Configuration Guide
+
+For a comprehensive explanation of all configuration parameters, see:
+
+**→ [Configuration Parameters Reference](./CONFIG_PARAMETERS_GUIDE.md)**
+
+This detailed guide covers:
+- Model configuration (`models.*`)
+- Data configuration (`data.*`)
+- Environment configuration (`env.*`)
+- Agent configuration (`agent_policy_configs.*`)
+- Trainer configuration (`trainer.*`)
+- Multi-agent interaction (`multi_agent_interaction.*`)
+
+### Quick Config Examples
+
+**Single Policy for Multiple Agents** (agents share the same model):
+```yaml
+agent_policy_configs:
+  num_agents: 2
+  policy_list: ["code_agent"]  # Single policy
+  agent_configs:
+    agent_0:
+      name: "code_generator"
+      policy_name: "code_agent_model"  # Same policy
+    agent_1:
+      name: "test_generator"
+      policy_name: "code_agent_model"  # Same policy
+```
+
+**Separate Policies per Agent** (role-specialized training):
+```yaml
+agent_policy_configs:
+  num_agents: 2
+  policy_list: ["code_agent", "test_agent"]  # Two policies
+  agent_configs:
+    agent_0:
+      name: "code_generator"
+      policy_name: "code_agent_model"  # Policy 1
+    agent_1:
+      name: "test_generator"
+      policy_name: "test_agent_model"  # Policy 2
+```
 
 ---
 

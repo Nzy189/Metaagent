@@ -62,7 +62,9 @@ class MultiAgentsPPOTrainer:
         self.config = config
         self.processor_dict = processor_dict or {}
         
-        
+        # Check if lora_differ mode is enabled
+        self.lora_differ_mode = False
+        self.agent_lora_mapping = {}  # Maps agent_name to lora_id
         
         # Initialize agent_policy_mapping from agent_policy_configs
         self.agent_policy_mapping = {}
@@ -130,6 +132,34 @@ class MultiAgentsPPOTrainer:
         colorful_print(f"Number of PPO trainers: {len(self.ppo_trainer_dict)}", "cyan")
         colorful_print(f"Number of agent mappings: {len(self.agent_policy_mapping)}", "cyan")
         
+        # Check if lora_differ mode should be enabled
+        # Condition: only 1 model and lora_differ=true in config
+        if len(self.ppo_trainer_dict) == 1 and hasattr(config, 'lora_differ') and config.lora_differ:
+            self.lora_differ_mode = True
+            colorful_print("=" * 60, "yellow")
+            colorful_print("LoRA Differ Mode ENABLED", "yellow")
+            colorful_print("Each agent will use a different LoRA adapter", "yellow")
+            
+            # Get the single model name and its config
+            single_model_name = list(self.ppo_trainer_dict.keys())[0]
+            single_model_config = config.models[list(config.models.keys())[0]]
+            
+            # Check if LoRA is configured
+            lora_rank = getattr(single_model_config.ppo_trainer_config.actor_rollout_ref.model, 'lora_rank', 0)
+            if lora_rank <= 0:
+                colorful_print("WARNING: lora_differ=true but lora_rank=0. Please set lora_rank > 0 in model config.", "red")
+                self.lora_differ_mode = False
+            else:
+                # Create LoRA adapter mapping for each agent
+                for agent_idx, agent_name in enumerate(self.agent_policy_mapping.keys()):
+                    lora_id = f"agent_{agent_name}_lora_{agent_idx}"
+                    self.agent_lora_mapping[agent_name] = lora_id
+                    colorful_print(f"  Agent '{agent_name}' -> LoRA adapter '{lora_id}'", "cyan")
+                
+                colorful_print(f"Total {len(self.agent_lora_mapping)} agent-specific LoRA adapters created", "green")
+            colorful_print("=" * 60, "yellow")
+        else:
+            colorful_print("LoRA Differ Mode DISABLED - using standard multi-model training", "cyan")
         
         self.llm_servers = []
 
@@ -161,6 +191,8 @@ class MultiAgentsPPOTrainer:
             processor_dict=self.processor_dict,
             server_address_dict=self.server_address_dict,
             agent_policy_mapping=self.agent_policy_mapping,
+            lora_differ_mode=self.lora_differ_mode,
+            agent_lora_mapping=self.agent_lora_mapping,
         )
 
     def init_workers(self):
@@ -184,10 +216,23 @@ class MultiAgentsPPOTrainer:
         
         colorful_print(f"All {len(self.ppo_trainer_dict)} trainers initialized successfully!", "green")
 
-    def _update_parameters(self, batch, ppo_trainer, timing_raw):
+    def _update_parameters(self, batch, ppo_trainer, timing_raw, agent_name=None):
         #TODO: uid
         ppo_trainer.global_steps += 1
         
+        # In lora_differ mode, if agent_name is provided, we filter the batch to only include that agent's data
+        if self.lora_differ_mode and agent_name is not None:
+            # Filter batch to only include data from the specified agent
+            if hasattr(batch, 'non_tensor_batch') and 'agent_name' in batch.non_tensor_batch:
+                agent_names = batch.non_tensor_batch['agent_name']
+                agent_mask = np.array([name == agent_name for name in agent_names])
+                if agent_mask.sum() == 0:
+                    # No data for this agent, skip update
+                    colorful_print(f"No data for agent {agent_name}, skipping update", "yellow")
+                    return
+                # Filter the batch
+                batch = batch.select_idxs(np.where(agent_mask)[0].tolist())
+                colorful_print(f"Filtered batch for agent {agent_name}: {len(batch)} samples", "cyan")
         
         # Initialize metrics dictionary if not exists
         if not hasattr(batch, 'meta_info'):
@@ -487,14 +532,14 @@ class MultiAgentsPPOTrainer:
                     all_trainer_metrics = {}
                     
                     # 使用 ThreadPoolExecutor 进行并行更新（避免 Ray remote 的 self 引用问题）
-                    def update_single_trainer(model_name, batch, trainer):
+                    def update_single_trainer(model_name, batch, trainer, agent_name=None):
                         """更新单个 trainer 的参数"""
                         try:
                             # 为每个任务创建独立的 timing 字典
                             local_timing_raw = {}
                             
                             # 调用原有的更新逻辑
-                            self._update_parameters(batch, trainer, local_timing_raw)
+                            self._update_parameters(batch, trainer, local_timing_raw, agent_name=agent_name)
                             
                             # 提取 metrics
                             trainer_metrics = {}
@@ -509,6 +554,7 @@ class MultiAgentsPPOTrainer:
                             return {
                                 "status": "success",
                                 "model_name": model_name,
+                                "agent_name": agent_name,
                                 "timing": local_timing_raw,
                                 "metrics": trainer_metrics,
                                 "agent_names": agent_names
@@ -518,15 +564,32 @@ class MultiAgentsPPOTrainer:
                             return {
                                 "status": "error",
                                 "model_name": model_name,
+                                "agent_name": agent_name,
                                 "error": str(e),
                                 "traceback": traceback.format_exc()
                             }
                     
                     # 收集需要更新的 trainers
                     tasks_to_submit = []
-                    for model_name, trainer in self.ppo_trainer_dict.items():
-                        if model_name in gen_batch_output_per_policy:
-                            tasks_to_submit.append((model_name, batch_per_trainer[model_name], trainer))
+                    
+                    if self.lora_differ_mode:
+                        # In lora_differ mode, we update each agent's LoRA separately
+                        # All agents use the same trainer (single model) but with different agent filters
+                        colorful_print("LoRA Differ Mode: Updating each agent's LoRA separately", "cyan")
+                        single_model_name = list(self.ppo_trainer_dict.keys())[0]
+                        trainer = self.ppo_trainer_dict[single_model_name]
+                        
+                        if single_model_name in gen_batch_output_per_policy:
+                            batch = batch_per_trainer[single_model_name]
+                            # Create one task per agent
+                            for agent_name in self.agent_policy_mapping.keys():
+                                tasks_to_submit.append((single_model_name, batch, trainer, agent_name))
+                                colorful_print(f"  Scheduled update for agent: {agent_name}", "blue")
+                    else:
+                        # Standard mode: one task per model
+                        for model_name, trainer in self.ppo_trainer_dict.items():
+                            if model_name in gen_batch_output_per_policy:
+                                tasks_to_submit.append((model_name, batch_per_trainer[model_name], trainer, None))
                     
                     if not tasks_to_submit:
                         colorful_print("No trainers to update", "yellow")
@@ -537,10 +600,17 @@ class MultiAgentsPPOTrainer:
                         with ThreadPoolExecutor(max_workers=len(tasks_to_submit)) as executor:
                             # 提交所有任务
                             futures = {}
-                            for model_name, batch, trainer in tasks_to_submit:
-                                future = executor.submit(update_single_trainer, model_name, batch, trainer)
-                                futures[future] = model_name
-                                colorful_print(f"  Submitted update task for: {model_name}", "blue")
+                            for task in tasks_to_submit:
+                                if len(task) == 4:
+                                    model_name, batch, trainer, agent_name = task
+                                else:
+                                    model_name, batch, trainer = task
+                                    agent_name = None
+                                    
+                                future = executor.submit(update_single_trainer, model_name, batch, trainer, agent_name)
+                                task_id = f"{model_name}" + (f"_agent_{agent_name}" if agent_name else "")
+                                futures[future] = task_id
+                                colorful_print(f"  Submitted update task for: {task_id}", "blue")
                             
                             # 使用 tqdm 显示进度
                             update_pbar = tqdm(total=len(futures), desc="Updating Parameters", position=2, leave=False)
@@ -551,7 +621,10 @@ class MultiAgentsPPOTrainer:
                                 result = future.result()
                                 results.append(result)
                                 update_pbar.update(1)
-                                update_pbar.set_description(f"Updated {result.get('model_name', 'unknown')}")
+                                task_desc = result.get('model_name', 'unknown')
+                                if result.get('agent_name'):
+                                    task_desc += f"_agent_{result['agent_name']}"
+                                update_pbar.set_description(f"Updated {task_desc}")
                             
                             update_pbar.close()
                         
@@ -560,7 +633,9 @@ class MultiAgentsPPOTrainer:
                         for result in results:
                             if result["status"] == "success":
                                 model_name = result["model_name"]
-                                colorful_print(f"✓ Updated parameters for: {model_name}", "green")
+                                agent_name = result.get("agent_name")
+                                task_desc = model_name + (f" (agent: {agent_name})" if agent_name else "")
+                                colorful_print(f"✓ Updated parameters for: {task_desc}", "green")
                                 success_count += 1
                                 
                                 # 合并 timing 信息（取最大值，因为是并行执行）

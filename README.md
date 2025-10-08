@@ -7,7 +7,7 @@
 # PETTINGLLMS
 
 <div>
-🚀 Reinforcement Learning Framework for Multi LLM Agents🌟
+🚀 RL Framework for building MAS at any level: specialize with different Prompt/LoRA/Full model.🌟
 </div>
 </div>
 <div>
