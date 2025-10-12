@@ -36,10 +36,14 @@ class PlanAgent(Agent):
             setattr(self, k, v)
         self.action_list = []
         self.state_list = []
+        self.success = False
+        self.agent_reward = 0.0
 
     def reset(self):
         self.action_list = []
         self.state_list = []
+        self.success = False
+        self.agent_reward = 0.0
 
     # ===================== Prompt Construction (Externalized) =====================
     def update_from_env(self, turn_idx: int, env_data: Env):
@@ -83,33 +87,10 @@ class PlanAgent(Agent):
         else:
             self.agent_reward = state.reward
         if hasattr(state, 'done') and state.done:
-            if self.benchmark == "plan_path":
-                if hasattr(state, 'pos') and hasattr(state, 'goal') and state.pos == state.goal:
-                    self.done = True
-                    self.is_pass = True
-                    self.agent_reward = max(self.agent_reward, 1.0) 
-            elif self.benchmark == "sokoban":
-                if hasattr(state, 'boxes') and hasattr(state, 'goals'):
-                    if len(state.boxes & state.goals) == len(state.boxes):
-                        self.done = True
-                        self.is_pass = True
-                        self.agent_reward = max(self.agent_reward, 1.0)
-            elif self.benchmark == "eight_queens":
-                if hasattr(state, '_is_solved') and state._is_solved():
-                    self.done = True
-                    self.is_pass = True
-                    self.agent_reward = max(self.agent_reward, 1.0)
-            elif self.benchmark == "blocksworld":
-                if hasattr(state, '_is_goal_reached') and state._is_goal_reached():
-                    self.done = True
-                    self.is_pass = True
-                    self.agent_reward = max(self.agent_reward, 1.0)
-            elif self.benchmark == "sudoku4x4":
-                if hasattr(state, '_is_solved') and state._is_solved():
-                    self.done = True
-                    self.is_pass = True
-                    self.agent_reward = max(self.agent_reward, 1.0)
+            env_data.done = True
+            self.success = True
         
         if self.agent_reward is None:
             self.agent_reward = 0.0
+        self.reward_history.append(self.agent_reward)
         

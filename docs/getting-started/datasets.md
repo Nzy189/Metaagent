@@ -29,12 +29,12 @@ This script will:
 1. Download code datasets from HuggingFace
 2. Process and format problems
 3. Extract test cases
-4. Save to `datasets/code/train/` and `datasets/code/test/`
+4. Save to `data/code/train/` and `data/code/test/`
 
 ### Dataset Structure
 
 ```
-datasets/code/
+data/code/
 ├── train/
 │   ├── apps/
 │   ├── codecontests/
@@ -71,12 +71,12 @@ This script will:
 2. Parse problem statements
 3. Extract ground truth answers
 4. Format for RL training
-5. Save to `datasets/math/train/` and `datasets/math/test/`
+5. Save to `data/math/train/` and `data/math/test/`
 
 ### Dataset Structure
 
 ```
-datasets/math/
+data/math/
 ├── train/
 │   ├── aime24/
 │   ├── aime25/
@@ -112,12 +112,12 @@ This script will:
 1. Generate game instances
 2. Create initial states
 3. Verify solvability
-4. Save to `datasets/sudoku_environments/`
+4. Save to `data/sudoku_environments/`
 
 ### Dataset Structure
 
 ```
-datasets/sudoku_environments/
+data/sudoku_environments/
 ├── sokoban/
 │   ├── train/
 │   └── test/
@@ -151,7 +151,7 @@ def load_custom_dataset():
     processed = process_data(data)
     
     # Save in PettingLLMs format
-    save_dataset(processed, "datasets/custom/")
+    save_dataset(processed, "data/custom/")
 ```
 
 ### 2. Create Environment Config
@@ -159,7 +159,7 @@ def load_custom_dataset():
 ```python
 # pettingllms/config/custom/config.py
 class CustomConfig:
-    dataset_path = "datasets/custom/"
+    dataset_path = "data/custom/"
     task_type = "your_task_type"
     # ... other config
 ```
@@ -214,12 +214,12 @@ After dataset preparation, verify the data:
 
 ```bash
 # Check dataset structure
-ls -R datasets/
+ls -R data/
 
 # Verify data format
 python -c "
 from pettingllms.utils import load_dataset
-data = load_dataset('datasets/math/train/aime24/')
+data = load_dataset('data/math/train/aime24/')
 print(f'Loaded {len(data)} problems')
 "
 ```

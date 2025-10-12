@@ -158,7 +158,7 @@ def main():
     count_per_size = 400
     
     # Create output directory
-    output_dir = "datasets/sudoku_environments"
+    output_dir = "data/sudoku_environments"
     os.makedirs(output_dir, exist_ok=True)
     
     all_environments = {}

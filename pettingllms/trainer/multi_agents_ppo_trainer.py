@@ -24,7 +24,6 @@ from verl.trainer.ppo.ray_trainer import (
     WorkerType,
     compute_advantage,
     compute_data_metrics,
-    compute_response_mask,
     compute_timing_metrics,
     reduce_metrics,
 )
@@ -32,21 +31,9 @@ from verl.trainer.ppo.ray_trainer import (
 from pettingllms.verl.ray_trainer import RayPPOTrainer
 from verl.utils.torch_functional import pad_sequence_to_length
 from typing import Dict
-from pettingllms.utils.profiler.performance import simple_timer
+from pettingllms.utils.performance import simple_timer,colorful_print
 import ray
 
-def colorful_print(text, color="white"):
-    """Simple colorful print function for debugging"""
-    colors = {
-        "red": "\033[91m",
-        "green": "\033[92m", 
-        "yellow": "\033[93m",
-        "blue": "\033[94m",
-        "cyan": "\033[96m",
-        "white": "\033[97m",
-        "reset": "\033[0m"
-    }
-    print(f"{colors.get(color, colors['white'])}{text}{colors['reset']}")
 
 
 class MultiAgentsPPOTrainer:
@@ -60,12 +47,12 @@ class MultiAgentsPPOTrainer:
         processor_dict=None,
     ):
         self.config = config
+        self.lora_num = 1
         self.processor_dict = processor_dict or {}
-        
-        # Check if lora_differ mode is enabled
         self.lora_differ_mode = False
+        if config.specialization == "lora" and len(config.models) == 1:
+            self.lora_differ_mode = True
         self.agent_lora_mapping = {}  # Maps agent_name to lora_id
-        
         # Initialize agent_policy_mapping from agent_policy_configs
         self.agent_policy_mapping = {}
         if hasattr(config, 'agent_policy_configs') and hasattr(config.agent_policy_configs, 'agent_configs'):
@@ -80,74 +67,45 @@ class MultiAgentsPPOTrainer:
         self.rollout_sample_dict = {}
         self.tokenizer_dict = tokenizer_dict
         self.ppo_trainer_dict = {}
-        
-        
-        if hasattr(config, 'models'):
-            for i, (model_key, model_config) in enumerate(config.models.items()):
-                model_name = model_config.name
-                print(f"model_config: {model_config}")
-                if hasattr(model_config, 'ppo_trainer_config'):
-                    ppo_config = model_config.ppo_trainer_config
-                    self.ppo_trainer_config_dict[model_name] = ppo_config
-                    ppo_config.data["train_batch_size"]=self.config.data.train_batch_size
-                    ppo_config.data["val_batch_size"]=self.config.data.val_batch_size
-                    # 确保experiment_name传递给子trainer，并为每个policy创建独立的experiment name - 使用OmegaConf.set_struct临时允许添加新键
-                    if hasattr(self.config, 'experiment_name'):
-                        from omegaconf import OmegaConf
-                        OmegaConf.set_struct(ppo_config, False)  # 临时禁用结构化模式
-                        # 为每个policy创建独立的experiment name，避免checkpoint覆盖
-                        base_experiment_name = self.config.experiment_name
-                        policy_experiment_name = f"{base_experiment_name}_policy_{model_name}"
-                        ppo_config.experiment_name = policy_experiment_name
-                        colorful_print(f"Set experiment name for model {model_name}: {policy_experiment_name}", "cyan")
-                        OmegaConf.set_struct(ppo_config, True)   # 重新启用结构化模式
-                    print(f"ppo_config: {ppo_config}")
-                    model_tokenizer = self.tokenizer_dict[model_name]
-                    #reward_fn = load_reward_manager(ppo_config,model_tokenizer, num_examine=0)
-                    #val_reward_fn = load_reward_manager(ppo_config,model_tokenizer, num_examine=1)
+        for i, (model_key, model_config) in enumerate(config.models.items()):
+            model_name = model_config.name
+            print(f"model_config: {model_config}")
+            if hasattr(model_config, 'ppo_trainer_config'):
+                ppo_config = model_config.ppo_trainer_config
+                self.ppo_trainer_config_dict[model_name] = ppo_config
+                ppo_config.data["train_batch_size"]=self.config.training.train_batch_size
+                model_tokenizer = self.tokenizer_dict[model_name]
+                
+                
+                print(f'ppo_config (partial): {ppo_config}')
+                ppo_trainer = RayPPOTrainer(
+                    config=ppo_config,
+                    tokenizer=model_tokenizer,
+                    role_worker_mapping=role_worker_mapping,
+                    resource_pool_manager=resource_pool_manager[i],
+                    ray_worker_group_cls=ray_worker_group_cls,
                     
-                    print(f'ppo_config (partial): {ppo_config}')
-
-                    # Compose full PPO config by merging the base config with the per-model overrides.
-                    # This explicitly expands nested defaults like `- /ppo_trainer` which are not
-                    # automatically composed by Hydra when placed inside nested nodes.
-                    # Prefer VERL's canonical PPO trainer config as the base to ensure required `_target_` fields
-                    # sandbox_fusion = {"url": None, "max_concurrent": 64, "memory_limit_mb": 1024}
-
-                    ppo_trainer = RayPPOTrainer(
-                        config=ppo_config,
-                        tokenizer=model_tokenizer,
-                        role_worker_mapping=role_worker_mapping,
-                        resource_pool_manager=resource_pool_manager[i],
-                        ray_worker_group_cls=ray_worker_group_cls,
-                        
-                    )
-                    ppo_trainer.global_steps = 0
-                    
-                    self.ppo_trainer_dict[model_name] = ppo_trainer
-                    self.tokenizer_dict[model_name] = model_tokenizer
-                    colorful_print(f"PPO trainer created for model: {model_name}", "green")
+                )
+                ppo_trainer.global_steps = 0
+                
+                self.ppo_trainer_dict[model_name] = ppo_trainer
+                self.tokenizer_dict[model_name] = model_tokenizer
+                colorful_print(f"PPO trainer created for model: {model_name}", "green")
+    
         colorful_print(f"the number of ppo_trainer_dict: {len(self.ppo_trainer_dict)}", "green")
-        
         colorful_print(f"Number of PPO trainers: {len(self.ppo_trainer_dict)}", "cyan")
         colorful_print(f"Number of agent mappings: {len(self.agent_policy_mapping)}", "cyan")
         
-        # Check if lora_differ mode should be enabled
-        # Condition: only 1 model and lora_differ=true in config
-        if len(self.ppo_trainer_dict) == 1 and hasattr(config, 'lora_differ') and config.lora_differ:
-            self.lora_differ_mode = True
+
+        if self.lora_differ_mode:
             colorful_print("=" * 60, "yellow")
             colorful_print("LoRA Differ Mode ENABLED", "yellow")
             colorful_print("Each agent will use a different LoRA adapter", "yellow")
-            
-            # Get the single model name and its config
-            single_model_name = list(self.ppo_trainer_dict.keys())[0]
             single_model_config = config.models[list(config.models.keys())[0]]
-            
-            # Check if LoRA is configured
             lora_rank = getattr(single_model_config.ppo_trainer_config.actor_rollout_ref.model, 'lora_rank', 0)
+            self.lora_num= len(self.agent_policy_mapping.keys())
             if lora_rank <= 0:
-                colorful_print("WARNING: lora_differ=true but lora_rank=0. Please set lora_rank > 0 in model config.", "red")
+                ValueError("WARNING: lora_differ=true but lora_rank=0. Please set lora_rank > 0 in model config.")
                 self.lora_differ_mode = False
             else:
                 # Create LoRA adapter mapping for each agent
@@ -168,8 +126,6 @@ class MultiAgentsPPOTrainer:
 
 
     def init_multi_agent_sys_execution_engine(self):
-        from verl.workers.rollout.vllm_rollout.vllm_async_server import AsyncvLLMServer
-        # Get the rollout engines and tokenizers from the trainers
         self.rollout_engine_dict = {}
         self.tokenizer_dict = {}
         self.server_address_dict = {}
@@ -208,7 +164,7 @@ class MultiAgentsPPOTrainer:
         for idx, (model_name, trainer) in enumerate(self.ppo_trainer_dict.items(), 1):
             colorful_print(f"[{idx}/{len(self.ppo_trainer_dict)}] Initializing workers for: {model_name}", "blue")
             try:
-                trainer.init_workers()  
+                trainer.init_workers(lora_num=self.lora_num)  
                 colorful_print(f"✓ [{idx}/{len(self.ppo_trainer_dict)}] Successfully initialized: {model_name}", "green")
             except Exception as e:
                 colorful_print(f"✗ Failed to initialize {model_name}: {str(e)}", "red")
@@ -216,34 +172,17 @@ class MultiAgentsPPOTrainer:
         
         colorful_print(f"All {len(self.ppo_trainer_dict)} trainers initialized successfully!", "green")
 
-    def _update_parameters(self, batch, ppo_trainer, timing_raw, agent_name=None):
-        #TODO: uid
+    def _update_parameters(self, batch, ppo_trainer, timing_raw):
         ppo_trainer.global_steps += 1
         
-        # In lora_differ mode, if agent_name is provided, we filter the batch to only include that agent's data
-        if self.lora_differ_mode and agent_name is not None:
-            # Filter batch to only include data from the specified agent
-            if hasattr(batch, 'non_tensor_batch') and 'agent_name' in batch.non_tensor_batch:
-                agent_names = batch.non_tensor_batch['agent_name']
-                agent_mask = np.array([name == agent_name for name in agent_names])
-                if agent_mask.sum() == 0:
-                    # No data for this agent, skip update
-                    colorful_print(f"No data for agent {agent_name}, skipping update", "yellow")
-                    return
-                # Filter the batch
-                batch = batch.select_idxs(np.where(agent_mask)[0].tolist())
-                colorful_print(f"Filtered batch for agent {agent_name}: {len(batch)} samples", "cyan")
+        
         
         # Initialize metrics dictionary if not exists
         if not hasattr(batch, 'meta_info'):
             batch.meta_info = {}
         if 'metrics' not in batch.meta_info:
             batch.meta_info['metrics'] = {}
-        #TODO: repeat to align with repeated responses in rollout
-        #batch = batch.repeat(repeat_times=ppo_trainer.config.actor_rollout_ref.rollout.n, interleave=True)
-        #batch = batch.union(gen_batch_output)
 
-        # padding the batch to the same length
         # prompts: left padding
         prompts_batch = torch.nn.utils.rnn.pad_sequence(
             [torch.flip(i, dims=[0]) for i in batch.batch["prompts"]],
@@ -328,7 +267,6 @@ class MultiAgentsPPOTrainer:
 
         # recompute old_log_probs
         with simple_timer("old_log_prob", timing_raw):
-            # 防御性填充，确保 DataProto 可被 actor_rollout_wg 等分
             try:
                 dp_world_size = ppo_trainer.actor_rollout_wg.world_size
             except Exception:
@@ -384,8 +322,29 @@ class MultiAgentsPPOTrainer:
             # update actor
             with simple_timer("update_actor", timing_raw):
                 batch.meta_info["multi_turn"] = ppo_trainer.config.actor_rollout_ref.rollout.multi_turn.enable
-                actor_output = ppo_trainer.actor_rollout_wg.update_actor(batch)
-            actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
+                
+                if self.lora_differ_mode:
+                    agent_names = batch.non_tensor_batch['agent_name']
+                    unique_agents = sorted(set(agent_names))
+                    
+                    agent_batch_dict = {}
+                    for agent_name in unique_agents:
+                        agent_mask = np.array([name == agent_name for name in agent_names])
+                        agent_indices = np.where(agent_mask)[0].tolist()
+                        agent_batch_dict[agent_name] = batch.select_idxs(agent_indices)
+                        colorful_print(f"Agent {agent_name}: {len(agent_indices)} samples", "cyan")
+                    
+                    all_actor_metrics = []
+                    for agent_name, agent_batch in agent_batch_dict.items():
+                        colorful_print(f"Updating LoRA for agent: {agent_name}", "green")
+                        agent_output = ppo_trainer.actor_rollout_wg.update_actor(agent_batch)
+                        all_actor_metrics.append(agent_output.meta_info["metrics"])
+                    
+                    actor_output_metrics = reduce_metrics(all_actor_metrics)
+                else:
+                    actor_output = ppo_trainer.actor_rollout_wg.update_actor(batch)
+                    actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
+                
             batch.meta_info["metrics"].update(actor_output_metrics)
 
         # Log rollout generations if enabled
@@ -413,13 +372,27 @@ class MultiAgentsPPOTrainer:
 
     def _initialize_logger_safely(self):
         from verl.utils.tracking import Tracking
+        from datetime import datetime
+        import os
+        
+        # Generate log path: log/experiment_name/date/time
+        current_time = datetime.now()
+        date_str = current_time.strftime("%Y%m%d")
+        time_str = current_time.strftime("%H%M%S")
+        
+        experiment_name = self.config.training.experiment_name
+        log_dir = os.path.join("log", experiment_name, date_str, time_str)
+        os.makedirs(log_dir, exist_ok=True)
         
         logger = Tracking(
-            project_name=self.config.project_name,
-            experiment_name=self.config.experiment_name,
-            default_backend=self.config.logger,
+            project_name=self.config.training.project_name,
+            experiment_name=experiment_name,
+            default_backend=self.config.training.logger,
             config=OmegaConf.to_container(self.config, resolve=True),
+            log_dir=log_dir,
         )
+        
+        colorful_print(f"Logger initialized with log_dir: {log_dir}", "cyan")
         return logger
 
     def fit(self):
@@ -427,62 +400,31 @@ class MultiAgentsPPOTrainer:
         The training loop of PPO. Adapted to train the underlying model of agent.
         """
         logger = self._initialize_logger_safely()
-        
-
         self.global_steps = 0
-        
-        # Use the minimum total training steps among sub-trainers as the global total
-        self.total_training_steps = getattr(self.config, "trainer.total_training_steps", 200)
+        self.total_training_steps = self.config.training.total_training_steps
         progress_bar = tqdm(range(self.total_training_steps), desc="Training Progress", position=0, leave=True)
-       
-        # we start from step 1
-        last_val_metrics = None
         self.max_steps_duration = 0
-
-        #epoch_pbar = tqdm(range(self.config.trainer.total_epochs), desc="Epochs", position=0, leave=True)
-        
         for i,step in enumerate(progress_bar):
-            
             progress_bar.set_description(f"Step {self.global_steps}")
             pprint(f"step {self.global_steps} started")
-            #for batch_dict in self.train_dataloader:
-                #batch: DataProto = DataProto.from_single_dict(batch_dict)
-            meta_info = {
-                    "agent_rollout": True,  # no need to generate multiple ones since 
-                    "global_step": self.global_steps,
-                }
-            batch_size = self.config.data.gen_batch_size
-            # Get batch_num from traindataset
             
-            #init dataproto with batch_size
             batch_per_trainer: Dict[str,DataProto]={}
-            
-            # Load data for each trainer
             for model_name in self.ppo_trainer_dict.keys():
-                # For now, create a placeholder batch
                 batch_per_trainer[model_name] = DataProto.from_dict({})  # Placeholder
                 
             metrics = {}
             timing_raw = {}
-            validation_summary={}
-            last_resample_mode="train"
-
-            # load checkpoint before doing anything
             if i==0:
-                
                 colorful_print(f"Starting initial validation for multi-agent system", "cyan")
                 start_time = time.time()
                 # validation before training
                 val_metrics = self._validate()
-                last_resample_mode = "validate"
          
                 metrics.update(val_metrics)
                 
                 current_avg_success_rate = val_metrics.get('validation/average/success_rate', 0.0)
                 pprint(f"Initial validation metrics logged")
                 print(f"Time taken to validate: {time.time() - start_time}")
-                
-                # 打印验证摘要
                 agent_summary = {}
                 for key, value in val_metrics.items():
                     if "/success_rate" in key and "/agent_" in key:
@@ -496,13 +438,7 @@ class MultiAgentsPPOTrainer:
             with simple_timer("step", timing_raw):
                 
                 with simple_timer("collect_trajectory", timing_raw):
-                    resample_freq=self.config.data.get("resample_freq",10)
-                    resample_=False
-                    if self.global_steps%resample_freq==0 or i==0 or last_resample_mode=="validate":
-                        resample_=True
-                    
-                    self.agent_execution_engine.init_agents_and_envs(mode="train",step_idx=i,resample=resample_)
-                    last_resample_mode="train"
+                    self.agent_execution_engine.init_agents_and_envs(mode="train",step_idx=i)
                     for model_name,rollout_engine in self.rollout_engine_dict.items():
                         rollout_engine.wake_up()
                     gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list,rollout_mode=self.config.get("sample_mode","no_tree")))
@@ -528,25 +464,37 @@ class MultiAgentsPPOTrainer:
                 # Sort trajectories by their idx, to ensure they are in order.
                 timing_raw = {}
                 with simple_timer("update_parameters", timing_raw):
+                    # Apply UID assignment and filtering for each model based on their config
+                    sample_num = self.config.training.train_sample_num
+                    for model_name, trainer in self.ppo_trainer_dict.items():
+                        if model_name in batch_per_trainer and batch_per_trainer[model_name].batch is not None:
+                            filter_ratio = getattr(trainer.config, 'filter_ratio', 0.0)
+                            filter_method = getattr(trainer.config, 'filter_method', 'uid')
+                            colorful_print(f"Model {model_name}: Applying filter ratio={filter_ratio}, method={filter_method}", "cyan")
+                            batch_per_trainer[model_name] = self._assign_consistent_uids(
+                                batch_per_trainer[model_name], 
+                                filter_ratio=filter_ratio, 
+                                mode=filter_method, 
+                                sample_num=sample_num
+                            )
+                    
                     # Track metrics from all trainers
                     all_trainer_metrics = {}
                     
-                    # 使用 ThreadPoolExecutor 进行并行更新（避免 Ray remote 的 self 引用问题）
-                    def update_single_trainer(model_name, batch, trainer, agent_name=None):
-                        """更新单个 trainer 的参数"""
+                    def update_single_trainer(model_name, batch, trainer):
+                        
                         try:
-                            # 为每个任务创建独立的 timing 字典
+                           
                             local_timing_raw = {}
+                         
+                            self._update_parameters(batch, trainer, local_timing_raw)
                             
-                            # 调用原有的更新逻辑
-                            self._update_parameters(batch, trainer, local_timing_raw, agent_name=agent_name)
                             
-                            # 提取 metrics
                             trainer_metrics = {}
                             if hasattr(batch, 'meta_info') and 'metrics' in batch.meta_info:
                                 trainer_metrics = batch.meta_info['metrics']
                             
-                            # 提取 agent names 用于后续处理
+                           
                             agent_names = None
                             if hasattr(batch, 'non_tensor_batch') and 'agent_name' in batch.non_tensor_batch:
                                 agent_names = batch.non_tensor_batch['agent_name']
@@ -569,7 +517,7 @@ class MultiAgentsPPOTrainer:
                                 "traceback": traceback.format_exc()
                             }
                     
-                    # 收集需要更新的 trainers
+              
                     tasks_to_submit = []
                     
                     if self.lora_differ_mode:
@@ -596,26 +544,21 @@ class MultiAgentsPPOTrainer:
                     else:
                         colorful_print(f"Starting parallel parameter updates for {len(tasks_to_submit)} trainers...", "cyan")
                         
-                        # 使用线程池并行执行（Ray 的 PPO trainer 内部已经使用 Ray 做分布式）
+                       
                         with ThreadPoolExecutor(max_workers=len(tasks_to_submit)) as executor:
-                            # 提交所有任务
+                         
                             futures = {}
                             for task in tasks_to_submit:
-                                if len(task) == 4:
-                                    model_name, batch, trainer, agent_name = task
-                                else:
-                                    model_name, batch, trainer = task
-                                    agent_name = None
+                                
                                     
-                                future = executor.submit(update_single_trainer, model_name, batch, trainer, agent_name)
+                                future = executor.submit(update_single_trainer, model_name, batch, trainer)
                                 task_id = f"{model_name}" + (f"_agent_{agent_name}" if agent_name else "")
                                 futures[future] = task_id
                                 colorful_print(f"  Submitted update task for: {task_id}", "blue")
                             
-                            # 使用 tqdm 显示进度
+                      
                             update_pbar = tqdm(total=len(futures), desc="Updating Parameters", position=2, leave=False)
-                            
-                            # 等待所有任务完成
+                
                             results = []
                             for future in as_completed(futures):
                                 result = future.result()
@@ -628,7 +571,7 @@ class MultiAgentsPPOTrainer:
                             
                             update_pbar.close()
                         
-                        # 处理结果：合并 timing 和 metrics
+                      
                         success_count = 0
                         for result in results:
                             if result["status"] == "success":
@@ -638,14 +581,13 @@ class MultiAgentsPPOTrainer:
                                 colorful_print(f"✓ Updated parameters for: {task_desc}", "green")
                                 success_count += 1
                                 
-                                # 合并 timing 信息（取最大值，因为是并行执行）
+                               
                                 for key, value in result["timing"].items():
                                     if key in timing_raw:
                                         timing_raw[key] = max(timing_raw[key], value)
                                     else:
                                         timing_raw[key] = value
-                                
-                                # 处理 metrics
+                        
                                 trainer_metrics = result["metrics"]
                                 agent_names = result["agent_names"]
                                 
@@ -674,11 +616,26 @@ class MultiAgentsPPOTrainer:
                 
 
                 #save checkpoint done
-                if self.config.trainer.save_freq > 0 and self.global_steps % self.config.trainer.save_freq == 0 and self.global_steps != 1:
+                save_freq = self.config.training.get("save_freq", 0)
+                if save_freq > 0 and self.global_steps % save_freq == 0 and self.global_steps != 1:
                     with simple_timer("save_checkpoint", timing_raw):
+                        from datetime import datetime
+                        import os
+                        
+                        # Generate checkpoint path: checkpoint/date/experiment_name/policy
+                        current_time = datetime.now()
+                        date_str = current_time.strftime("%Y%m%d")
+                        experiment_name = self.config.training.experiment_name
+                        
                         for model_name, trainer in self.ppo_trainer_dict.items():
-                            experiment_name = getattr(trainer.config, 'experiment_name', 'default_experiment')
-                            colorful_print(f"Saving checkpoint for trainer {model_name} to experiment: {experiment_name}", "cyan")
+                            # checkpoint/date/experiment_name/policy_name
+                            checkpoint_dir = getattr(self.config.training, 'checkpoint_dir', 'checkpoint')
+                            checkpoint_dir = os.path.join(checkpoint_dir, date_str, experiment_name, model_name)
+                            os.makedirs(checkpoint_dir, exist_ok=True)
+                            
+                            colorful_print(f"Saving checkpoint for trainer {model_name} to: {checkpoint_dir}", "cyan")
+                            
+                            
                             trainer._save_checkpoint()
 
             # TODO: collect metrics
@@ -705,14 +662,9 @@ class MultiAgentsPPOTrainer:
 
             self.global_steps += 1
 
-            if self.global_steps % self.config.data.val_freq == 0:
+            if self.global_steps % self.config.training.val_freq == 0:
                 val_metrics = self._validate()
-                last_resample_mode = "validate"
-                
-                # 将验证指标添加到主metrics字典中
                 metrics.update(val_metrics)
-        
-                # 打印验证摘要
                 agent_summary = {}
                 for key, value in val_metrics.items():
                     if "/success_rate" in key and "/agent_" in key:
@@ -759,8 +711,6 @@ class MultiAgentsPPOTrainer:
                 ])
         for model_name,rollout_engine in self.rollout_engine_dict.items():
             rollout_engine.sleep()
-                
-
         total_rollout_num = len(self.agent_execution_engine.rollout_idx_list)
         success_rollout_rate_dict: Dict[str, float] = {}
         success_turn_ave_dict: Dict[str, float] = {}
@@ -776,21 +726,13 @@ class MultiAgentsPPOTrainer:
                 success_rollout_num / total_rollout_num if total_rollout_num > 0 else 0.0
             )
             success_turn_ave_dict[agent_name] = success_ave_turn
-        
-        save_dir = getattr(self.config.trainer, "validation_data_dir", None)
-        
-        # 构建验证指标字典 - 只包含每个agent的成功率和平均turn数，以及总体平均值
         validation_metrics = {}
-        
-        # 添加每个agent的success rate和avg_turns
         for agent_name in self.agent_execution_engine.turn_order:
             success_rate = success_rollout_rate_dict.get(agent_name, 0.0)
             avg_turns = success_turn_ave_dict.get(agent_name, 0.0)
             
             validation_metrics[f"validation/agent_{agent_name}/success_rate"] = success_rate
             validation_metrics[f"validation/agent_{agent_name}/avg_turns"] = avg_turns
-        
-        # 计算总体平均值
         if success_rollout_rate_dict:
             success_rates = list(success_rollout_rate_dict.values())
             avg_turns_list = list(success_turn_ave_dict.values())
@@ -800,90 +742,165 @@ class MultiAgentsPPOTrainer:
             
         return validation_metrics
     
-
-
-    def visualize_trajectory(self, tensor_batch, sample_idx=0, max_samples=1, mask_key="traj_mask"):
-        """
-        Visualize the trajectory from tensor_batch by detokenizing prompts and responses,
-        and highlighting the masked parts with color.
-
-        Args:
-            tensor_batch: The tensor batch containing trajectory data
-            sample_idx: Starting index of samples to visualize
-            max_samples: Maximum number of samples to visualize
-        """
-        
-
-        # Get the relevant tensors
-        prompts = tensor_batch.batch["prompts"]
-        responses = tensor_batch.batch["responses"]
-        traj_mask = tensor_batch.batch[mask_key]
-        token_level_scores = tensor_batch.batch["token_level_scores"]
-
-        batch_size = prompts.shape[0]
-        end_idx = min(sample_idx + max_samples, batch_size)
-
-        for i in range(sample_idx, end_idx):
-            colorful_print(f"\n===== Sample {i} =====", fg="cyan", bold=True)
-
-            # Detokenize prompt
-            prompt_tokens = prompts[i]
-            prompt_mask = prompt_tokens != self.tokenizer.pad_token_id
-            valid_prompt_tokens = prompt_tokens[prompt_mask]
-            prompt_text = self.tokenizer.decode(valid_prompt_tokens)
-
-            colorful_print("Prompt:", fg="green", bold=True)
-            colorful_print(f"{prompt_text}\n", fg="green")
-
-            # Detokenize response with color highlighting for masked tokens
-            response_tokens = responses[i]
-            response_mask = traj_mask[i]
-
-            # Get non-padding tokens
-            valid_indices = response_tokens != self.tokenizer.pad_token_id
-            valid_response_tokens = response_tokens[valid_indices]
-            valid_response_mask = response_mask[valid_indices]
-
-            # Then show token-by-token with masking
-            colorful_print("Response with masking:", fg="yellow", bold=True)
-
-            for j, (token, mask) in enumerate(zip(valid_response_tokens, valid_response_mask, strict=False)):
-                token_text = self.tokenizer.decode(token)
-
-                # Check if this token has a reward
-                has_reward = token_level_scores[i, j] != 0
-
-                # Apply different colors based on mask and rewards
-                if mask == 0:
-                    # Masked token (not used in training)
-                    colorful_print(token_text, fg="red", end="")
-                elif has_reward:
-                    # Token with reward
-                    colorful_print(token_text, bg="green", end="")
-
-                    reward_info = ""
-                    if has_reward:
-                        reward_info += f" R:{token_level_scores[i, j].item():.2f}"
-
-                    colorful_print(reward_info, fg="magenta", end="")
-                else:
-                    # Normal token used in training
-                    colorful_print(token_text, fg="blue", end="")
-
-            print()  # New line after all tokens
-
-            # Print reward summary
-            total_reward = token_level_scores[i].sum().item()
-            colorful_print("Rewards:", fg="green", bold=True)
-            print(f" Trajectory Reward={total_reward:.2f}")
-
-  
     def _pad_dataproto_to_world_size(self, batch, world_sizes):
-        #world_sizes = self.config.data.tensor_model_parallel_size
         batch, pad_size = pad_dataproto_to_divisor(batch, world_sizes)
 
         # for the padded dataproto, make the traj mask to 0. is_last_step also False
         return batch
+    
+    def _assign_consistent_uids(self, data_proto, filter_ratio=0.0, mode="mean", sample_num=1):
+        """
+        Assign consistent UIDs to data and optionally filter based on rewards.
+        
+        Args:
+            data_proto: DataProto object containing trajectory data
+            filter_ratio: Ratio of samples to filter (0.0 to 1.0)
+            mode: Filtering mode - "mean", "std", "dapo", or "uid"
+            sample_num: Number of samples per environment
+        
+        Returns:
+            Filtered DataProto object
+        """
+        import uuid
+        import numpy as np
+        from collections import defaultdict
+        
+        uid_mapping = {}
+        all_rewards = []
+        uid_reward_groups = defaultdict(list)
+
+        non_tensor_batch = data_proto.non_tensor_batch
+        
+        if not all(key in non_tensor_batch for key in ["env_idx", "turn_idx", "agent_idx"]):
+            # If required keys are missing, just assign random UIDs and return
+            data_proto.non_tensor_batch["uid"] = np.array(
+                [str(uuid.uuid4()) for _ in range(len(data_proto))], dtype=object
+            )
+            return data_proto
+        
+        rollout_indices = non_tensor_batch["env_idx"]
+        turn_indices = non_tensor_batch["turn_idx"] 
+        agent_indices = non_tensor_batch["agent_idx"]
+        rewards = non_tensor_batch.get("reward", [])
+        
+        uids = []
+        for i in range(len(data_proto)):
+            key = (rollout_indices[i]//sample_num, turn_indices[i], agent_indices[i])
+            if key not in uid_mapping:
+                uid_mapping[key] = str(uuid.uuid4())
+            uid = uid_mapping[key]
+            uids.append(uid)
+            
+            if len(rewards) > 0 and filter_ratio > 0:
+                reward_val = float(rewards[i]) if rewards[i] is not None else 0.0
+                uid_reward_groups[uid].append((i, reward_val))
+            
+            if len(rewards) > 0:
+                reward_val = float(rewards[i]) if rewards[i] is not None else 0.0
+                all_rewards.append(reward_val)
+        
+        data_proto.non_tensor_batch["uid"] = np.array(uids, dtype=object)
+    
+        
+        def range_normalized_variance(rewards_in_group):
+            rewards_in_group = np.asarray(rewards_in_group, dtype=float)
+            rng = np.max(rewards_in_group) - np.min(rewards_in_group)
+            if rng == 0:   
+                return 0.0
+            return np.var(rewards_in_group, ddof=0) / (rng ** 2)
+        
+        sample_to_remove = set()
+        if filter_ratio > 0:
+            # calculate the variance of each uid group
+            if mode == "dapo":
+                uids_to_remove = []
+                for uid, samples in uid_reward_groups.items():
+                    rewards_in_group = [s[1] for s in samples]
+                    variance = range_normalized_variance(rewards_in_group)
+                    if variance==0:
+                        uids_to_remove.append(uid)
+                for uid in uids_to_remove:
+                    if uid in uid_reward_groups:
+                        for sample_idx, reward_val in uid_reward_groups[uid]:
+                            sample_to_remove.add(sample_idx)
+
+            elif mode == "std":
+                uid_variances = {}
+                for uid, samples in uid_reward_groups.items():
+                    if len(samples) > 1:
+                        rewards_in_group = [s[1] for s in samples]
+                        variance = range_normalized_variance(rewards_in_group)
+                        uid_variances[uid] = variance
+                    else:
+                        uid_variances[uid] = 0.0
+                
+                if uid_variances:
+                    total_uids = len(uid_variances)
+                    num_to_remove = int(total_uids * filter_ratio)
+                    
+                    if num_to_remove > 0:
+                        sorted_uids = sorted(uid_variances.items(), key=lambda x: x[1])
+                        uids_to_remove = [uid for uid, variance in sorted_uids[:num_to_remove]]
+                        
+                        for uid in uids_to_remove:
+                            if uid in uid_reward_groups:
+                                for sample_idx, reward_val in uid_reward_groups[uid]:
+                                    sample_to_remove.add(sample_idx)
+            elif mode == "mean":
+                uid_means = {}
+                for uid, samples in uid_reward_groups.items():
+                    if len(samples) > 1:
+                        rewards_in_group = [s[1] for s in samples]
+                        mean = np.mean(rewards_in_group)
+                        uid_means[uid] = mean
+                    else:
+                        uid_means[uid] = 0.0
+                        
+                if uid_means:
+                    total_uids = len(uid_means)
+                    num_to_remove = int(total_uids * filter_ratio)
+                    
+                    if num_to_remove > 0:
+                        sorted_uids = sorted(uid_means.items(), key=lambda x: x[1])
+                        uids_to_remove = [uid for uid, mean in sorted_uids[:num_to_remove]]
+                        
+                        for uid in uids_to_remove:
+                            if uid in uid_reward_groups:
+                                for sample_idx, reward_val in uid_reward_groups[uid]:
+                                    sample_to_remove.add(sample_idx)
+            elif mode=="uid":
+                if filter_ratio > 0:
+                    for uid, samples in uid_reward_groups.items():
+                        if len(samples) > 1:
+                            rewards_in_group = [s[1] for s in samples]
+                            group_mean = np.mean(rewards_in_group)
+                            samples_with_deviation = [(s[0], abs(s[1] - group_mean)) for s in samples]
+                            samples_with_deviation.sort(key=lambda x: x[1], reverse=True)
+                            num_to_remove = int(len(samples_with_deviation) * filter_ratio)
+                            for i in range(num_to_remove):
+                                sample_idx, _ = samples_with_deviation[i]
+                                sample_to_remove.add(sample_idx)
+        
+        if sample_to_remove and len(sample_to_remove) > 0:
+            keep_indices = [i for i in range(len(data_proto)) 
+                           if i not in sample_to_remove]
+            
+            if len(keep_indices) < len(data_proto):
+                # Use DataProto's built-in select_idxs method for more robust filtering
+                data_proto = data_proto.select_idxs(keep_indices)
+        
+        if all_rewards:
+            summary = {
+                "total_samples": len(all_rewards),
+                "mean_reward": float(np.mean(all_rewards)),
+                "std_reward": float(np.std(all_rewards)),
+                "filtered_samples": len(sample_to_remove) if filter_ratio > 0 else 0,
+                "remain_samples": len(data_proto)
+            }
+            
+            colorful_print(f"UID assignment summary: {summary}", "green")
+        
+        return data_proto
     
     def _cleanup_llm_servers(self, servers):
         """清理 LLM servers"""

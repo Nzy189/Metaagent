@@ -583,15 +583,15 @@ def main():
     
     # 1. CodeContests(train)
     df_cc_train = process_code_contests(split="train")
-    (train_dir / "code_contests_train.parquet").unlink(missing_ok=True)
-    df_cc_train.to_parquet(train_dir / "code_contests_train.parquet", index=False)
-    print(f"Saved: {train_dir / 'code_contests_train.parquet'}")
+    (train_dir / "code_contests.parquet").unlink(missing_ok=True)
+    df_cc_train.to_parquet(train_dir / "code_contests.parquet", index=False)
+    print(f"Saved: {train_dir / 'code_contests.parquet'}")
 
     # 2. Apps(train)
     df_apps_train = process_apps_train()
-    (train_dir / "apps_train.parquet").unlink(missing_ok=True)
-    df_apps_train.to_parquet(train_dir / "apps_train.parquet", index=False)
-    print(f"Saved: {train_dir / 'apps_train.parquet'}")
+    (train_dir / "apps.parquet").unlink(missing_ok=True)
+    df_apps_train.to_parquet(train_dir / "apps.parquet", index=False)
+    print(f"Saved: {train_dir / 'apps.parquet'}")
     
     # ============================================================
     # TEST dataset
@@ -599,21 +599,21 @@ def main():
 
     # 1. CodeContests(test)
     df_cc_test = process_code_contests(split="test")
-    (test_dir / "code_contests_test.parquet").unlink(missing_ok=True)
-    df_cc_test.to_parquet(test_dir / "code_contests_test.parquet", index=False)
-    print(f"Saved: {test_dir / 'code_contests_test.parquet'}")
+    (test_dir / "code_contests.parquet").unlink(missing_ok=True)
+    df_cc_test.to_parquet(test_dir / "code_contests.parquet", index=False)
+    print(f"Saved: {test_dir / 'code_contests.parquet'}")
 
     # 2. Apps(test)
     df_apps_test = process_apps_test()
-    (test_dir / "apps_test.parquet").unlink(missing_ok=True)
-    df_apps_test.to_parquet(test_dir / "apps_test.parquet", index=False)
-    print(f"Saved: {test_dir / 'apps_test.parquet'}")
+    (test_dir / "apps .parquet").unlink(missing_ok=True)
+    df_apps_test.to_parquet(test_dir / "apps .parquet", index=False)
+    print(f"Saved: {test_dir / 'apps .parquet'}")
 
     # 3. LiveCodeBench v6 (save as livecodebench_test.parquet to match loader)
     df_lcb = process_livecodebench()
-    (test_dir / "livecodebench_test.parquet").unlink(missing_ok=True)
-    df_lcb.to_parquet(test_dir / "livecodebench_test.parquet", index=False)
-    print(f"Saved: {test_dir / 'livecodebench_test.parquet'}")
+    (test_dir / "livecodebench.parquet").unlink(missing_ok=True)
+    df_lcb.to_parquet(test_dir / "livecodebench.parquet", index=False)
+    print(f"Saved: {test_dir / 'livecodebench.parquet'}")
 
 if __name__ == "__main__":
     main()

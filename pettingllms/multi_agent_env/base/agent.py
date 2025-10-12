@@ -10,11 +10,11 @@ class AgentData:
         default_factory=lambda: {"text": None, "image": None}
     )
     current_action: Optional[Any] = None
-    current_observation: Optional[Any] = None
-    info: Optional[Dict[str, Any]] = None
-    agent_reward: Optional[float] = None
-    is_pass: bool = False
+    agent_reward: Optional[float] = 0.0
+    success: bool = False
     done: bool = False
+    answer_history: Optional[List[Any]] = field(default_factory=list)
+    action_history: Optional[List[Any]] = field(default_factory=list)
     reward_history: Optional[List[float]] = field(default_factory=list)
     
 
@@ -73,7 +73,6 @@ class Agent(AgentData):
         self.info = None
         self.agent_reward = None
         self.reward_history = []
-        self.is_pass = False
-        self.done = False
+        self.success = False
 
 

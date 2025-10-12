@@ -156,112 +156,46 @@ class UnitTestGenerationAgent(Agent):
                 env_passed_ratio, env_passed_cases, env_failed_cases = await evaluate_code_against_tests(
                     env_data.state.generated_code, gen_inputs, gen_outputs, timeout=30.0,ray_actor=env_worker,rollout_idx=self.rollout_idx
                 )
-               
-
-                env_data.state.generated_test_vs_generated_code_match_cases = env_passed_cases
-                env_data.state.generated_test_vs_generated_code_mismatch_cases = env_failed_cases
-                env_data.state.generated_test_vs_generated_code_match_ratio = env_passed_ratio
-                if env_passed_ratio >= 1.0 and len(gen_inputs) > 0:
-                    self.done = True
-                    pass
-                else:
-                    env_data.state.generated_code_history.append(env_data.state.generated_code)
-                    env_data.state.generated_test_vs_generated_code_mismatch_cases_history.append(env_failed_cases)
-                   
             except Exception as e:
                 print(f"Warning: Failed to evaluate generated test against code: {e}")
-                env_passed_ratio, env_passed_cases, env_failed_cases = 0.0, [], []
+                env_passed_ratio, env_passed_cases, env_failed_cases = 0.0, [], ["error: {e}"]
+               
+
+            env_data.state.generated_test_vs_generated_code_match_cases = env_passed_cases
+            env_data.state.generated_test_vs_generated_code_mismatch_cases = env_failed_cases
+            env_data.state.generated_test_vs_generated_code_match_ratio = env_passed_ratio
+            env_data.state.generated_code_history.append(env_data.state.generated_code)
+            env_data.state.generated_test_vs_generated_code_mismatch_cases_history.append(env_failed_cases)
+            
+            if env_passed_ratio >= 1.0 and len(gen_inputs) > 0:
+                env_data.done = True
+                
+                   
+            
 
         if gen_inputs and gen_outputs and golden_code:
             try:
                 passed_ratio, passed_cases, failed_cases = await evaluate_code_against_tests(
                     env_data.state.golden_code, gen_inputs, gen_outputs, timeout=20.0,ray_actor=env_worker,rollout_idx=self.rollout_idx
                 )
-                env_data.state.generated_test_input = gen_inputs
-                env_data.state.generated_test_output = gen_outputs
-
-                env_data.state.generated_test_vs_golden_code_match_cases = passed_cases
-                env_data.state.generated_test_vs_golden_code_mismatch_cases = failed_cases
-                env_data.state.generated_test_vs_golden_code_match_ratio = passed_ratio
-                if passed_ratio >= 1.0 and len(gen_inputs) > 0:
-                    self.is_pass = True
-                    
-        
-        
-                    
             except Exception as e:
                 print(f"Warning: Failed to evaluate generated test against code: {e}")
-                passed_ratio, passed_cases, failed_cases = 0.0, [], []
+                passed_ratio, passed_cases, failed_cases = 0.0, [], ["error: {e}"]
+            env_data.state.generated_test_input = gen_inputs
+            env_data.state.generated_test_output = gen_outputs
+
+            env_data.state.generated_test_vs_golden_code_match_cases = passed_cases
+            env_data.state.generated_test_vs_golden_code_mismatch_cases = failed_cases
+            env_data.state.generated_test_vs_golden_code_match_ratio = passed_ratio
+            self.agent_reward = passed_ratio
+            self.reward_history.append(passed_ratio)
+            if passed_ratio >= 1.0 and len(gen_inputs) > 0:
+                self.success = True
+                    
         
-        elif gen_inputs and gen_outputs and golden_code is None:
-            code_is_correct=(env_data.state.ground_truth_test_vs_generated_code_match_ratio==1.0)
-            if code_is_correct:
-                if env_passed_ratio>=1.0:
-                    passed_ratio=1.0
-                    self.is_pass = True
-                else:
-                    passed_ratio=0.0
-            
-        
-        self.agent_reward = passed_ratio
-        self.reward_history.append(passed_ratio)
-        self.value=passed_ratio
                 
 
-    
-    def calculate_reward(self, env_data: List[Env]) -> float:
-        """Compute reward for test agent based on generated tests vs generated code match ratio."""
-        state = getattr(env_data[0], "state", None)
-        pass_ratio = 0.0
-        if state is not None:
-            gen_tests_vs_golden_code = getattr(state, "generated_test_vs_golden_code_match_ratio", None)
-            if isinstance(gen_tests_vs_golden_code, (int, float)):
-                pass_ratio = float(gen_tests_vs_golden_code)
-
-        self.agent_reward = pass_ratio
-        self.reward_history.append(pass_ratio)
-        return self.agent_reward
-
         
-    def select_env(self, env_data: List[Env]) -> List[int]:
-        if all(env.done for env in env_data):
-            return -1
-        
-        
-        found_match_env_class=False
-        
-        
-        for env in env_data:
-            if env.done:
-                continue
-                
-            state = getattr(env, "state", None)
-            if state is None:
-                continue
-            
-            if not found_match_env_class:
-                golden_test_vs_generated_code_match_ratio = getattr(state, "golden_test_vs_generated_code_match_ratio", None)
-                generated_test_vs_golden_code_match_ratio = getattr(state, "generated_test_vs_golden_code_match_ratio", None)
-                if golden_test_vs_generated_code_match_ratio == 1 and generated_test_vs_golden_code_match_ratio == 0:
-                    found_match_env_class = True
-                    return env.env_idx
-            
-            # 检查 golden_test_vs_generated_code_match_ratio 为 0
-            if not found_match_env_class:
-                generated_test_vs_golden_code_match_ratio = getattr(state, "generated_test_vs_golden_code_match_ratio", None)
-                if generated_test_vs_golden_code_match_ratio == 0:
-                    found_match_env_class = True
-                    return env.env_idx
-        
-        
-        if not found_match_env_class:
-            for env in env_data:
-                if not env.done:
-                    return env.env_idx
-        
-        
-        return -1
-
     def reset(self):
         """
         Reset the agent's internal state for a new episode.

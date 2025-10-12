@@ -1,7 +1,7 @@
 import logging
 import copy
 from typing import Any, Dict, Optional, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pettingllms.multi_agent_env.base.env import Env
 from pettingllms.multi_agent_env.math.math_utils import (
@@ -18,9 +18,13 @@ class MathEnvState:
     code_generated_solution: str = None
     reasoning_extracted_answer: str = None
     code_extracted_answer: str = None
-    reasoning_is_correct: bool = False
+    reasoning_is_correct: bool = None
     code_is_correct: bool = False
     code_reasoning_aligned: bool = False
+    reasoning_generated_solution_history: List = field(default_factory=list)
+    code_generated_solution_history: List = field(default_factory=list)
+    reasoning_extracted_answer_history: List = field(default_factory=list)
+    code_extracted_answer_history: List =field(default_factory=list)
 class MathEnv(Env):
     """
     Environment for mathematical problem solving tasks with single-agent interaction.
@@ -48,11 +52,17 @@ class MathEnv(Env):
         self.state.reasoning_extracted_answer = None
         self.state.code_extracted_answer = None
         self.state.reasoning_is_correct = None
+        self.state.code_is_correct = False
+        self.state.code_reasoning_aligned = False
+        self.state.reasoning_generated_solution_history = []
+        self.state.code_generated_solution_history = []
+        self.state.reasoning_extracted_answer_history = []
+        self.state.code_extracted_answer_history = []
 
 
 class MathEnvBatch:
     def __init__(self, env_idx_list: List[int],env_indices: List[int], rollout_idx_list: List[int], samples: int, max_turns: int, config: dict, mode="train", *, env_workers: List = None):
-        benchmark_name=getattr(config,"benchmark") if hasattr(config,"benchmark") else "MATH500"
+        benchmark_name=getattr(config.env,"benchmark") if hasattr(config,"env") and hasattr(config.env,"benchmark") else "AIME24"
         self.problem_list = load_math_problem_batch(env_indices, mode=mode, config=config,benchmark_name=benchmark_name)
         self.env_list = []
         if mode == "validate":

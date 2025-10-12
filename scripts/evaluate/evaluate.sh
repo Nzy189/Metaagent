@@ -24,7 +24,7 @@ MODEL_PATHS=(
 )
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(pwd)"
 CONFIG_PATH="$REPO_ROOT/pettingllms/config/stateful"
 CONFIG_NAME="stateful_single_policy"
 BENCHMARK="sokoban"
@@ -150,7 +150,7 @@ for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
     echo "Starting proxy for model$((i+1))"
     VLLM_BACKEND_ADDRESS="${HOST}:$((BASE_VLLM_PORT + i))" \
     PROXY_PORT=$((BASE_PROXY_PORT + i)) \
-    python pettingllms/utils/vllm_token_id_proxy.py > /tmp/proxy_model${i}.log 2>&1 &
+    python pettingllms/evaluate/vllm_id_token_proxy.py > /tmp/proxy_model${i}.log 2>&1 &
     PROXY_PIDS[$i]=$!
     echo "  PID: ${PROXY_PIDS[$i]}, Port: $((BASE_PROXY_PORT + i))"
 done
@@ -199,7 +199,7 @@ echo
 
 # Run evaluation
 echo "Starting evaluation..."
-cd "$(dirname "$0")/../.." || exit 1  
+cd "$REPO_ROOT" || exit 1  
 VLLM_ADDRESS="${HOST}:${BASE_PROXY_PORT}"
 
 python3 -m pettingllms.evaluate.evaluate \

@@ -94,9 +94,9 @@ class CodeEnv(Env):
 class CodeEnvBatch:
     def __init__(self, env_idx_list: List[int], env_indices: List[int], rollout_idx_list: List[int], samples: int, max_turns: int, config: dict, mode="train", *, env_workers: List=None):
         if mode=="train":
-            self.problem_list=load_problem_batch(env_indices,benchmark_name="train",mode="train",difficulty=getattr(config,"difficulty") if hasattr(config,"difficulty") else "difficult")
+            self.problem_list=load_problem_batch(env_indices,benchmark_name="train",mode="train",difficulty=getattr(config.env,"difficulty") if hasattr(config,"env") and hasattr(config.env,"difficulty") else "difficult")
         else:
-            benchmark_name=getattr(config,"benchmark") if hasattr(config,"benchmark") else "test"
+            benchmark_name=getattr(config.env,"benchmark") if hasattr(config,"env") and hasattr(config.env,"benchmark") else "test"
             #difficulty=getattr(config,"difficulty") if hasattr(config,"difficulty") else "difficult"
             self.problem_list=load_problem_batch(env_indices,mode=mode,benchmark_name=benchmark_name)
             samples=1

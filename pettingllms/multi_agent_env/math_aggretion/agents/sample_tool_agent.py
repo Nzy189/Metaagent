@@ -106,13 +106,13 @@ class ToolAgent(Agent):
         is_correct = False
         code_execution_output = None
         try:
-            # execute the code (through ray worker)q
+            # execute the code (through ray worker)
             code_execution_output = await get_code_execution_output(
                 generated_solution,
-                timeout=20.0,  # 增加到20秒，配合缓冲时间支持大规模并发
+                timeout=20.0,  # Increased to 20 seconds to support large-scale concurrency with buffer time
                 ray_actor=env_worker,
             )
-            # parse返回一个列表，取第一个元素作为提取的答案
+            # parse returns a list, take the first element as the extracted answer
             parsed_answer_list = parse(code_execution_output)
             parsed_answer = parsed_answer_list[0] if parsed_answer_list else None
             env_data.state.code_extracted_answer = parsed_answer
@@ -131,24 +131,27 @@ class ToolAgent(Agent):
                 env_data.state.code_is_correct = bool(is_correct)
                 
                 if is_correct:
-                    self.done = True
-                    self.is_pass = True
+                    env_data.done = True
+                    self.success = True
                     self.agent_reward = 1.0
                 else:
+                    self.success = False
                     self.agent_reward = 0.0
            
             except Exception as e:
                 print(f"Warning: Failed to evaluate code solution: {e}")
                 is_correct = False
+                self.success = False
                 env_data.state.code_is_correct = False
         else:
+            self.success = False
             env_data.state.code_is_correct = False
         
         if code_execution_output is not None and env_data.state.reasoning_extracted_answer is not None:
-            is_aligned = verify(parse(code_execution_output), parse(env_data.state.reasoning_extracted_answer))
+            is_aligned = verify(parse(code_execution_output), env_data.state.reasoning_extracted_answer)
             env_data.state.code_reasoning_aligned = bool(is_aligned)
             if is_aligned:
-                self.done = True
+                env_data.done = True
         else:
             env_data.state.code_reasoning_aligned = False
 

@@ -16,6 +16,7 @@ ENV_CLASSES = {
     "math_env": safe_import("pettingllms.multi_agent_env.math.math_env", "MathEnv"),
     "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math_aggretion.math_env", "MathEnv"),
     "alfworld_env": safe_import("pettingllms.multi_agent_env.alfworld.alfworld_env", "AlfworldEnv"),
+    "search_env": safe_import("pettingllms.multi_agent_env.search.search_env", "SearchEnv"),
     "stateful_env": safe_import("pettingllms.multi_agent_env.stateful.stateful_env", "StatefulEnv"),
 }
 
@@ -26,6 +27,7 @@ ENV_BATCH_CLASSES = {
     "math_env": safe_import("pettingllms.multi_agent_env.math.math_env", "MathEnvBatch"),
     "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math_aggretion.math_env", "MathEnvBatch"),
     "alfworld_env": safe_import("pettingllms.multi_agent_env.alfworld.alfworld_env", "AlfWorldEnvBatch"),
+    "search_env": safe_import("pettingllms.multi_agent_env.search.search_env", "SearchEnvBatch"),
     "stateful_env": safe_import("pettingllms.multi_agent_env.stateful.stateful_env", "StatefulEnvBatch"),
 }
 
@@ -42,23 +44,26 @@ AGENT_CLASSES = {
     "code_generator": safe_import("pettingllms.multi_agent_env.code.agents.code_agent", "CodeGenerationAgent"),
     "test_generator": safe_import("pettingllms.multi_agent_env.code.agents.unit_test_agent", "UnitTestGenerationAgent"),
     "code_generator_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.agents.code_agent", "CodeGenerationAgent"),
-    "reasoning_agent": safe_import("pettingllms.multi_agent_env.math.agents.reasoning_agent", "ReasoningAgent"),
-    "tool_agent": safe_import("pettingllms.multi_agent_env.math.agents.tool_agent", "ToolAgent"),
+    "reasoning_generator": safe_import("pettingllms.multi_agent_env.math.agents.reasoning_agent", "ReasoningAgent"),
+    "tool_generator": safe_import("pettingllms.multi_agent_env.math.agents.tool_agent", "ToolAgent"),
     "math_agent_single_agent": safe_import("pettingllms.multi_agent_env.math_single_agent.agents.math_agent", "MathGenerationAgent"),
     "aggreted_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.aggreted_agent", "AggregationAgent"),
     "sample_tool_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.sample_tool_agent", "ToolAgent"),
     "sample_reasoning_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.sample_reasoning_agent", "ReasoningAgent"),
+    # Search agents (benchmarks: bamboogle, 2wiki, hotpotqa, musique)
+    "search_reasoning_agent": safe_import("pettingllms.multi_agent_env.search.agents.reasoning_agent", "ReasoningAgent"),
+    "web_search_agent": safe_import("pettingllms.multi_agent_env.search.agents.web_search_agent", "WebSearchAgent"),
     # Stateful agents
     "plan_agent": safe_import("pettingllms.multi_agent_env.stateful.agents.plan_agent", "PlanAgent"),
     "tool_call_agent": safe_import("pettingllms.multi_agent_env.stateful.agents.tool_agent", "ToolAgent"),
 }
 
 ENV_WORKER_CLASSES = {
-    "code_env": safe_import("pettingllms.multi_agent_env.code.code_utils", "get_ray_docker_worker_cls"),
-    "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_utils", "get_ray_docker_worker_cls"),
-    "math_env": safe_import("pettingllms.multi_agent_env.math.math_utils", "get_ray_docker_worker_cls"),
-    "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math.math_utils", "get_ray_docker_worker_cls"),
-    "stateful_env": safe_import("pettingllms.multi_agent_env.math.math_utils", "get_ray_docker_worker_cls")  
+    "code_env": safe_import("pettingllms.multi_agent_env.code.code_worker", "get_ray_docker_worker_cls"),
+    "math_env": safe_import("pettingllms.multi_agent_env.math.math_worker", "get_ray_docker_worker_cls"),
+    "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math.math_worker", "get_ray_docker_worker_cls"),
+    "search_env": safe_import("pettingllms.multi_agent_env.math.math_worker", "get_ray_docker_worker_cls"),
+    "stateful_env": safe_import("pettingllms.multi_agent_env.math.math_worker", "get_ray_docker_worker_cls")  
 }
 
 # Filter out None values for unavailable imports

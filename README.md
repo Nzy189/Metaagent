@@ -7,7 +7,7 @@
 # PETTINGLLMS
 
 <div>
-🚀 RL Framework for building MAS at any level: specialize with different Prompt/LoRA/Full model.🌟
+🚀 RL Framework for training Multi Agent System(MAS).🌟
 </div>
 </div>
 <div>
@@ -19,29 +19,34 @@
 </div>
 
 </div>
-**PettingLLMs** is an open-source framework for **on-policy reinforcement learning (RL) with multi-agent large language models (LLMs)**.  
-It implements **AT-GRPO** (Agent- and Turn-wise Group Relative Policy Optimization), a novel algorithm and system design for training collaborative LLM agents across **planning, coding, and mathematical reasoning tasks**.
-
-This repo supports:
-- ✅ Single-agent RL training  
+PettingLLMs is an open-source framework for on-policy reinforcement learning (RL) with multi-agent large language models (LLMs).  It implements AT-GRPO (Agent- and Turn-wise Group Relative Policy Optimization), a novel algorithm and system design for training collaborative LLM agents across **planning, coding, and mathematical reasoning tasks. This repo supports:
+- ✅ Single-agent(SA) RL training  
 - ✅ Multi-agent RL training (role-sharing policy)  
 - ✅ Multi-agent RL training (role-specialized policies)  
+# 🚀 Key Features
+
+-   **Multi-Level Agent Specialization**: Train and specialize agents at any level, from lightweight prompt adjustments to full model fine-tuning with LoRA or reinforcement learning.
+-   **Novel RL Algorithm**: Implements Agent- and turn wise GRPO- **AT-GRPO** for efficient and stable multi-agent training.
+-   **Built-in Multi-Turn MAS Workflows**: Comes with predefined, reproducible benchmarks and environments for a variety of domains:
+    -   🎮 **Games**: Sudoku (4x4), Sokoban (6x6)
+    -   📐 **Planning**: Plan-Path (10x10 grid)
+    -   💻 **Coding**: APPS, CodeContests, LiveCodeBench
+    -   🔢 **Math**: AIME24/25, OlympiadBench
+
 
 ---
 
-## 🚀 Features
+## 🧱 Three Levels of Role Optimization
 
-- **AT-GRPO Algorithm**: Extends GRPO with **agent- and turn-wise grouping**, tree-structured sampling, and mixed global-local rewards.  
-- **Multi-Agent RL System**: GPU-pinned resource pools with **RolloutWorkers** and **UpdateWorkers** for scalable on-policy updates.  
-- **Workflow Support**: Built-in MAS workflows for:
-  - 🎮 Games: Sudoku 4×4, Sokoban 6×6  
-  - 📐 Planning: Plan-Path (10×10 grid)  
-  - 💻 Coding: APPS, CodeContests, LiveCodeBench  
-  - 🔢 Math: AIME24/25, OlympiadBench  
-- **Flexible Policies**: Train with either **role-sharing** or **role-specialized** policies, depending on task domain.  
-- **Reproducible Benchmarks**: Predefined datasets, verifiers, and configs ensure reproducible results.  
+PettingLLMs offers a tiered approach to agent specialization, allowing you to balance performance with computational cost.
 
----
+| Level | Optimization Target | Trainable Params | Typical Use Case | Strengths | Trade-offs |
+| :--- | :--- | ---: | :--- | :--- | :--- |
+| **L0: Prompt Engineering** | Prompt templates only | **0%** | Rapid baselines, ablation studies, and orchestration tuning. | No training cost; instant iteration. | Performance is highly sensitive to prompt design; limited ceiling. |
+| **L1: LoRA Adaptation** | Low-rank adapters (per role) | **~0.1–2%** | Cost-effective specialization for specific roles (e.g., a "Tool User" or "Judge" agent). | Excellent balance of performance gain vs. training cost/latency. | Requires managing separate adapters for each specialized role. |
+| **L2: Full-Model RL** | Full model parameters via on-policy RL (AT-GRPO) | **100%** | Achieving maximum performance on complex, long-horizon tasks. | Highest performance ceiling; enables precise credit assignment per role/turn. | Computationally intensive; requires careful hyperparameter tuning. |
+
+
 
 ## 📊 Key Results
 
@@ -91,32 +96,13 @@ Table 3 · Ablation on Plan-Path (Qwen3-1.7B)
 
 
 ## 🔁 Environment Workflows (MA vs. SA)
+
 <div align="center">
 <img src="figs/workflow.png" alt="PettingLLMs worker" width="800">
 </div>
-- **Game / Plan (Sudoku, Sokoban, Plan-Path)**
-  - **MA:** *Planner* proposes actions; *Executor* calls tools & returns effects/observations. Reward reflects step/terminal goal; terminate on goal or turn budget. :contentReference[oaicite:0]{index=0}
-  - **SA:** Single agent outputs a plan under the same termination rule. :contentReference[oaicite:1]{index=1}
-
-- **Code (APPS, CodeContests, LiveCodeBench)**
-  - **MA:** *Tester* builds/refines unit tests; *Coder* implements/refines code; tests run every turn; reward is per-case/aggregate pass–fail; terminate on alignment (tests pass) or turn budget. :contentReference[oaicite:2]{index=2}
-  - **SA:** One agent emits code; single-turn termination (no verification loop). :contentReference[oaicite:3]{index=3}
-
-- **Math (AIME24/25, OlympiadBench)**
-  - **MA:** *Tool agent* issues Python/calculator calls; *Reasoner* produces the final answer; reward is exact-match or verifier-checked; terminate on success or turn budget. :contentReference[oaicite:4]{index=4}
-  - **SA:** One agent reasons (with direct tool calls if any) in a single turn; single-turn termination. :contentReference[oaicite:5]{index=5}
 
 
-## 🏗️ Training System Framework Overview
 
-<div align="center">
-<img src="figs/worker.png" alt="PettingLLMs worker" width="400">
-</div>
-- **Per-policy GPU pools:** Each policy has a pinned **RolloutWorker** (inference) and **UpdateWorker** (optimize).
-- **Strict on-policy:** RolloutWorkers refresh weights before sampling; UpdateWorkers train only on fresh, routed data.
-- **Multi-policy ready:** Supports **role-sharing** (one policy) and **role-specialized** (per-role policies) training in parallel.
-- **Scaled envs:** Thousands of sandboxed **CPU EnvWorkers** run Sudoku/Sokoban/Plan-Path/Code/Math with deterministic seeds.
-- **Clean routing:** Observations, tool logs, and rewards stream to a Router that dispatches trajectories to the correct policy.
 
 
 ## 📦 Installation

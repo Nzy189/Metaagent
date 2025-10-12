@@ -147,55 +147,20 @@ class CodeGenerationAgent(Agent):
                 passed_ratio, passed_cases, failed_cases = await evaluate_code_against_tests(
                     gen_code, ground_truth_test_input, ground_truth_test_output, timeout=30.0, ray_actor=env_worker,rollout_idx=self.rollout_idx
                 )
-                env_data.state.ground_truth_test_vs_generated_code_match_cases = passed_cases
-                env_data.state.ground_truth_test_vs_generated_code_mismatch_cases = failed_cases
-                env_data.state.ground_truth_test_vs_generated_code_match_ratio = passed_ratio
-                #if passed_ratio < 1.0:
-                #    passed_ratio = 0.0
-                if passed_ratio >= 1.0 and len(ground_truth_test_input) > 0:
-                    self.done = True
-                    self.is_pass = True
-                
-        
             except Exception as e:
                 print(f"Warning: Failed to evaluate code against tests: {e}")
-                passed_ratio, passed_cases, failed_cases = 0.0, [], []
-        if len(self.reward_history) > 0:
-            self.agent_reward = passed_ratio-self.reward_history[-1]
-        else:
+                passed_ratio, passed_cases, failed_cases = 0.0, [], ["error: {e}"]
+            env_data.state.ground_truth_test_vs_generated_code_match_cases = passed_cases
+            env_data.state.ground_truth_test_vs_generated_code_mismatch_cases = failed_cases
+            env_data.state.ground_truth_test_vs_generated_code_match_ratio = passed_ratio
             self.agent_reward = passed_ratio
-        self.reward_history.append(passed_ratio)
-        self.value=passed_ratio
-
-
-
-    
-    
-    def calculate_reward(self, env_data: List[Env]) -> float:
-        """
-        Compute reward based on environment state.
-        Uses generated_test_vs_generated_code_match_ratio for reward calculation.
-        """
-        state = getattr(env_data[0], "state", None)
-        pass_ratio = 0.0
-
-        if state is not None:
-            # Generated tests vs generated code
-            ground_truth_vs_generated = getattr(state, "ground_truth_test_vs_generated_code_match_ratio", None)
-            if isinstance(ground_truth_vs_generated, (int, float)):
-                pass_ratio = float(ground_truth_vs_generated)
-            elif ground_truth_vs_generated is not None:
-                try:
-                    pass_ratio = float(ground_truth_vs_generated)
-                except Exception:
-                    pass
-
-        # Record and return
-        self.agent_reward = pass_ratio
-        self.reward_history.append(self.agent_reward)
-
-        
-        return self.agent_reward
+            self.reward_history.append(passed_ratio)
+            if passed_ratio >= 1.0 and len(ground_truth_test_input) > 0:
+                self.success = True
+            else:
+                self.success = False
+                
+ 
 
     
     

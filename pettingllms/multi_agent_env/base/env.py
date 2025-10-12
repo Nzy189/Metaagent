@@ -49,7 +49,7 @@ class Env:
 
         
         
-
+    @abstractmethod
     def step(self, action):
         """
         Take a step in the environment based on the action.
@@ -60,22 +60,7 @@ class Env:
         Returns:
             next_observation, reward, terminated, truncated, info
         """
-        # Store the action in history
-        self.history.append(action)
-
-        # Calculate reward for the current turn using the abstract method
-        assert self.task is not None, "Task is not set"
-        reward, next_obs = self.get_reward_and_next_obs(self.task, action)
-
-        # Increment turn counter
-        self.current_turn += 1
-
-        # Check if we've reached the maximum number of turns
-        if self.current_turn >= self.max_turns:
-            self.done = True
-            return {}, reward, self.done, self.task
-
-        return next_obs, reward, self.done, self.task
+        return NotImplementedError("Subclasses must implement this method")
 
 
 class EnvBatch:

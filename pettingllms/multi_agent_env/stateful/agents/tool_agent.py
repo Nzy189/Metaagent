@@ -4,7 +4,7 @@ from typing import Any, List, Optional
 
 from pettingllms.multi_agent_env.base.agent import Agent
 from pettingllms.multi_agent_env.base.env import Env
-from pettingllms.multi_agent_env.math.math_utils import get_code_execution_output
+from pettingllms.multi_agent_env.math.math_worker import get_code_execution_output
 from pettingllms.multi_agent_env.stateful.utils import (
     extract_code_from_response,
     extract_actions_from_code_output
@@ -26,6 +26,8 @@ class ToolAgent(Agent):
         self.rollout_idx = rollout_idx
         self.benchmark = benchmark
         self.agent_reward_history = []
+        self.success = False
+        self.agent_reward = 0.0
         for k, v in (kwargs or {}).items():
             setattr(self, k, v)
 
@@ -36,13 +38,10 @@ class ToolAgent(Agent):
         
         formatted_prompt = (
             "You are an AI assistant specialized in solving planning problems through code generation. "
-            "Very important, use the algorithm like BFS or A* to solve the problem. Do not reasoning directly. "
-            "Your task is to analyze the given scenario and generate Python code that produces a sequence of actions to solve the problem.\n\n"
             "Instructions:\n"
             "1. Write Python code enclosed in ```python and ``` tags\n"
-            "2. Your code should output an action sequence using print() in EXACTLY one of these formats: \n"
-            "   - **Actions List**: [\"U\",\"D\",\"L\",\"R\"]\n"
-            "   - Actions: [\"U\",\"D\",\"L\",\"R\"]\n"
+            "2. Your code should output an action sequence using print() \n"
+    
         )
         
         formatted_prompt += build_tool_prompt(self.benchmark, turn_idx, state)
@@ -128,32 +127,13 @@ class ToolAgent(Agent):
         else:
             self.agent_reward = state.reward
         
+        env_data.state.tool_reward = self.agent_reward
+        
         self.agent_reward_history.append(self.agent_reward)
         
-        if hasattr(state, 'done') and env_data.state.done:
-            if self.benchmark == "plan_path":
-                if hasattr(state, 'pos') and hasattr(state, 'goal') and state.pos == state.goal:
-                    self.done = True
-                    self.is_pass = True
-                    self.agent_reward = max(self.agent_reward, 1.0)
-            elif self.benchmark == "eight_queens":
-                if hasattr(state, '_is_solved') and state._is_solved():
-                    self.done = True
-                    self.is_pass = True
-                    self.agent_reward = max(self.agent_reward, 1.0)
-            elif self.benchmark == "blocksworld":
-                if hasattr(state, '_is_goal_reached') and state._is_goal_reached():
-                    self.done = True
-                    self.is_pass = True
-                    self.agent_reward = max(self.agent_reward, 1.0)
-            elif self.benchmark == "sudoku4x4":
-                if hasattr(state, '_is_solved') and state._is_solved():
-                    self.done = True
-                    self.is_pass = True
-                    self.agent_reward = max(self.agent_reward, 1.0)
-        
-        if self.agent_reward is None:
-            self.agent_reward = 0.0
+        if hasattr(state, 'done') and state.done:
+            self.success = True
+        self.reward_history.append(self.agent_reward)
 
     def reset(self):
         """Reset agent state"""
@@ -164,3 +144,5 @@ class ToolAgent(Agent):
         self.current_info = None
         self.done = False
         self.is_pass = False
+        self.success = False
+        self.agent_reward = 0.0

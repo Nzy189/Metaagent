@@ -5,17 +5,13 @@ Note that we don't combine the main with ray_trainer as ray_trainer is used by o
 
 import hydra
 import ray
-import atexit
 import os
 import json
-import shutil
-from pathlib import Path
 from omegaconf import OmegaConf, DictConfig
 from verl.single_controller.ray import RayWorkerGroup
 from verl.workers.fsdp_workers import AsyncActorRolloutRefWorker
 from pettingllms.trainer.multi_agents_ppo_trainer import MultiAgentsPPOTrainer
-from pettingllms.utils.cleanup import install_cleanup_hooks, cleanup_ray_and_tmp_dirs
-
+from pettingllms.utils.clean_up import install_cleanup_hooks
 install_cleanup_hooks()
 
 

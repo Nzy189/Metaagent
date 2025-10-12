@@ -133,24 +133,27 @@ class AggregationAgent(Agent):
                 env_data.state.aggregation_is_correct = bool(is_correct)
                 
                 if is_correct:
-                    self.done = True
-                    self.is_pass = True
+                    env_data.done = True
+                    self.success = True
                     self.agent_reward = 1.0
                 else:
+                    self.success = False
                     self.agent_reward = 0.0
            
             except Exception as e:
                 print(f"Warning: Failed to evaluate aggregated solution: {e}")
                 is_correct = False
+                self.success = False
                 env_data.state.aggregation_is_correct = False
         else:
+            self.success = False
             env_data.state.aggregation_is_correct = False
             self.agent_reward = 0.0
 
         self.reward_history.append(float(is_correct))
         
         # Mark as done after first attempt
-        self.done = True
+        env_data.done = True
  
     def reset(self):
         """

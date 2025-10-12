@@ -44,6 +44,60 @@ class EnvStateBase:
     def __repr__(self) -> str:
         return self.__str__()
 
+    @property
+    def status(self) -> str:
+        """Unified status view based on 'done'.
+        Returns "done" when the environment is finished, otherwise "in_progress".
+        """
+        return "done" if getattr(self, 'done', False) else "in_progress"
+
+    def to_dict_compact(self) -> Dict[str, Any]:
+        """Compact, logging-friendly snapshot across all env states.
+        Always includes a unified 'status' and 'done' flag; conditionally includes
+        a few common progress/reward fields when present.
+        """
+        compact: Dict[str, Any] = {
+            "status": self.status,
+            "done": getattr(self, 'done', False),
+        }
+        # Common optional fields across different envs
+        for key in [
+            "reward", "total_reward", "step_count", "steps", "invalid_count","tool_action", "tool_code", "tool_execution_output", "plan_action", "observation","tool_reward",
+            "boxes_on_goals",
+        ]:
+            if hasattr(self, key):
+                compact[key] = getattr(self, key)
+        return compact
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Broad snapshot of state with best-effort serialization.
+        This method attempts to serialize fields into JSON-friendly types.
+        """
+        import json
+        result: Dict[str, Any] = {}
+        for k, v in self.__dict__.items():
+            # Skip private/cached internals if any
+            if k.startswith('_'):
+                continue
+            try:
+                json.dumps(v)
+                result[k] = v
+            except Exception:
+                # Numpy arrays or other non-serializable objects
+                try:
+                    import numpy as _np  # local import to avoid top-level dependency assumption
+                    if isinstance(v, _np.ndarray):
+                        result[k] = v.tolist()
+                    else:
+                        result[k] = str(v)
+                except Exception:
+                    result[k] = str(v)
+
+        # Add unified view
+        result["status"] = self.status
+        result["done"] = getattr(self, 'done', False)
+        return result
+
 @dataclass
 class EightQueensEnvState(EnvStateBase):
     """N-Queens problem: Place N queens on NxN board without attacking each other"""

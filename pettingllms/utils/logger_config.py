@@ -480,6 +480,29 @@ class MultiLoggerConfig:
         else:
             summary_logger.error(json.dumps(summary_content, ensure_ascii=False, indent=2), extra=summary_extra)
     
+    def log_evaluation_summary(self, mode: str, evaluation_summary: Dict[str, Any]):
+        """
+        Log final evaluation summary with success rates and configuration
+        
+        Args:
+            mode: Evaluation mode (train/validate/test)
+            evaluation_summary: Dictionary containing evaluation results and configuration
+        """
+        logger = self.loggers["summary"]
+        
+        log_content = {
+            "event_type": "evaluation_summary",
+            "mode": mode,
+            "timestamp": datetime.now().isoformat(),
+            "evaluation_summary": safe_serialize(evaluation_summary)
+        }
+        
+        extra = {
+            "rollout_idx": "SUMMARY"
+        }
+        
+        logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+    
     def get_logger(self, logger_name: str) -> Optional[logging.Logger]:
         """Get specified logger"""
         return self.loggers.get(logger_name)

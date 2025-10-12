@@ -14,3 +14,83 @@ tool_call_agent: 0.0
 plan_agent: 0.04
 tool_call_agent: 0.0
 plan_agent: 0.09
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.0
+tool_generator: 0.0
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.0
+tool_generator: 0.0
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.0
+tool_generator: 0.0
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.0
+tool_generator: 0.0
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.0
+tool_generator: 0.0
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.0
+tool_generator: 0.0
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.0
+tool_generator: 0.0
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.36
+tool_generator: 0.38666666666666666
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.0
+tool_generator: 0.0
+Model path: /home/nvidia/data/models/Qwen3-8B
+Max turns: 5
+Benchmark: AIME24
+Agent enable_thinking:
+  reasoning_generator: False
+  tool_generator: False
+reasoning_generator: 0.36666666666666664
+tool_generator: 0.4066666666666667

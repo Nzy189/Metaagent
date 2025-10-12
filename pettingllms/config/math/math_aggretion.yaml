@@ -2,7 +2,7 @@
 # reasoning_agent and tool_agent use Qwen3-4B-Instruct-2507
 mode: "validate"
 sample_mode: "tree"
-enable_thinking: false
+
 # Inherit from base configuration
 defaults:
   # Inject a separate ppo_trainer/base subtree for each model; can be overridden independently

@@ -107,7 +107,7 @@ class ReasoningAgent(Agent):
 
         # 2) Extract answer from the reasoning solution
         extracted_answer_list = parse(self.current_action)
-        # parse返回一个列表，取第一个元素作为提取的答案
+        # parse returns a list, take the first element as the extracted answer
         extracted_answer = extracted_answer_list[0] if extracted_answer_list else None
         env_data.state.reasoning_extracted_answer = extracted_answer
         if extracted_answer is not None:
@@ -126,11 +126,12 @@ class ReasoningAgent(Agent):
                 env_data.state.reasoning_is_correct = is_correct
                 
                 if is_correct:
-                    self.done = True
-                    self.is_pass = True
+                    env_data.done = True
+                    self.success = True
                     self.agent_reward = 1.0
                     self.value = 1.0
                 else:
+                    self.success = False
                     self.agent_reward = 0.0
                     
 
@@ -138,12 +139,14 @@ class ReasoningAgent(Agent):
             except Exception as e:
                 print(f"Warning: Failed to evaluate reasoning solution: {e}")
                 is_correct = False
+                self.success = False
                 self.agent_reward = 0.0
                 if not hasattr(env_data.state, 'reasoning_is_correct'):
                     env_data.state.reasoning_is_correct = False
                 else:
                     env_data.state.reasoning_is_correct = False
         else:
+            self.success = False
             self.agent_reward = 0.0
             if not hasattr(env_data.state, 'reasoning_is_correct'):
                 env_data.state.reasoning_is_correct = False

@@ -27,9 +27,9 @@ from omegaconf import OmegaConf
 from hydra import compose, initialize_config_dir
 from pettingllms.trainer.multi_agents_execution_engine import MultiAgentsExecutionEngine
 import pettingllms.trainer.multi_agents_execution_engine as mae_engine
-from pettingllms.trainer import utils as trainer_utils
+from pettingllms.trainer import async_generate as trainer_utils
 from verl.utils import hf_tokenizer, hf_processor
-from pettingllms.trainer.utils import convert_prompt_to_dpr, convert_dpr_to_response, llm_async_generate
+from pettingllms.trainer.async_generate import convert_prompt_to_dpr, convert_dpr_to_response, llm_async_generate
 from pettingllms.trainer.multi_agents_execution_engine import MultiAgentsExecutionEngine
 import asyncio
 import json
@@ -48,25 +48,11 @@ from omegaconf import OmegaConf
 from verl.trainer.ppo.reward import load_reward_manager
 from pettingllms.trainer.multi_agents_execution_engine import MultiAgentsExecutionEngine
 from verl import DataProto
-from verl.protocol import pad_dataproto_to_divisor
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from verl.trainer.ppo.ray_trainer import (
-    
-    RayWorkerGroup,
-    ResourcePoolManager,
-    Role,
-    WorkerType,
-    compute_advantage,
-    compute_data_metrics,
-    compute_response_mask,
-    compute_timing_metrics,
-    reduce_metrics,
-)
 
 from pettingllms.verl.ray_trainer import RayPPOTrainer
 from verl.utils.torch_functional import pad_sequence_to_length
 from typing import Dict
-from pettingllms.utils.profiler.performance import simple_timer
+from pettingllms.utils.performance import simple_timer
 import ray
 from omegaconf import DictConfig
 import hydra
@@ -151,7 +137,7 @@ def validate(config: DictConfig, address: str):
         success_rollout_rate_dict[agent_name] = (
             success_rollout_num / total_rollout_num if total_rollout_num > 0 else 0.0
         )
-    return agent_execution_engine.success_rollout_idx_list_dict,success_rollout_rate_dict
+    return agent_execution_engine, agent_execution_engine.success_rollout_idx_list_dict, success_rollout_rate_dict
 
 
 def test(config: DictConfig, address: str):
@@ -182,26 +168,45 @@ def test(config: DictConfig, address: str):
     print(response)
 
 
-@hydra.main(config_path="../../pettingllms/config/math", config_name="math_single_policy", version_base=None)
+@hydra.main(config_path="../config/math", config_name="math_L1_prompt", version_base=None)
 def main(config: DictConfig):
     address = getattr(config, 'vllm_address', '127.0.0.1:8220')
-    print(f"🚀 Using vLLM service address: {address}")
+    print(f"Using vLLM service address: {address}")
    
-    success_rollout_idx_list_dict,success_rollout_rate_dict = validate(config, address)
-    with open("success_rollout_idx_list_dict.json", "a") as f:
-        json.dump(success_rollout_idx_list_dict, f)
-    with open("success_rollout_rate_dict.json", "a") as f:
-        json.dump(success_rollout_rate_dict, f)
-    with open("success_rollout_idx_list_dict.txt", "a") as f:
-        for agent_name, idx_list in success_rollout_idx_list_dict.items():
-            f.write(f"{agent_name}: {idx_list}\n")
-    with open("success_rollout_rate_dict.txt", "a") as f:
-        text=f"Model path: {config.models.model_0.path}\n"
-        text+=f"Enable thinking: {config.enable_thinking}\n"
-        text+=f"Max turns: {config.env.max_turns}\n"
-        text+=f"Benchmark: {config.benchmark}\n"
-        for agent_name, rate in success_rollout_rate_dict.items():
-            f.write(f"{agent_name}: {rate}\n")
+    agent_execution_engine, success_rollout_idx_list_dict, success_rollout_rate_dict = validate(config, address)
+    
+    # Log success_rollout information to summary logger
+    evaluation_summary = {
+        "model_path": config.models.model_0.path,
+        "max_turns": config.env.max_turns,
+        "benchmark": config.env.benchmark,
+        "total_rollouts": len(agent_execution_engine.rollout_idx_list),
+        "success_rollout_idx_list_dict": success_rollout_idx_list_dict,
+        "success_rollout_rate_dict": success_rollout_rate_dict,
+        "agent_enable_thinking": {}
+    }
+    
+    # Collect enable_thinking configuration for each agent
+    for agent_key, agent_config in config.agent_policy_configs.agent_configs.items():
+        agent_name = agent_config.name
+        enable_thinking = getattr(agent_config, 'enable_thinking', False)
+        evaluation_summary["agent_enable_thinking"][agent_name] = enable_thinking
+    
+    # Log to summary via multi_logger
+    agent_execution_engine.multi_logger.log_evaluation_summary(
+        mode="validate",
+        evaluation_summary=evaluation_summary
+    )
+    
+    print("Evaluation Summary:")
+    print(f"  Model path: {evaluation_summary['model_path']}")
+    print(f"  Max turns: {evaluation_summary['max_turns']}")
+    print(f"  Benchmark: {evaluation_summary['benchmark']}")
+    print(f"  Total rollouts: {evaluation_summary['total_rollouts']}")
+    print("  Success rates:")
+    for agent_name, rate in success_rollout_rate_dict.items():
+        success_count = len(success_rollout_idx_list_dict.get(agent_name, []))
+        print(f"    {agent_name}: {rate:.4f} ({success_count}/{evaluation_summary['total_rollouts']})")
 
 if __name__ == "__main__":
     main()

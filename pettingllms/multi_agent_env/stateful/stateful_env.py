@@ -28,14 +28,15 @@ class StatefulEnv(Env):
         config: dict | None = None,
     ):
         super().__init__(env_idx=env_idx, rollout_idx=rollout_idx, max_turns=max_turns, config=config)
-        self.state = None  
+        self.state = None
+        self.done = False  
     def reset(self):
         if self.state is not None:
             
             self.state.tool_action = []  # List[str]    
             self.state.tool_code = ""    # str 
             self.state.tool_execution_output = ""  # str 
-            self.state.plan_action = []  # List[str] 类型
+            self.state.plan_action = []  # List[str] type
             
             
             if hasattr(self.state, 'reasoning_generated_plan'):
@@ -72,7 +73,7 @@ class StatefulEnvBatch:
         config: dict,
         mode: str = "train",
         *,
-        env_workers: None = None,  # 可选：外部传入 worker
+        env_workers: None = None,  # Optional: external worker
     ):
         
         
@@ -83,20 +84,45 @@ class StatefulEnvBatch:
             rollout_idx_list = range(100)
             samples = 1
 
-        benchmark_name=getattr(config,"benchmark") if hasattr(config,"benchmark") else "plan_path"
+        benchmark_name = getattr(config.env, "benchmark") if hasattr(config, "env") and hasattr(config.env, "benchmark") else "plan_path"
+        dataset_name = getattr(config.env, "dataset") if hasattr(config, "env") and hasattr(config.env, "dataset") else "default"
         
+        # Load problem batch based on benchmark and dataset
+        problem_list = load_plan_path_problem_batch(
+            env_indices=env_indices,
+            dataset_name=dataset_name,
+            split=mode,
+            mode=mode,
+            config=config,
+            benchmark_name=benchmark_name
+        )
         
+        # Seed configuration: train and test use different seed ranges
+        # Train: 0-99999, Test/Validate: 100000-199999
+        # This ensures train and test use different environments
+        TRAIN_SEED_OFFSET = 0
+        TEST_SEED_OFFSET = 100000
         
-        for i, prob in enumerate(env_idx_list):
-
+        for i in range(len(env_idx_list)):
+            prob = problem_list[i] if i < len(problem_list) else problem_list[i % len(problem_list)]
+            
             state_class = get_state_class_by_benchmark(benchmark_name)
             
             
             if benchmark_name == "plan_path":
-                seed = env_indices[i] if i < len(env_indices) else i
+                # Use env_idx (not env_indices) to ensure same seed for same environment across different training steps
+                base_seed = env_indices[i] if i < len(env_indices) else i
+                if mode == "train":
+                    seed = TRAIN_SEED_OFFSET + base_seed
+                else:  # test or validate
+                    seed = TEST_SEED_OFFSET + base_seed
                 state = state_class(seed=seed, config=config)
             elif benchmark_name == "sokoban":
-                seed = env_indices[i] if i < len(env_indices) else i
+                base_seed = env_indices[i] if i < len(env_indices) else i
+                if mode == "train":
+                    seed = TRAIN_SEED_OFFSET + base_seed
+                else:  # test or validate
+                    seed = TEST_SEED_OFFSET + base_seed
                 state = state_class(seed=seed, config=config)
             elif benchmark_name == "EightQueens":
                 state = state_class(N=prob["N"])
@@ -106,7 +132,11 @@ class StatefulEnvBatch:
                     goal_stacks=prob["goal_stacks"]
                 )
             elif benchmark_name == "sudoku4x4":
-                seed = env_indices[i] if i < len(env_indices) else i
+                base_seed = env_indices[i] if i < len(env_indices) else i
+                if mode == "train":
+                    seed = TRAIN_SEED_OFFSET + base_seed
+                else:  # test or validate
+                    seed = TEST_SEED_OFFSET + base_seed
                 state = state_class(seed=seed, config=config)
             else:
                 raise ValueError(f"Unsupported benchmark: {benchmark_name}")

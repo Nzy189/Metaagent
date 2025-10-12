@@ -112,7 +112,7 @@ def main():
         ["problem", "question", "prompt", "Problem"],
         ["answer", "final_answer", "solution", "Solution", "Answer"],
     )
-    polaris_path = out_train_dir / "train_polaris.parquet"
+    polaris_path = out_train_dir / "polaris.parquet"
     polaris_std.to_parquet(str(polaris_path))
     print(f"Saved POLARIS train to: {polaris_path} ({len(polaris_std)} rows)")
 
@@ -127,7 +127,7 @@ def main():
         ds = ds_dict[split]
         print(f"Using split for {benchmark}: {split} (as test)")
         ds_std = standardize_hf_dataset(ds, conf["q_keys"], conf["a_keys"])
-        out_path = out_test_dir / f"{benchmark}_test.parquet"
+        out_path = out_test_dir / f"{benchmark}.parquet"
         ds_std.to_parquet(str(out_path))
         print(f"Saved {benchmark} test to: {out_path} ({len(ds_std)} rows)")
 

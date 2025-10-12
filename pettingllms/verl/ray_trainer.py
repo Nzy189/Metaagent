@@ -680,7 +680,7 @@ class RayPPOTrainer:
 
         return metric_dict
 
-    def init_workers(self):
+    def init_workers(self, lora_num=1):
         """Initialize distributed training workers using Ray backend.
 
         Creates:
@@ -690,7 +690,7 @@ class RayPPOTrainer:
         self.resource_pool_manager.create_resource_pool()
 
         self.resource_pool_to_cls = {pool: {} for pool in self.resource_pool_manager.resource_pool_dict.values()}
-
+        self.config.actor_rollout_ref.lora_num = lora_num
         # create actor and rollout
         if self.hybrid_engine:
             resource_pool = self.resource_pool_manager.get_resource_pool(Role.ActorRollout)
@@ -789,7 +789,13 @@ class RayPPOTrainer:
     def _save_checkpoint(self):
         # path: given_path + `/experiment_name` + `/global_step_{global_steps}` + `/actor`
         experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
-        experiment_folder = os.path.join(self.config.trainer.default_local_dir, experiment_name)
+        
+        # Support custom checkpoint_dir if provided, otherwise use default
+        if hasattr(self.config, 'checkpoint_dir') and self.config.checkpoint_dir is not None:
+            experiment_folder = self.config.checkpoint_dir
+        else:
+            experiment_folder = os.path.join(self.config.trainer.default_local_dir, experiment_name)
+        
         local_global_step_folder = os.path.join(experiment_folder, f'global_step_{self.global_steps}')
         # Make dirs from this absolute path
         os.makedirs(local_global_step_folder, exist_ok=True)
