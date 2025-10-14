@@ -132,9 +132,9 @@ class ToolAgent(Agent):
         
         
         
-
-        self.agent_reward = float(is_correct)
-        self.reward_history.append(float(is_correct))
+    def calculate_reward(self, env_data: Env):
+        self.agent_reward = self.agent_reward
+        self.reward_history.append(self.agent_reward)
  
     def reset(self):
         """

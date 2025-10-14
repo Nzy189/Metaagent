@@ -92,5 +92,7 @@ class PlanAgent(Agent):
         
         if self.agent_reward is None:
             self.agent_reward = 0.0
+    
+    def calculate_reward(self, env_data: Env):
+        self.agent_reward = self.agent_reward+env_data.state.reward
         self.reward_history.append(self.agent_reward)
-        

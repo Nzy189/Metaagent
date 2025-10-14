@@ -127,13 +127,14 @@ class ToolAgent(Agent):
         else:
             self.agent_reward = state.reward
         
-        env_data.state.tool_reward = self.agent_reward
-        
-        self.agent_reward_history.append(self.agent_reward)
         
         if hasattr(state, 'done') and state.done:
             self.success = True
+    
+    def calculate_reward(self, env_data: Env):
+        self.agent_reward = self.agent_reward+env_data.state.reward
         self.reward_history.append(self.agent_reward)
+    
 
     def reset(self):
         """Reset agent state"""

@@ -1,5 +1,5 @@
 [submodule "verl"]
 	path = verl
-	url = https://github.com/agentica-project/verl
+	url = https://github.com/pettingllms-ai/verl
 	branch = main
 

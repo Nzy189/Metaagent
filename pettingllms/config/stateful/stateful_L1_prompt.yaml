@@ -2,7 +2,8 @@
 defaults:
   - ../ppo_trainer@models.model_0.ppo_trainer_config: eval
   - _self_
-
+lora_rank: 16
+lora_alpha: 32
 
 specialization: "prompt" # prompt, lora, full
 resource:
@@ -38,7 +39,7 @@ agent_policy_configs:
     agent_0:
       name: "plan_agent"
       policy_name: "shared_model"
-      enable_thinking: true
+      enable_thinking: false
       train_temperature: 1.0
       val_temperature: 0
 
@@ -46,7 +47,7 @@ agent_policy_configs:
     agent_1:
       name: "tool_call_agent"
       policy_name: "shared_model"
-      enable_thinking: true
+      enable_thinking: false
       train_temperature: 1.0
       val_temperature: 0
 
@@ -105,4 +106,3 @@ models:
         trainer:
           n_gpus_per_node: ${resource.n_gpus_per_node}
           n_training_gpus_per_node: ${resource.n_gpus_per_node}
-          default_local_dir: ${trainer.default_local_dir}

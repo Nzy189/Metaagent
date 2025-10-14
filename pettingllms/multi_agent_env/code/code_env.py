@@ -34,14 +34,14 @@ class CodeEnvState:
     # Evaluation results: generated test vs generated code
     ground_truth_test_vs_generated_code_mismatch_cases: List[Dict]=None
     ground_truth_test_vs_generated_code_match_cases: List[Dict]=None
-    ground_truth_test_vs_generated_code_match_ratio: float=None
+    ground_truth_test_vs_generated_code_match_ratio: float=0
     generated_test_vs_generated_code_match_cases: List[Dict]=None
     generated_test_vs_generated_code_mismatch_cases: List[Dict]=None
     generated_test_vs_generated_code_mismatch_cases_history: List[Dict]=field(default_factory=list)
-    generated_test_vs_generated_code_match_ratio: float=None
+    generated_test_vs_generated_code_match_ratio: float=0
     generated_test_vs_golden_code_match_cases: List[Dict]=None
     generated_test_vs_golden_code_mismatch_cases: List[Dict]=None
-    generated_test_vs_golden_code_match_ratio: float=None
+    generated_test_vs_golden_code_match_ratio: float=0
 
 class CodeEnv(Env):
     """
@@ -81,14 +81,14 @@ class CodeEnv(Env):
         self.state.exe_code_ground_truth_test_output=None
         self.state.ground_truth_test_vs_generated_code_mismatch_cases=None
         self.state.ground_truth_test_vs_generated_code_match_cases=None
-        self.state.ground_truth_test_vs_generated_code_match_ratio=None
+        self.state.ground_truth_test_vs_generated_code_match_ratio=0
         self.state.generated_test_vs_generated_code_match_cases=None
         self.state.generated_test_vs_generated_code_mismatch_cases=None
         self.state.generated_test_vs_generated_code_mismatch_cases_history=[]
-        self.state.generated_test_vs_generated_code_match_ratio=None
+        self.state.generated_test_vs_generated_code_match_ratio=0
         self.state.generated_test_vs_golden_code_match_cases=None
         self.state.generated_test_vs_golden_code_mismatch_cases=None
-        self.state.generated_test_vs_golden_code_match_ratio=None
+        self.state.generated_test_vs_golden_code_match_ratio=0
 
 
 class CodeEnvBatch:

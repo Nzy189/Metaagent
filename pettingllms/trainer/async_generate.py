@@ -35,10 +35,73 @@ from datetime import datetime, timedelta
 import aiohttp
 
 
+# =================== 全局共享资源管理 ===================
+# 全局共享ClientSession，避免频繁创建销毁连接
+_shared_session = None
+_session_lock = asyncio.Lock()
+
+# 全局并发控制Semaphore，限制同时进行的LLM请求数量
+_llm_request_semaphore = None
+_semaphore_lock = asyncio.Lock()
+
+
+async def get_shared_session() -> aiohttp.ClientSession:
+
+    global _shared_session
+    
+    async with _session_lock:
+        if _shared_session is None or _shared_session.closed:
+            connector = aiohttp.TCPConnector(
+                limit=200,  
+                limit_per_host=100,  
+                ttl_dns_cache=300,  
+                force_close=False,  
+                enable_cleanup_closed=True  
+            )
+            
+            timeout = aiohttp.ClientTimeout(
+                total=300,  
+                connect=30,  
+                sock_read=300  
+            )
+            
+            _shared_session = aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout
+            )
+            print(f"[Session] Created shared aiohttp session with connection pool (limit=200, per_host=100)")
+    
+    return _shared_session
+
+
+async def get_llm_semaphore(max_concurrent: int = 50) -> asyncio.Semaphore:
+
+    global _llm_request_semaphore
+    
+    async with _semaphore_lock:
+        if _llm_request_semaphore is None:
+            _llm_request_semaphore = asyncio.Semaphore(max_concurrent)
+            print(f"[Semaphore] Created global LLM request semaphore with max_concurrent={max_concurrent}")
+    
+    return _llm_request_semaphore
+
+
+async def cleanup_shared_session():
+    
+    global _shared_session
+    async with _session_lock:
+        if _shared_session is not None and not _shared_session.closed:
+            await _shared_session.close()
+            _shared_session = None
+            print("[Session] Closed shared aiohttp session")
+
+
 
 async def poll_completions_openai(address: str, **completions_request) -> Completion:
-    # Use aiohttp directly instead of AsyncOpenAI to avoid potential blocking
-    # Handle address that might already contain protocol
+   
+    session = await get_shared_session()
+    semaphore = await get_llm_semaphore(max_concurrent=50)
+    
     if address.startswith(('http://', 'https://')):
         base_url = f"{address}/v1/completions"
     else:
@@ -48,28 +111,84 @@ async def poll_completions_openai(address: str, **completions_request) -> Comple
         "Content-Type": "application/json",
     }
 
-    # Remove meta_info if present
-    if "meta_info" in completions_request:
-        completions_request.pop("meta_info")
-    # Remove extra_headers from the payload
-    if "extra_headers" in completions_request:
-        completions_request.pop("extra_headers")
 
-    # Create a new session for each request to avoid blocking
-    async with aiohttp.ClientSession() as session:
-        async with session.post(base_url, json=completions_request, headers=headers, timeout=aiohttp.ClientTimeout(total=2700)) as response:
-            if response.status != 200:
-                error_text = await response.text()
-                raise Exception(f"API request failed with status {response.status}: {error_text}")
-            result = await response.json()
+    completions_request.pop("meta_info", None)
+    completions_request.pop("extra_headers", None)
+    async with semaphore:
+        try:
+            async with session.post(
+                base_url, 
+                json=completions_request, 
+                headers=headers
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise Exception(f"API request failed with status {response.status}: {error_text}")
+                result = await response.json()
+                return result
+                
+        except asyncio.TimeoutError as e:
+            error_msg = f"Request timeout to {address}"
+            print(f"[ERROR] {error_msg}")
+            raise Exception(error_msg) from e
+            
+        except aiohttp.ClientError as e:
+            error_msg = f"Client error when requesting {address}: {e}"
+            print(f"[ERROR] {error_msg}")
+            raise Exception(error_msg) from e
+            
+        except Exception as e:
+            error_msg = f"Unexpected error when requesting {address}: {e}"
+            print(f"[ERROR] {error_msg}")
+            raise
+
+
+async def submit_completions(
+    address: str, 
+    model: str, 
+    prompt: str, 
+    max_retries: int = 3,
+    initial_retry_delay: float = 1.0,
+    **kwargs
+):
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            result = await poll_completions_openai(
+                address=address, 
+                model=model, 
+                prompt=prompt, 
+                **kwargs
+            )
+            
+            # 成功则返回
+            if attempt > 0:
+                print(f"[Retry] Request succeeded on attempt {attempt + 1}/{max_retries}")
             return result
+            
+        except Exception as e:
+            last_exception = e
+            
+  
+            if attempt == max_retries - 1:
+                print(f"[ERROR] All {max_retries} retry attempts failed for {address}")
+                print(f"[ERROR] Final error: {e}")
+                raise e
+            
 
+            retry_delay = initial_retry_delay * (2 ** attempt)
+            print(f"[Retry] Attempt {attempt + 1}/{max_retries} failed: {e}")
+            print(f"[Retry] Retrying in {retry_delay:.1f}s... (address={address})")
+            
+            await asyncio.sleep(retry_delay)
+    
+    if last_exception:
+        raise last_exception
+    else:
+        raise Exception(f"Request failed after {max_retries} attempts")
 
-async def submit_completions( address, model, prompt, **kwargs):
-    # Potential blocking: network I/O can block
-    return await poll_completions_openai(address=address, model=model, prompt=prompt, **kwargs)
-
-async def postprocess_batch(batch: DataProto, response_ids: list[list[int]], n: int,pad_token_id,eos_token_id,max_response_length) -> DataProto:
+async def postprocess_batch(batch: DataProto, response_ids: list[list[int]], n: int,pad_token_id,eos_token_id,max_response_length,max_prompt_length) -> DataProto:
     # NOTE: For Completion API, batch_completions is a list of lists of strings (not dictionaries)
     # prompts: left pad
     # responses: right pad
@@ -83,21 +202,72 @@ async def postprocess_batch(batch: DataProto, response_ids: list[list[int]], n: 
     attention_mask = batch.batch["attention_mask"]
     position_ids = batch.batch["position_ids"]
     non_tensor_batch = deepcopy(batch.non_tensor_batch)
+    
+    # Truncate prompts if they exceed max_prompt_length
+    if idx.size(1) > max_prompt_length:
+        print(f"[WARNING] Truncating prompt from {idx.size(1)} to {max_prompt_length}")
+        # For left-padded prompts, keep the rightmost tokens (most recent context)
+        idx = idx[:, -max_prompt_length:]
+        attention_mask = attention_mask[:, -max_prompt_length:]
+        position_ids = position_ids[:, -max_prompt_length:]
 
     # Flatten to list.
     # Flatten the list of lists of token IDs
     response = []
     for r_ids in response_ids:
-        if r_ids is not None:  # Ensure we don't process None values
+        if r_ids is not None and len(r_ids) > 0:  # Ensure we don't process None or empty values
             for r in r_ids:
+                # Handle empty response
+                if r is None or len(r) == 0:
+                    print(f"[WARNING] Empty response detected, using EOS token as fallback")
+                    response.append([eos_token_id])
+                    continue
+                    
+                # Truncate each response if it exceeds max_response_length
+                if len(r) > max_response_length:
+                    print(f"[WARNING] Truncating response from {len(r)} to {max_response_length}")
+                    r = r[:max_response_length]
                 response.append(r)
-    assert len(response) == len(non_tensor_batch["formatted_prompts"]) * n
+        else:
+            # Fallback for None or empty r_ids
+            print(f"[WARNING] None or empty r_ids detected, using EOS token as fallback")
+            for _ in range(n):  # Add n empty responses for this batch
+                response.append([eos_token_id])
+    
+    # Ensure we have the expected number of responses
+    expected_count = len(non_tensor_batch["formatted_prompts"]) * n
+    if len(response) != expected_count:
+        print(f"[WARNING] Response count mismatch: expected {expected_count}, got {len(response)}")
+        # Pad with empty responses if needed
+        while len(response) < expected_count:
+            print(f"[WARNING] Adding fallback empty response")
+            response.append([eos_token_id])
+        # Truncate if too many
+        if len(response) > expected_count:
+            print(f"[WARNING] Too many responses, truncating to {expected_count}")
+            response = response[:expected_count]
+    
     response_tensor = pad_2d_list_to_length(response, pad_token_id, max_length=max_response_length).to(idx.device)
 
     batch_size = len(idx)
     
     # Debug info before concatenation
     try:
+        # Ensure the concatenated sequence doesn't exceed max total length
+        max_total_length = max_prompt_length + max_response_length
+        current_prompt_length = idx.size(1)
+        current_response_length = response_tensor.size(1)
+        
+        # If total would exceed limit, adjust response length
+        if current_prompt_length + current_response_length > max_total_length:
+            new_response_length = max_total_length - current_prompt_length
+            if new_response_length > 0:
+                print(f"[WARNING] Total sequence too long ({current_prompt_length + current_response_length}), truncating response to {new_response_length}")
+                response_tensor = response_tensor[:, :new_response_length]
+            else:
+                print(f"[ERROR] Prompt is already too long ({current_prompt_length}), setting response to empty")
+                response_tensor = torch.full((batch_size, 1), pad_token_id, dtype=response_tensor.dtype, device=response_tensor.device)
+        
         seq = torch.cat([idx, response_tensor], dim=-1)
 
         response_length = response_tensor.size(1)
@@ -197,6 +367,7 @@ async def llm_async_generate(
     }
     batch_size = len(prompt_dpr.non_tensor_batch["formatted_prompts"])
     batch_response_ids: list[list[int]] = [[] for _ in range(batch_size)]
+    text = ""  # Initialize text variable for return value
 
     # Determine which model to use: LoRA adapter or base model
     # In vllm, LoRA is selected by specifying the lora_name as the model parameter
@@ -222,23 +393,77 @@ async def llm_async_generate(
                 address=address,
                 model=actual_model,  # Pass LoRA name or base model name
                 prompt=formatted_prompt,
+                max_retries=3, 
+                initial_retry_delay=1.0,  
                 **kwargs,
             )
         )
 
-    completions_list = await asyncio.gather(*tasks)
+
+    try:
+        print(f"[LLM][batch_request] Starting {len(tasks)} requests for rollout_idx={rollout_idx}, turn_idx={turn_idx}")
+    except Exception:
+        pass
+    
+    # Use return_exceptions=True to handle failures gracefully
+    start_time = time.time()
+    completions_list = await asyncio.gather(*tasks, return_exceptions=True)
+    elapsed_time = time.time() - start_time
+    
+    # 统计成功和失败的请求
+    success_count = sum(1 for c in completions_list if not isinstance(c, Exception))
+    error_count = len(completions_list) - success_count
+    
+    try:
+        print(f"[LLM][batch_request] Completed in {elapsed_time:.2f}s: {success_count} success, {error_count} errors")
+    except Exception:
+        pass
+    
     for batch_index, completions in enumerate(completions_list):
         comps = []
-        for choice in completions.get("choices", []):
-            token_ids = choice.get("logprobs", {}).get("tokens", [])
-            text = choice.get("text", "")
-            token_ids = [int(t.split(":")[1]) for t in token_ids]
-            comps.append(token_ids)
+        
+        # Handle exceptions from API calls
+        if isinstance(completions, Exception):
+            print(f"[ERROR] API call failed for batch {batch_index}: {completions}")
+            # Return empty token list as fallback
+            comps.append([tokenizer.eos_token_id])  # At least add EOS token
+            batch_response_ids[batch_index] = comps
+            continue
+            
+        # Handle None or invalid responses
+        if completions is None:
+            print(f"[WARNING] Got None response for batch {batch_index}")
+            comps.append([tokenizer.eos_token_id])
+            batch_response_ids[batch_index] = comps
+            continue
+            
+        # Normal processing
+        try:
+            choices = completions.get("choices", [])
+            if not choices:
+                print(f"[WARNING] No choices in response for batch {batch_index}")
+                comps.append([tokenizer.eos_token_id])
+            else:
+                for choice in choices:
+                    token_ids = choice.get("logprobs", {}).get("tokens", [])
+                    text = choice.get("text", "")
+                    if token_ids:
+                        token_ids = [int(t.split(":")[1]) for t in token_ids]
+                        comps.append(token_ids)
+                    else:
+                        # Fallback: if no token_ids, add EOS
+                        print(f"[WARNING] No token_ids in choice for batch {batch_index}")
+                        comps.append([tokenizer.eos_token_id])
+        except Exception as e:
+            print(f"[ERROR] Failed to process response for batch {batch_index}: {e}")
+            comps.append([tokenizer.eos_token_id])
+            
         batch_response_ids[batch_index] = comps
     pad_token_id = tokenizer.pad_token_id
     eos_token_id = tokenizer.eos_token_id
     max_response_length=ppo_trainer_config.data.max_response_length
-    output_dpr = await postprocess_batch(prompt_dpr, batch_response_ids, kwargs["n"], pad_token_id, eos_token_id,max_response_length)
+    max_prompt_length=ppo_trainer_config.data.max_prompt_length
+    output_dpr = await postprocess_batch(prompt_dpr, batch_response_ids, kwargs["n"], pad_token_id, eos_token_id,max_response_length,max_prompt_length)
     output_dpr.non_tensor_batch["rollout_idx"] = np.array([rollout_idx] * output_dpr.batch.shape[0], dtype=object)
     output_dpr.non_tensor_batch["env_idx"] = np.array([env_idx] * output_dpr.batch.shape[0], dtype=object)
     output_dpr.non_tensor_batch["turn_idx"] = np.array([turn_idx] * output_dpr.batch.shape[0], dtype=object)
@@ -338,8 +563,16 @@ def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, mult
 
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask", torch.ones_like(input_ids))
-        if len(input_ids) >= max_prompt_length:
-            return None
+        
+        # Truncate if prompt exceeds max_prompt_length
+        if input_ids.size(1) > max_prompt_length:
+            print(f"[WARNING] convert_prompt_to_dpr: Truncating prompt from {input_ids.size(1)} to {max_prompt_length}")
+            # Keep the rightmost tokens (most recent context) for better quality
+            input_ids = input_ids[:, -max_prompt_length:]
+            attention_mask = attention_mask[:, -max_prompt_length:]
+            # Regenerate the prompt string from truncated tokens to ensure consistency
+            prompt_with_chat_template = tokenizer.decode(input_ids[0], skip_special_tokens=False)
+            print(f"[WARNING] Regenerated prompt after truncation, new length: {len(prompt_with_chat_template)} chars")
 
         # Multimodal (optional): depends on externally provided processor
         multi_modal_inputs = None

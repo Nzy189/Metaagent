@@ -10,7 +10,7 @@ try:
     from verl.protocol import DataProto
 except Exception:  # fallback when verl is a src tree: verl/verl/protocol.py
     from verl import DataProto
-
+import torch
 import numpy as np
 from pettingllms.trainer.multiagentssys_register import AGENT_CLASS_MAPPING, ENV_CLASS_MAPPING, ENV_BATCH_CLASS_MAPPING, ENV_WORKER_CLASS_MAPPING
 from functools import partial
@@ -65,6 +65,7 @@ class MultiAgentsExecutionEngine:
         self.env_args = env_args or {}
         self.max_workers = max_workers
         self.lora_differ_mode = lora_differ_mode
+        self.agent_lora_mapping = agent_lora_mapping or {}
         # Read parameters from config with fallback to defaults
         self.timer.checkpoint("Loading config parameters")
         self._load_config_parameters()
@@ -204,6 +205,10 @@ class MultiAgentsExecutionEngine:
                 f"Starting turn {turn_idx + 1}",
                 {"turn_idx": turn_idx + 1}
             )
+            
+            # Store output_dpr for each agent in this turn
+            agent_outputs = []
+            
             for agent_idx, agent_name in enumerate(self.turn_order):
                 current_agent = agent_group[agent_idx]
                 current_agent.update_from_env(turn_idx,env)
@@ -298,11 +303,37 @@ class MultiAgentsExecutionEngine:
                         f"❌ Environment step timed out after {self.step_timeout}s",
                         {"error": "timeout", "timeout_seconds": self.step_timeout}
                     )
-                    if len(current_agent.reward_history)>0:
-                        current_agent.agent_reward = 0.0-current_agent.reward_history[-1]
-                    else:
-                        current_agent.agent_reward = 0.0
-                    current_agent.reward_history.append(0.0)
+                
+                # Store agent output info for later reward calculation
+                agent_outputs.append({
+                    'agent_idx': agent_idx,
+                    'agent_name': agent_name,
+                    'current_agent': current_agent,
+                    'output_dpr': output_dpr,
+                    'response_str': response_str,
+                    'prompt': prompt,
+                    'policy_name': policy_name
+                })
+            
+            # After all agents have completed their step in this turn, calculate rewards
+            for agent_output in agent_outputs:
+                agent_idx = agent_output['agent_idx']
+                agent_name = agent_output['agent_name']
+                current_agent = agent_output['current_agent']
+                output_dpr = agent_output['output_dpr']
+                response_str = agent_output['response_str']
+                prompt = agent_output['prompt']
+                policy_name = agent_output['policy_name']
+                
+                # Calculate reward using agent's calculate_reward method
+                if hasattr(current_agent, 'calculate_reward'):
+                    current_agent.calculate_reward(env)
+                else:
+                    # Fallback: append current agent_reward to history
+                    if hasattr(current_agent, 'agent_reward'):
+                        current_agent.reward_history.append(current_agent.agent_reward)
+                
+                # Now assign reward to output_dpr and add to trajectory
                 if output_dpr is not None:
                     output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
                     output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
@@ -311,7 +342,7 @@ class MultiAgentsExecutionEngine:
                         batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
                         lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
                         output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
-               
+                
                     if trajectory_per_task_dict[policy_name].batch is None:
                         # If empty, assign directly
                         trajectory_per_task_dict[policy_name] = output_dpr
@@ -322,54 +353,8 @@ class MultiAgentsExecutionEngine:
                                 output_dpr
                             ])
                         except Exception as e:
-                            try:
-                                def _pad_to_match(a, b, pad_token_id=0):
-                                    keys = [
-                                        "input_ids",
-                                        "attention_mask",
-                                        "position_ids",
-                                        "responses",
-                                        "prompts",
-                                    ]
-                                    a_batch = a.batch
-                                    b_batch = b.batch
-                                    for k in keys:
-                                        if (k in a_batch.keys()) and (k in b_batch.keys()):
-                                            la = a_batch[k].shape[-1]
-                                            lb = b_batch[k].shape[-1]
-                                            if la == lb:
-                                                continue
-                                            maxl = max(la, lb)
-                                            if la < maxl:
-                                                if k == "prompts":
-                                                    a_batch[k] = torch.nn.functional.pad(a_batch[k], (maxl - la, 0), value=pad_token_id)
-                                                elif k == "position_ids":
-                                                    last_pos = a_batch[k][..., -1:]
-                                                    a_batch[k] = torch.cat([a_batch[k], last_pos.expand(*a_batch[k].shape[:-1], maxl - la)], dim=-1)
-                                                elif k == "attention_mask":
-                                                    a_batch[k] = torch.nn.functional.pad(a_batch[k], (0, maxl - la), value=0)
-                                                else:
-                                                    a_batch[k] = torch.nn.functional.pad(a_batch[k], (0, maxl - la), value=pad_token_id)
-                                            if lb < maxl:
-                                                if k == "prompts":
-                                                    b_batch[k] = torch.nn.functional.pad(b_batch[k], (maxl - lb, 0), value=pad_token_id)
-                                                elif k == "position_ids":
-                                                    last_pos = b_batch[k][..., -1:]
-                                                    b_batch[k] = torch.cat([b_batch[k], last_pos.expand(*b_batch[k].shape[:-1], maxl - lb)], dim=-1)
-                                                elif k == "attention_mask":
-                                                    b_batch[k] = torch.nn.functional.pad(b_batch[k], (0, maxl - lb), value=0)
-                                                else:
-                                                    b_batch[k] = torch.nn.functional.pad(b_batch[k], (0, maxl - lb), value=pad_token_id)
-                                    return a, b
-
-                                a_fixed, b_fixed = _pad_to_match(trajectory_per_task_dict[policy_name], output_dpr)
-                                trajectory_per_task_dict[policy_name] = DataProto.concat([
-                                    a_fixed,
-                                    b_fixed
-                                ])
-                            except Exception:
-                                raise e
-                        #print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
+                           
+                            print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
                 
                 # Use compact state representation to reduce log redundancy
                 env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else env.state
@@ -548,6 +533,7 @@ class MultiAgentsExecutionEngine:
                         agent_responses.append(flat_results[flat_idx])
                     all_agent_responses.append(agent_responses)
                 
+                # First, execute all agent steps
                 for agent_idx, agent_name in enumerate(self.turn_order):
                     response_results = all_agent_responses[agent_idx]
                     
@@ -575,9 +561,35 @@ class MultiAgentsExecutionEngine:
                         except asyncio.TimeoutError:
                             current_agent.agent_reward = 0.0
                             current_agent.reward_history.append(0.0)
+                
+                # After all agents complete their steps, calculate rewards and update trajectory
+                for agent_idx, agent_name in enumerate(self.turn_order):
+                    response_results = all_agent_responses[agent_idx]
+                    
+                    for idx in range(len(rollout_idx_list)):
+                        result = response_results[idx]
+                        
+                        if isinstance(result, Exception):
+                            continue
+                        
+                        rollout_idx = result['rollout_idx']
+                        output_dpr = result['output_dpr']
+                        response_str = result['response_str']
+                        prompt = result['prompt']
+                        policy_name = result['policy_name']
+                        
+                        current_agent = agent_groups[idx][agent_idx]
+                        env = envs_list[idx]
+                        
+                        # Calculate reward using agent's calculate_reward method
+                        if hasattr(current_agent, 'calculate_reward'):
+                            current_agent.calculate_reward(env)
+                        else:
+                            # Fallback: append current agent_reward to history if not already done
+                            if hasattr(current_agent, 'agent_reward') and (not hasattr(current_agent, 'reward_history') or len(current_agent.reward_history) == 0 or current_agent.reward_history[-1] != current_agent.agent_reward):
+                                current_agent.reward_history.append(current_agent.agent_reward)
               
                         if agent_name == self.turn_order[-1]:
-                            env = envs_list[idx]
                             env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else env.state.to_dict()
                             self.multi_logger.log_env_agent_info(
                                 self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
@@ -635,6 +647,10 @@ class MultiAgentsExecutionEngine:
                     break
                     
             else:
+                # Store all agent responses for this turn
+                all_agent_responses = []
+                
+                # First, generate responses and execute steps for all agents
                 for agent_idx, agent_name in enumerate(self.turn_order):
                     response_results = []
                     for idx in range(len(rollout_idx_list)):
@@ -643,6 +659,7 @@ class MultiAgentsExecutionEngine:
                         result = await async_generate_response(idx, agent_idx, agent_name, sample_num)
                         response_results.append(result)
                     
+                    # Execute agent steps
                     for idx in range(len(rollout_idx_list)):
                         result = response_results[idx]
                         
@@ -667,9 +684,37 @@ class MultiAgentsExecutionEngine:
                         except asyncio.TimeoutError:
                             current_agent.agent_reward = 0.0
                             current_agent.reward_history.append(0.0)
+                    
+                    all_agent_responses.append(response_results)
+                
+                # After all agents complete their steps, calculate rewards and update trajectory
+                for agent_idx, agent_name in enumerate(self.turn_order):
+                    response_results = all_agent_responses[agent_idx]
+                    
+                    for idx in range(len(rollout_idx_list)):
+                        result = response_results[idx]
+                        
+                        if isinstance(result, Exception):
+                            continue
+                        
+                        rollout_idx = result['rollout_idx']
+                        output_dpr = result['output_dpr']
+                        response_str = result['response_str']
+                        prompt = result['prompt']
+                        policy_name = result['policy_name']
+                        
+                        current_agent = agent_groups[idx][agent_idx]
+                        env = envs_list[idx]
+                        
+                        # Calculate reward using agent's calculate_reward method
+                        if hasattr(current_agent, 'calculate_reward'):
+                            current_agent.calculate_reward(env)
+                        else:
+                            # Fallback: append current agent_reward to history if not already done
+                            if hasattr(current_agent, 'agent_reward') and (not hasattr(current_agent, 'reward_history') or len(current_agent.reward_history) == 0 or current_agent.reward_history[-1] != current_agent.agent_reward):
+                                current_agent.reward_history.append(current_agent.agent_reward)
               
                         if agent_name == self.turn_order[-1]:
-                            env = envs_list[idx]
                             env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else env.state.to_dict()
                             self.multi_logger.log_env_agent_info(
                                 self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,

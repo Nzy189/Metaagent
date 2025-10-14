@@ -66,6 +66,8 @@ training:
   experiment_name: math_eval_single_policy
   logger: [ 'console', 'wandb' ]
   model_checkpoints_dir: checkpoints
+  checkpoint_dir: checkpoint  
+  save_freq: 40  
   ray_wait_register_center_timeout: 300
   train_batch_size: 32
   train_sample_num: 8
@@ -89,7 +91,7 @@ models:
       filter_ratio: 0.5
       data: 
         max_prompt_length: ${training.max_prompt_length}
-        max_response_length: ${data.max_response_length}
+        max_response_length: ${training.max_response_length}
       actor_rollout_ref:
         model:
           path: ${base_models.policy_0.path}
@@ -101,4 +103,3 @@ models:
         trainer:
           n_gpus_per_node: ${resource.n_gpus_per_node}
           n_training_gpus_per_node: ${resource.n_gpus_per_node}
-          default_local_dir: ${trainer.default_local_dir}

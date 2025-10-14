@@ -146,7 +146,8 @@ class UnitTestGenerationAgent(Agent):
         # 1) Parse and update generated test cases
         gen_inputs = self.current_action["input"]
         gen_outputs = self.current_action["output"]
-        passed_ratio = 0.0
+        #passed_ratio = 0.0
+        #self.agent_reward = passed_ratio
         env_data.state.generated_test_input = gen_inputs
         env_data.state.generated_test_output = gen_outputs
         golden_code = getattr(env_data.state, "golden_code", None)
@@ -187,12 +188,16 @@ class UnitTestGenerationAgent(Agent):
             env_data.state.generated_test_vs_golden_code_match_cases = passed_cases
             env_data.state.generated_test_vs_golden_code_mismatch_cases = failed_cases
             env_data.state.generated_test_vs_golden_code_match_ratio = passed_ratio
-            self.agent_reward = passed_ratio
-            self.reward_history.append(passed_ratio)
+            #self.agent_reward = passed_ratio
+            #self.reward_history.append(passed_ratio)
             if passed_ratio >= 1.0 and len(gen_inputs) > 0:
                 self.success = True
-                    
-        
+            else:
+                self.success = False
+    
+    def calculate_reward(self, env_data: Env):
+        self.agent_reward = env_data.state.generated_test_vs_golden_code_match_ratio
+        self.reward_history.append(self.agent_reward)
                 
 
         

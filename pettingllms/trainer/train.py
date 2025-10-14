@@ -11,24 +11,39 @@ from omegaconf import OmegaConf, DictConfig
 from verl.single_controller.ray import RayWorkerGroup
 from verl.workers.fsdp_workers import AsyncActorRolloutRefWorker
 from pettingllms.trainer.multi_agents_ppo_trainer import MultiAgentsPPOTrainer
-from pettingllms.utils.clean_up import install_cleanup_hooks
+from pettingllms.utils.clean_up import install_cleanup_hooks, register_temp_dirs
 install_cleanup_hooks()
 
 
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
 def main(config: DictConfig):
+    # Set default values for lora_rank and lora_alpha if not defined
+    # This prevents InterpolationKeyError when these variables are referenced in config
+    if 'lora_rank' not in config or config.lora_rank is None:
+        OmegaConf.set_struct(config, False)
+        config.lora_rank = 0
+        OmegaConf.set_struct(config, True)
+    
+    if 'lora_alpha' not in config or config.lora_alpha is None:
+        OmegaConf.set_struct(config, False)
+        config.lora_alpha = 0
+        OmegaConf.set_struct(config, True)
+    
     OmegaConf.to_yaml(config)
     run_ppo(config)
 
 
 def run_ppo(config):
     if not ray.is_initialized():
-        # Prepare Ray temp and spill directories
-        # Use /tmp for shorter socket paths (Unix socket path limit is 107 bytes)
-        ray_tmp_dir = "/tmp/verl_ray"
-        ray_spill_dir = "/tmp/verl_spill"
+        # Create experiment-specific temporary directories using process ID
+        pid = os.getpid()
+        ray_tmp_dir = f"/tmp/verl_ray_{pid}"
+        ray_spill_dir = f"/tmp/verl_spill_{pid}"
         os.makedirs(ray_tmp_dir, exist_ok=True)
         os.makedirs(ray_spill_dir, exist_ok=True)
+        
+        # Register directories for cleanup
+        register_temp_dirs(ray_tmp_dir, ray_spill_dir)
         
         spilling_conf = {"type": "filesystem", "params": {"directory_path": [ray_spill_dir]}}
         system_config = {"object_spilling_config": json.dumps(spilling_conf)}
@@ -52,7 +67,7 @@ def run_ppo(config):
 
 
     def make_trainer_remote():
-        num_cpus = int(ray.cluster_resources()["CPU"])
+        num_cpus = max(8, int(ray.cluster_resources()["CPU"] * 0.1)) 
         return ray.remote(num_cpus=num_cpus)(train_multi_agents)
 
     multiagent_training_engine = make_trainer_remote()
@@ -64,6 +79,20 @@ def train_multi_agents(config):
     from verl.utils.fs import copy_local_path_from_hdfs
     from verl.utils import hf_tokenizer, hf_processor
     from pettingllms.verl.ray_trainer import ResourcePoolManager, Role
+    
+    # Set default values for lora_rank and lora_alpha if not defined
+    # This prevents InterpolationKeyError when resolving the config
+    if 'lora_rank' not in config or config.lora_rank is None:
+        OmegaConf.set_struct(config, False)  # Allow adding new keys
+        config.lora_rank = 0
+        print("lora_rank not configured, setting default value to 0 (LoRA disabled)")
+        OmegaConf.set_struct(config, True)  # Re-enable struct mode
+    
+    if 'lora_alpha' not in config or config.lora_alpha is None:
+        OmegaConf.set_struct(config, False)  # Allow adding new keys
+        config.lora_alpha = 0
+        print("lora_alpha not configured, setting default value to 0 (LoRA disabled)")
+        OmegaConf.set_struct(config, True)  # Re-enable struct mode
     
     n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1)
     nnodes = getattr(config.resource, 'nnodes', 1)

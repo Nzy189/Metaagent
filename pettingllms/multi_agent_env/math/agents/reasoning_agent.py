@@ -112,21 +112,23 @@ class ReasoningAgent(Agent):
             
             if is_correct:
                 self.success = True
-                self.agent_reward = 1.0
                 env_data.state.reasoning_is_correct = True
             else:
                 self.success = False
-                self.agent_reward = 0.0
                 env_data.state.reasoning_is_correct = False
         
         if env_data.state.code_extracted_answer is not None and env_data.state.reasoning_extracted_answer is not None:
-            is_aligned = verify(parse(env_data.state.code_extracted_answer), env_data.state.reasoning_extracted_answer)
+            is_aligned = verify(env_data.state.code_extracted_answer, env_data.state.reasoning_extracted_answer)
             env_data.state.code_reasoning_aligned = bool(is_aligned)
             if is_aligned:
                 env_data.state.code_reasoning_aligned = True
                 env_data.done = True
 
-        self.reward_history.append(float(self.agent_reward))
+        
+    
+    def calculate_reward(self, env_data: Env):
+        self.agent_reward = int(env_data.state.reasoning_is_correct)
+        self.reward_history.append(self.agent_reward)
 
     def reset(self):
         """

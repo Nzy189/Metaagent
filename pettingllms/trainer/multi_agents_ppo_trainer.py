@@ -47,6 +47,17 @@ class MultiAgentsPPOTrainer:
         processor_dict=None,
     ):
         self.config = config
+        
+        # Set default values for lora_rank and lora_alpha if not configured
+        # This prevents errors when these variables are referenced but not defined
+        if not hasattr(config.training, 'lora_rank') or config.training.lora_rank is None:
+            config.training.lora_rank = 0
+            colorful_print("lora_rank not configured, setting default value to 0 (LoRA disabled)", "yellow")
+        
+        if not hasattr(config.training, 'lora_alpha') or config.training.lora_alpha is None:
+            config.training.lora_alpha = 0
+            colorful_print("lora_alpha not configured, setting default value to 0 (LoRA disabled)", "yellow")
+        
         self.lora_num = 1
         self.processor_dict = processor_dict or {}
         self.lora_differ_mode = False
@@ -164,7 +175,12 @@ class MultiAgentsPPOTrainer:
         for idx, (model_name, trainer) in enumerate(self.ppo_trainer_dict.items(), 1):
             colorful_print(f"[{idx}/{len(self.ppo_trainer_dict)}] Initializing workers for: {model_name}", "blue")
             try:
-                trainer.init_workers(lora_num=self.lora_num)  
+                # Pass agent_lora_mapping if in lora_differ_mode
+                if self.lora_differ_mode:
+                    trainer.init_workers(lora_num=self.lora_num, agent_lora_mapping=self.agent_lora_mapping)
+                    colorful_print(f"  Initialized with {self.lora_num} LoRA adapters for multi-agent training", "cyan")
+                else:
+                    trainer.init_workers(lora_num=self.lora_num)
                 colorful_print(f"✓ [{idx}/{len(self.ppo_trainer_dict)}] Successfully initialized: {model_name}", "green")
             except Exception as e:
                 colorful_print(f"✗ Failed to initialize {model_name}: {str(e)}", "red")
@@ -196,7 +212,7 @@ class MultiAgentsPPOTrainer:
             padding_value=ppo_trainer.tokenizer.pad_token_id,
         )
         # response_mask may be absent; safely compute it if missing, otherwise keep padding
-        if "response_mask" in batch.batch:
+        if "response_mask" in batch.batch.keys():
             response_mask_batch = torch.nn.utils.rnn.pad_sequence(
                 [i for i in batch.batch["response_mask"]],
                 batch_first=True,
@@ -331,7 +347,15 @@ class MultiAgentsPPOTrainer:
                     for agent_name in unique_agents:
                         agent_mask = np.array([name == agent_name for name in agent_names])
                         agent_indices = np.where(agent_mask)[0].tolist()
-                        agent_batch_dict[agent_name] = batch.select_idxs(agent_indices)
+                        # 为每个代理构造子批次，并在需要时对齐到 dp world size，避免分布式更新时阻塞
+                        sub_batch = batch.select_idxs(agent_indices)
+                        try:
+                            dp_world_size = ppo_trainer.actor_rollout_wg.world_size
+                        except Exception:
+                            dp_world_size = 1
+                        if dp_world_size > 1:
+                            sub_batch, _ = pad_dataproto_to_divisor(sub_batch, dp_world_size)
+                        agent_batch_dict[agent_name] = sub_batch
                         colorful_print(f"Agent {agent_name}: {len(agent_indices)} samples", "cyan")
                     
                     all_actor_metrics = []
@@ -375,13 +399,13 @@ class MultiAgentsPPOTrainer:
         from datetime import datetime
         import os
         
-        # Generate log path: log/experiment_name/date/time
+        # Generate log path: logs/experiment_name/date/time
         current_time = datetime.now()
-        date_str = current_time.strftime("%Y%m%d")
-        time_str = current_time.strftime("%H%M%S")
+        date_str = current_time.strftime("%m-%d")
+        time_str = current_time.strftime("%H-%M-%S")
         
         experiment_name = self.config.training.experiment_name
-        log_dir = os.path.join("log", experiment_name, date_str, time_str)
+        log_dir = os.path.join("logs", experiment_name, date_str, time_str)
         os.makedirs(log_dir, exist_ok=True)
         
         logger = Tracking(
@@ -389,7 +413,6 @@ class MultiAgentsPPOTrainer:
             experiment_name=experiment_name,
             default_backend=self.config.training.logger,
             config=OmegaConf.to_container(self.config, resolve=True),
-            log_dir=log_dir,
         )
         
         colorful_print(f"Logger initialized with log_dir: {log_dir}", "cyan")
@@ -481,7 +504,7 @@ class MultiAgentsPPOTrainer:
                     # Track metrics from all trainers
                     all_trainer_metrics = {}
                     
-                    def update_single_trainer(model_name, batch, trainer):
+                    def update_single_trainer(model_name, batch, trainer, agent_name=None):
                         
                         try:
                            
@@ -520,56 +543,91 @@ class MultiAgentsPPOTrainer:
               
                     tasks_to_submit = []
                     
-                    if self.lora_differ_mode:
-                        # In lora_differ mode, we update each agent's LoRA separately
-                        # All agents use the same trainer (single model) but with different agent filters
-                        colorful_print("LoRA Differ Mode: Updating each agent's LoRA separately", "cyan")
-                        single_model_name = list(self.ppo_trainer_dict.keys())[0]
-                        trainer = self.ppo_trainer_dict[single_model_name]
-                        
-                        if single_model_name in gen_batch_output_per_policy:
-                            batch = batch_per_trainer[single_model_name]
-                            # Create one task per agent
-                            for agent_name in self.agent_policy_mapping.keys():
-                                tasks_to_submit.append((single_model_name, batch, trainer, agent_name))
-                                colorful_print(f"  Scheduled update for agent: {agent_name}", "blue")
-                    else:
-                        # Standard mode: one task per model
-                        for model_name, trainer in self.ppo_trainer_dict.items():
-                            if model_name in gen_batch_output_per_policy:
-                                tasks_to_submit.append((model_name, batch_per_trainer[model_name], trainer, None))
+                    # Both LoRA differ mode and standard mode: one task per model
+                    # The _update_parameters function will handle agent splitting internally for LoRA differ mode
+                    for model_name, trainer in self.ppo_trainer_dict.items():
+                        if model_name in gen_batch_output_per_policy:
+                            tasks_to_submit.append((model_name, batch_per_trainer[model_name], trainer, None))
+                            if self.lora_differ_mode:
+                                colorful_print(f"  Scheduled update for model {model_name} (LoRA differ mode - will update all agents)", "blue")
+                            else:
+                                colorful_print(f"  Scheduled update for model: {model_name}", "blue")
                     
                     if not tasks_to_submit:
                         colorful_print("No trainers to update", "yellow")
                     else:
-                        colorful_print(f"Starting parallel parameter updates for {len(tasks_to_submit)} trainers...", "cyan")
-                        
-                       
-                        with ThreadPoolExecutor(max_workers=len(tasks_to_submit)) as executor:
-                         
-                            futures = {}
-                            for task in tasks_to_submit:
-                                
-                                    
-                                future = executor.submit(update_single_trainer, model_name, batch, trainer)
-                                task_id = f"{model_name}" + (f"_agent_{agent_name}" if agent_name else "")
-                                futures[future] = task_id
-                                colorful_print(f"  Submitted update task for: {task_id}", "blue")
-                            
-                      
-                            update_pbar = tqdm(total=len(futures), desc="Updating Parameters", position=2, leave=False)
-                
+                        # For single model or to avoid threading issues with Ray, use sequential execution
+                        if len(tasks_to_submit) == 1:
+                            colorful_print(f"Starting sequential parameter update for {len(tasks_to_submit)} trainer...", "cyan")
                             results = []
-                            for future in as_completed(futures):
-                                result = future.result()
+                            for task in tasks_to_submit:
+                                model_name, batch, trainer, agent_name = task
+                                task_id = f"{model_name}" + (f"_agent_{agent_name}" if agent_name else "")
+                                colorful_print(f"  Updating: {task_id}", "blue")
+                                result = update_single_trainer(model_name, batch, trainer, agent_name)
                                 results.append(result)
-                                update_pbar.update(1)
-                                task_desc = result.get('model_name', 'unknown')
-                                if result.get('agent_name'):
-                                    task_desc += f"_agent_{result['agent_name']}"
-                                update_pbar.set_description(f"Updated {task_desc}")
+                                
+                                # Check for errors immediately and stop training
+                                if result["status"] == "error":
+                                    colorful_print(f"\n{'='*80}", "red")
+                                    colorful_print(f"✗ TRAINING STOPPED - Error in trainer: {result['model_name']}", "red")
+                                    if result.get('agent_name'):
+                                        colorful_print(f"  Agent: {result['agent_name']}", "red")
+                                    colorful_print(f"  Error: {result['error']}", "red")
+                                    colorful_print(f"{'='*80}", "red")
+                                    colorful_print(f"Traceback:", "red")
+                                    colorful_print(f"{result['traceback']}", "red")
+                                    colorful_print(f"{'='*80}\n", "red")
+                                    raise RuntimeError(f"Training failed for trainer '{result['model_name']}': {result['error']}")
+                                
+                                colorful_print(f"  ✓ Completed: {task_id}", "green")
+                        else:
+                            colorful_print(f"Starting parallel parameter updates for {len(tasks_to_submit)} trainers...", "cyan")
                             
-                            update_pbar.close()
+                            with ThreadPoolExecutor(max_workers=len(tasks_to_submit)) as executor:
+                             
+                                futures = {}
+                                for task in tasks_to_submit:
+                                    model_name, batch, trainer, agent_name = task
+                                        
+                                    future = executor.submit(update_single_trainer, model_name, batch, trainer, agent_name)
+                                    task_id = f"{model_name}" + (f"_agent_{agent_name}" if agent_name else "")
+                                    futures[future] = task_id
+                                    colorful_print(f"  Submitted update task for: {task_id}", "blue")
+                                
+                          
+                                update_pbar = tqdm(total=len(futures), desc="Updating Parameters", position=2, leave=False)
+                    
+                                results = []
+                                for future in as_completed(futures):
+                                    result = future.result()
+                                    results.append(result)
+                                    
+                                    # Check for errors immediately and stop training
+                                    if result["status"] == "error":
+                                        update_pbar.close()
+                                        colorful_print(f"\n{'='*80}", "red")
+                                        colorful_print(f"✗ TRAINING STOPPED - Error in trainer: {result['model_name']}", "red")
+                                        if result.get('agent_name'):
+                                            colorful_print(f"  Agent: {result['agent_name']}", "red")
+                                        colorful_print(f"  Error: {result['error']}", "red")
+                                        colorful_print(f"{'='*80}", "red")
+                                        colorful_print(f"Traceback:", "red")
+                                        colorful_print(f"{result['traceback']}", "red")
+                                        colorful_print(f"{'='*80}\n", "red")
+                                        # Cancel remaining futures
+                                        for f in futures.keys():
+                                            if not f.done():
+                                                f.cancel()
+                                        raise RuntimeError(f"Training failed for trainer '{result['model_name']}': {result['error']}")
+                                    
+                                    update_pbar.update(1)
+                                    task_desc = result.get('model_name', 'unknown')
+                                    if result.get('agent_name'):
+                                        task_desc += f"_agent_{result['agent_name']}"
+                                    update_pbar.set_description(f"Updated {task_desc}")
+                                
+                                update_pbar.close()
                         
                       
                         success_count = 0
@@ -604,10 +662,6 @@ class MultiAgentsPPOTrainer:
                                     for key, value in trainer_metrics.items():
                                         prefixed_key = f"model_{model_name}/{key}"
                                         all_trainer_metrics[prefixed_key] = value
-                            else:
-                                colorful_print(f"✗ Failed to update {result['model_name']}: {result['error']}", "red")
-                                colorful_print(f"Traceback:\n{result['traceback']}", "red")
-                                raise RuntimeError(f"Failed to update trainer {result['model_name']}")
                         
                         colorful_print(f"All {success_count} trainers updated successfully!", "green")
                     

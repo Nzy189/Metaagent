@@ -108,8 +108,52 @@ def init_agent_execution_engine(config: DictConfig, address: str):
             policy_addr = address_map.get(model_name, address)
             server_address_dict[model_name] = [policy_addr]
             
+    
+    # Detect LoRA differ mode for multi-agent LoRA evaluation
+    lora_differ_mode = False
+    agent_lora_mapping = {}
+    lora_num = 1
+    
+    if hasattr(config, 'specialization') and config.specialization == "lora" and len(config.models) == 1:
+        # Check if LoRA is enabled in model config
+        single_model_config = config.models[list(config.models.keys())[0]]
+        lora_rank = getattr(single_model_config.ppo_trainer_config.actor_rollout_ref.model, 'lora_rank', 0)
+        
+        if lora_rank > 0:
+            lora_differ_mode = True
+            lora_num = len(agent_policy_mapping.keys())
+            
+            print("=" * 60)
+            print("LoRA Differ Mode ENABLED for Evaluation")
+            print("Each agent will use a different LoRA adapter")
+            
+            # Create LoRA adapter mapping for each agent
+            for agent_idx, agent_name in enumerate(agent_policy_mapping.keys()):
+                lora_id = f"agent_{agent_name}_lora_{agent_idx}"
+                agent_lora_mapping[agent_name] = lora_id
+                print(f"  Agent '{agent_name}' -> LoRA adapter '{lora_id}'")
+            
+            print(f"Total {len(agent_lora_mapping)} agent-specific LoRA adapters to load")
+            print("=" * 60)
+            
+            # If checkpoint path with LoRA is provided, print loading information
+            if hasattr(config, 'lora_checkpoint_path') and config.lora_checkpoint_path:
+                print(f"Loading LoRA adapters from: {config.lora_checkpoint_path}")
+                for agent_name, lora_id in agent_lora_mapping.items():
+                    lora_path = os.path.join(config.lora_checkpoint_path, f"lora_adapter_{lora_id}")
+                    print(f"  {agent_name}: {lora_path}")
+                print("=" * 60)
 
-    agent_execution_engine = MultiAgentsExecutionEngine(config=config, ppo_trainer_config_dict=ppo_trainer_config_dict, tokenizer_dict=tokenizer_dict, processor_dict=processor_dict, server_address_dict=server_address_dict, agent_policy_mapping=agent_policy_mapping)
+    agent_execution_engine = MultiAgentsExecutionEngine(
+        config=config, 
+        ppo_trainer_config_dict=ppo_trainer_config_dict, 
+        tokenizer_dict=tokenizer_dict, 
+        processor_dict=processor_dict, 
+        server_address_dict=server_address_dict, 
+        agent_policy_mapping=agent_policy_mapping,
+        lora_differ_mode=lora_differ_mode,
+        agent_lora_mapping=agent_lora_mapping
+    )
     return agent_execution_engine
 
 def validate(config: DictConfig, address: str):

@@ -36,7 +36,7 @@ def build_app() -> FastAPI:
     else:
         backend_base = f"http://{backend_address}/v1"
 
-    timeout = aiohttp.ClientTimeout(total=2700)
+    timeout = aiohttp.ClientTimeout(total=240)
 
     @app.get("/health")
     async def health() -> Dict[str, str]:

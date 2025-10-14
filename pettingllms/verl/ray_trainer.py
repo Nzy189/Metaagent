@@ -680,17 +680,27 @@ class RayPPOTrainer:
 
         return metric_dict
 
-    def init_workers(self, lora_num=1):
+    def init_workers(self, lora_num=1, agent_lora_mapping=None):
         """Initialize distributed training workers using Ray backend.
 
         Creates:
         1. Ray resource pools from configuration
         2. Worker groups for each role (actor, critic, etc.)
+        
+        Args:
+            lora_num: Number of LoRA adapters (1 for single, >1 for multi-agent)
+            agent_lora_mapping: Dictionary mapping agent names to LoRA IDs (for multi-agent)
         """
         self.resource_pool_manager.create_resource_pool()
 
         self.resource_pool_to_cls = {pool: {} for pool in self.resource_pool_manager.resource_pool_dict.values()}
-        self.config.actor_rollout_ref.lora_num = lora_num
+        # Set lora_num field, allowing it to be added dynamically if not present in config
+        with open_dict(self.config.actor_rollout_ref):
+            self.config.actor_rollout_ref.lora_num = lora_num
+        
+        # Store for checkpoint saving
+        self.lora_num = lora_num
+        self.agent_lora_mapping = agent_lora_mapping if agent_lora_mapping is not None else {}
         # create actor and rollout
         if self.hybrid_engine:
             resource_pool = self.resource_pool_manager.get_resource_pool(Role.ActorRollout)
@@ -814,10 +824,17 @@ class RayPPOTrainer:
             save_actor_cls = self.actor_rollout_wg
         else:
             save_actor_cls = self.actor_wg
+        
+        # Get lora_num and agent_lora_mapping if available
+        lora_num = getattr(self, 'lora_num', 1)
+        agent_lora_mapping = getattr(self, 'agent_lora_mapping', None)
+        
         save_actor_cls.save_checkpoint(actor_local_path,
                                               actor_remote_path,
                                               self.global_steps,
-                                              max_ckpt_to_keep=max_actor_ckpt_to_keep)
+                                              max_ckpt_to_keep=max_actor_ckpt_to_keep,
+                                              lora_num=lora_num,
+                                              agent_lora_mapping=agent_lora_mapping)
 
         if self.use_critic:
             critic_local_path = os.path.join(local_global_step_folder, "critic")
@@ -880,8 +897,14 @@ class RayPPOTrainer:
         if self.async_rollout_mode:
             self.async_rollout_manager.sleep()
         
+        # Get lora_num and agent_lora_mapping if available
+        lora_num = getattr(self, 'lora_num', 1)
+        agent_lora_mapping = getattr(self, 'agent_lora_mapping', None)
+        
         load_actor_cls.load_checkpoint(actor_path,
-                                              del_local_after_load=self.config.trainer.del_local_ckpt_after_load)
+                                              del_local_after_load=self.config.trainer.del_local_ckpt_after_load,
+                                              lora_num=lora_num,
+                                              agent_lora_mapping=agent_lora_mapping)
 
         if not self.hybrid_engine:
             # Broadcast actor to rollout workers if not using hybrid engine

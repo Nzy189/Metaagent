@@ -104,7 +104,6 @@ models:
         trainer:
           n_gpus_per_node: ${resource.n_gpus_per_node}
           n_training_gpus_per_node: ${resource.n_gpus_per_node}
-          default_local_dir: ${trainer.default_local_dir}
   model_1:
     path: ${base_models.policy_1.path}
     name: ${base_models.policy_1.name}
@@ -125,4 +124,3 @@ models:
         trainer:
           n_gpus_per_node: ${resource.n_gpus_per_node}
           n_training_gpus_per_node: ${resource.n_gpus_per_node}
-          default_local_dir: ${trainer.default_local_dir}
