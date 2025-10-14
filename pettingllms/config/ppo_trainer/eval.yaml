@@ -1,0 +1,495 @@
+data:
+  tokenizer: null
+  use_shm: False
+  train_batch_size: 128
+  val_batch_size: 32
+  prompt_key: prompt
+  reward_fn_key: data_source
+  max_prompt_length: 2048
+  max_response_length: 2048
+  dataloader_num_workers: 0
+  return_raw_input_ids: False  # This should be set to true when the tokenizer between policy and rm differs
+  return_raw_chat: False
+  return_full_prompt: False
+  shuffle: True
+  filter_overlong_prompts: False # for large-scale dataset, filtering overlong prompts could be timeconsuming. You cat set the filter_overlong_prompts_workers to use multiprocessing to speed up.
+  filter_overlong_prompts_workers: 1
+  truncation: error
+  image_key: images
+  video_key: videos
+  trust_remote_code: False  # main_ppo will check this config to determine whether to use remote code for tokenizer
+  custom_cls:
+      path: null
+      name: null
+  sampler:
+    class_path: null
+    class_name: null
+
+  # the path to the module containing a curriculum class which implements the
+  # AbstractSampler interface
+  class_path: null
+
+  # the name of the curriculum class like `MySampler`
+  class_name: null
+
+actor_rollout_ref:
+  hybrid_engine: True
+  model:
+    path: Qwen/Qwen3-8B
+    #path: "/home/yujie/models/Qwen3-4B" # Set to null to allow overriding
+    use_shm: False
+    external_lib: null
+    override_config: { }
+    enable_gradient_checkpointing: True
+    enable_activation_offload: True
+    use_remove_padding: True
+    lora_rank: 0  # Set to positive value to enable LoRA (e.g., 32)
+    lora_alpha: 16  # LoRA scaling factor
+    target_modules: all-linear  # all-linear or [q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]
+    use_liger: False
+    use_fused_kernels: False
+    trust_remote_code: False
+  actor:
+    _target_: verl.workers.config.FSDPActorConfig
+    strategy: fsdp  # [fsdp, fsdp2], This is for backward-compatibility
+    ppo_mini_batch_size: 16  # 减小PPO mini batch大小以节省内存
+    use_dynamic_bsz: True
+    use_dynamic_mini_batch: False
+    ppo_micro_batch_size: null # will be deprecated, use ppo_micro_batch_size_per_gpu
+    ppo_micro_batch_size_per_gpu: null
+    ppo_max_token_len_per_gpu: 16384 # n * ${data.max_prompt_length} + ${data.max_response_length}
+    grad_clip: 1.0
+    # pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
+    clip_ratio: 0.2 # default value if clip_ratio_low and clip_ratio_high are not specified
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.2
+    clip_ratio_c: 3.0 # lower bound of the value for Dual-clip PPO from https://arxiv.org/pdf/1912.09729
+    loss_agg_mode: "token-mean" # / "seq-mean-token-sum" / "seq-mean-token-mean"
+    entropy_coeff: 0
+    use_kl_loss: False # True for GRPO
+    use_torch_compile: False # False to disable torch compile
+    kl_loss_coef: 0.001 # for grpo
+    kl_loss_type: low_var_kl # for grpo
+    ppo_epochs: 1
+    shuffle: False
+    ulysses_sequence_parallel_size: 1 # sp size
+    checkpoint:
+      contents: ['model', 'optimizer', 'extra']  # with 'hf_model' you can save whole model as hf format, now only use sharded model checkpoint to save space
+    optim:
+      lr: 1e-6
+      lr_warmup_steps: -1 # Prioritized. Negative values mean delegating to lr_warmup_steps_ratio.
+      lr_warmup_steps_ratio: 0.  # the total steps will be injected during runtime
+      min_lr_ratio: null   # only useful for warmup with cosine
+      num_cycles: 0.5     # only used with cosine lr scheduler, default to 0.5
+      warmup_style: constant  # select from constant/cosine
+      total_training_steps: -1  # must be override by program
+      weight_decay: 0.01
+    fsdp_config:
+      _target_: verl.workers.config.FSDPEngineConfig
+      
+      wrap_policy:
+        # transformer_layer_cls_to_wrap: None
+        min_num_params: 0
+      param_offload: False
+      optimizer_offload: False
+      offload_policy: False # only for fsdp2, offload param\grad\optimizer during train
+      reshard_after_forward: True # only for fsdp2, [True, False, int between 1 and fsdp_size]
+      fsdp_size: -1
+      model_dtype: bf16
+    grad_norm_threshold: 1e5
+      
+
+  ref:
+    
+    strategy: fsdp
+    fsdp_config:
+      _target_: verl.workers.config.FSDPEngineConfig
+      model_dtype: bf16
+      param_offload: False
+      reshard_after_forward: True # only for fsdp2, [True, False, int between 1 and fsdp_size]
+      wrap_policy:
+        # transformer_layer_cls_to_wrap: None
+        min_num_params: 0
+      #model_dtype: bf16
+    use_torch_compile: False
+    log_prob_micro_batch_size: 1 # will be deprecated, use log_prob_micro_batch_size_per_gpu
+    log_prob_micro_batch_size_per_gpu: null
+    log_prob_use_dynamic_bsz: False
+    ppo_micro_batch_size: 1
+    ppo_micro_batch_size_per_gpu: null
+    log_prob_max_token_len_per_gpu: 16384
+    ulysses_sequence_parallel_size: 1 # sp size
+    entropy_from_logits_with_chunking: False
+  rollout:
+
+    name: vllm
+    _target_: verl.workers.config.RolloutConfig
+    mode: async # sync: LLM, async: AsyncLLM
+    chat_scheduler: verl.schedulers.completions_scheduler.CompletionsScheduler # async chat scheduler, e.g verl.schedulers.naive_chat_scheduler.NaiveChatCompletionScheduler
+    chat_template: null
+    temperature: 0.6
+    top_k: -1 # 0 for hf rollout, -1 for vllm rollout
+    top_p: 1
+    use_fire_sampling: False # https://arxiv.org/abs/2410.21236
+    prompt_length: ${data.max_prompt_length} # not use for opensource
+    response_length: ${data.max_response_length}
+    # for vllm rollout
+    dtype: bfloat16
+    gpu_memory_utilization: 0.6  
+    ignore_eos: False
+    enforce_eager: False  
+    free_cache_engine: False
+    load_format: auto  
+    layered_summon: False # for huge model, layered summon can save memory (prevent OOM) but make it slower
+    tensor_model_parallel_size: 4
+    max_num_batched_tokens: 131072  #
+    max_model_len: null  
+    max_num_seqs: 256 
+    log_prob_micro_batch_size: 4 # will be deprecated, use log_prob_micro_batch_size_per_gpu
+    log_prob_micro_batch_size_per_gpu: null
+    log_prob_use_dynamic_bsz: False
+    log_prob_max_token_len_per_gpu: 24576
+    disable_log_stats: True
+    enable_chunked_prefill: True # may get higher throughput when set to True. When activated, Please increase max_num_batched_tokens or decrease max_model_len.
+    # for hf rollout
+    do_sample: True
+    # number of responses (i.e. num sample times)
+    n: 1 # > 1 for grpo
+    engine_kwargs: # inference engine parameters
+      vllm:
+        swap_space: null # null means "use the engine default value" (usually 4 GB), setting it to, e.g., 32 means 32 GB
+      sglang:
+        attention_backend: null # null means use the engine default value, available options: flashinfer, triton, flashmla
+    val_kwargs:
+      # sampling parameters for validation
+      top_k: -1 # 0 for hf rollout, -1 for vllm rollout
+      top_p: 1.0
+      temperature: 0
+      n: 1
+      do_sample: False # default eager for validation
+    multi_turn: 
+      enable: False  # should set rollout.name to sglang_async if True
+      max_turns: 4 # null for no limit (default max_length // 3)
+      tool_config_path: null  # null for no tool
+      format: chatml  # chatml, more formats will be supported in the future
+    # RLLM Arguments
+    disable_logging: True # Disable logging for vLLM async rollout.
+    entropy_from_logits_with_chunking: False
+    use_torch_compile: False
+    #compilation_config:
+    #  use_inductor: False
+    
+    # [Experimental] agent loop based rollout configs
+    agent:
+      # Number of agent loop workers
+      num_workers: 512  # 增加agent worker数量
+      
+      # custom agent loop config path, which should contain list of configs to intialize AgentLoop instances.
+      # https://hydra.cc/docs/advanced/instantiate_objects/overview/
+      #
+      # - name: react_agent
+      #   _target_: recipe.langgraph_agent.react_agent_loop.ReactAgentLoop
+      #   tools: ["get_current_temperature"]
+      # - name: math_expression
+      #   _target_: recipe.langgraph_agent.example.math_expression.MathExpressionReactAgentLoop
+      #   min_terms: 2
+      #   max_terms: 6
+      agent_loop_config_path: null
+      
+      # custom async server configs
+      custom_async_server:
+        # Path to the custom async server implementation
+        path: null
+        # Class name of the custom async server class (e.g. AsyncvLLMServer)
+        name: null
+
+critic:
+  _target_: verl.workers.config.FSDPCriticConfig
+  enable: false
+
+  # distribution strategy. Options: fsdp (deprecating), fsdp2
+  strategy: fsdp
+
+  # optimizer configs
+  optim:
+
+
+    # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+    _target_: verl.workers.config.FSDPOptimizerConfig
+      # Learning rate
+    lr: 1e-5
+
+    # Warmup steps ratio; total steps will be injected at runtime
+    lr_warmup_steps_ratio: 0.0
+
+    # Total training steps (must be overridden at runtime)
+    total_training_steps: -1
+
+    # Weight decay
+    weight_decay: 0.01
+
+    # Prioritized. None, 0 or Negative values mean delegating to lr_warmup_steps_ratio.
+    lr_warmup_steps: -1
+
+    # Minimum LR ratio for cosine schedule
+    min_lr_ratio: null
+
+    # LR warmup style: "constant" or "cosine"
+    warmup_style: constant
+
+  # model config for the critic
+  model:
+
+    # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+    _target_: verl.workers.config.FSDPCriticModelCfg
+
+        # Path to pretrained model weights
+    path: ~/models/deepseek-llm-7b-chat
+
+    # Tokenizer path (defaults to actor's model path)
+    tokenizer_path: ${oc.select:actor_rollout_ref.model.path,"~/models/deepseek-llm-7b-chat"}
+
+    # Hugging Face config override
+    override_config: {}
+
+    # External model implementation (optional)
+    external_lib: ${oc.select:actor_rollout_ref.model.external_lib,null}
+
+    # Whether to trust remote code from Hugging Face models
+    trust_remote_code: ${oc.select:actor_rollout_ref.model.trust_remote_code,false}
+
+
+    # Whether to use shared memory for loading the model
+    use_shm: False
+
+    # Enable gradient checkpointing to save memory
+    enable_gradient_checkpointing: True
+
+    # Offload activations to CPU to reduce GPU memory usage
+    enable_activation_offload: False
+
+    # Use remove padding optimization (saves compute)
+    use_remove_padding: False
+
+    # FSDP-specific config
+    fsdp_config:
+
+      # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+      _target_: verl.workers.config.FSDPEngineConfig
+
+      # Whether to offload model parameters to CPU
+      param_offload: False
+
+      # Whether to offload optimizer state to CPU
+      optimizer_offload: False
+
+      # Only for FSDP2: offload param/grad/optimizer during train
+      offload_policy: False
+
+      # Only for FSDP2: Reshard after forward pass to reduce memory footprint
+      reshard_after_forward: True
+
+      # Policy for wrapping layers with FSDP
+      wrap_policy:
+
+        # Minimum number of parameters to trigger wrapping
+        min_num_params: 0
+
+      # Number of GPUs in each FSDP shard group; -1 means auto
+      fsdp_size: -1  
+
+      # Only for FSDP1: FSDP1 configuration, prefetch the next forward-pass all-gather
+      # before the current forward computation.
+      forward_prefetch: False
+
+    # Set to positive value to enable LoRA (e.g., 32)
+    lora_rank: 0
+
+    # LoRA scaling factor
+    lora_alpha: 16
+
+    # LoRA target modules: "all-linear" or list of linear projection layers
+    target_modules: all-linear
+
+  # Forward-only batch size during inference (global)
+  forward_micro_batch_size: ${oc.select:.ppo_micro_batch_size,null}
+
+  # Forward-only batch size during inference (per GPU)
+  forward_micro_batch_size_per_gpu: ${oc.select:.ppo_micro_batch_size_per_gpu,null}
+
+  # Sequence parallelism size for Ulysses-style model parallelism
+  ulysses_sequence_parallel_size: 1
+
+  # Gradient clipping for critic updates
+  grad_clip: 1.0
+
+reward_model:
+  enable: False
+  strategy: fsdp
+  model:
+    input_tokenizer: ~/models/deepseek-llm-7b-chat  # set this to null if the chat template is identical
+    path: ~/models/FsfairX-LLaMA3-RM-v0.1
+    use_shm: False
+    external_lib: null
+    use_remove_padding: False
+    use_fused_kernels: False
+    trust_remote_code: False
+    fsdp_config:
+      wrap_policy:
+        min_num_params: 0
+      param_offload: False
+      reshard_after_forward: True # only for fsdp2, [True, False, int between 1 and fsdp_size]
+      fsdp_size: -1
+  micro_batch_size: null # will be deprecated, use micro_batch_size_per_gpu
+  micro_batch_size_per_gpu: null # set a number
+  max_length: null
+  ulysses_sequence_parallel_size: 1 # sp size
+  use_dynamic_bsz: false  
+  forward_max_token_len_per_gpu: 32768
+  reward_manager: naive
+  launch_reward_fn_async: False # custom reward function executed async on CPU, during log_prob
+  sandbox_fusion:
+    url: null # faas url to run code in cloud sandbox
+    max_concurrent: 64 # max concurrent requests to sandbox
+
+custom_reward_function:
+  path: null
+  name: compute_score
+
+algorithm:
+  adv_estimator: grpo
+  gamma: 1.0
+  lam: 1.0
+  norm_adv_by_std_in_grpo: True
+  use_kl_in_reward: False
+  kl_penalty: kl  # how to estimate kl divergence
+  kl_ctrl:
+    type: fixed
+    kl_coef: 0.001
+    horizon: 10000
+    target_kl: 0.1
+  use_pf_ppo: False
+  pf_ppo:
+    reweight_method: pow  # ["pow", "max_min", "max_random"]
+    weight_pow: 2.0
+  # RLLM Arguments
+  mask_truncated_samples: False # Zero gradient for truncated samples (by setting advantage=0)
+  clip_advantages: False
+
+trainer:
+  device: cuda
+  n_gpus_per_node: 1  # 使用单卡
+  nnodes: 1
+  balance_batch: True
+  total_epochs: 1
+  total_training_steps: 200
+  project_name: verl_examples
+  experiment_name: gsm8k
+  logger: [ 'console', 'wandb' ]
+  log_val_generations: 0
+  rollout_data_dir: null # directory for logging the rollout data, no dump if null
+  validation_data_dir: null # directory for logging the validation data, no dump if null
+  save_freq: 40
+  # auto: find the last ckpt to resume. If can't find, start from scratch
+  resume_mode: auto # or disable or resume_path if resume_from_path is set
+  resume_from_path: null
+  val_before_train: True
+  test_freq: -1
+  critic_warmup: 0
+  default_hdfs_dir: null
+  del_local_ckpt_after_load: False
+  default_local_dir: checkpoints/verl_examples/gsm8k
+  max_actor_ckpt_to_keep: 2
+  max_critic_ckpt_to_keep: null
+  # The timeout for ray worker group to wait for the register center to be ready
+  ray_wait_register_center_timeout: 300
+  npu_profile:
+    options: {}
+  # RLLM arguments
+  rejection_sample: False # Reject sample prompts that all succeed or all fail (0 signal for GRPO due to normalization).
+  rejection_sample_multiplier: 2 # Multiple the training batch size by this factor to account for rejection sampling reduction.
+  n_training_gpus_per_node: 4 # For verl-pipeline. 使用4个可见GPU
+
+# profiler configs
+global_profiler:
+
+  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  _target_: verl.utils.profiler.ProfilerConfig
+
+  # Profiling tool: choose between nsys, npu, torch
+  tool: null
+
+  # profile steps
+  steps: null
+
+  # Whether to combine continuous steps into one database.
+  ## If True, worker.profiler.discrete must be False, [1,2] in one, [5] in another.
+  ## If False, [1] in one, [2] in another, [5] in another.
+  profile_continuous_steps: False
+
+  # Path to save profiling contents
+  save_path: "outputs/profile"
+
+  # Specific tool configs, can use +profiler.tool_config.[tool].xxx to config
+  global_tool_config:
+  
+    # nsys config
+    nsys:
+
+      # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+      _target_: verl.utils.profiler.config.NsightToolConfig
+
+      # True for each task has its own database, False for all tasks in one training step share one database.
+      discrete: False
+
+      # controller Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      ## reference https://docs.nvidia.com/nsight-systems/UserGuide/index.html
+      ## reference https://docs.ray.io/en/latest/ray-observability/user-guides/profiling.html
+      controller_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+      # worker Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      worker_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+        # Profiling only in a range of torch.cuda.profiler.start and stop. Do not change this config.
+        capture-range: "cudaProfilerApi"
+
+        # Specify the desired behavior when a capture range ends.
+        # In verl we need the torch.cuda.profiler.start/stop pair to repeats n times.
+        # valid values are "repeat-shutdown:n" or null.
+        # For normal whole step profiling, n = len(profile_steps);
+        # but for discrete profiling, n = len(profile_steps) * Number(subtasks).
+        # Or you can just leave it null and the program will use n = len(profile_steps) * 6;
+        capture-range-end: null
+
+        # Send signal to the target application's process group. We let the program to exit by itself.
+        kill: none
+
+# configs related to ray
+ray_kwargs:
+
+  # configs related to ray initialization
+  ray_init:
+  
+    # Number of CPUs for Ray. Use a fixed number instead of null when using SLURM.
+    num_cpus: null
+
+  # Path to save Ray timeline JSON for performance profiling
+  timeline_json_file: null

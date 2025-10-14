@@ -1,0 +1,5 @@
+[submodule "verl"]
+	path = verl
+	url = https://github.com/pettingllms-ai/verl
+	branch = main
+
