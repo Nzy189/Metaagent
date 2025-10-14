@@ -533,10 +533,11 @@ class MultiAgentsExecutionEngine:
                         agent_responses.append(flat_results[flat_idx])
                     all_agent_responses.append(agent_responses)
                 
-                # First, execute all agent steps
+                # Process each agent sequentially (important for state selection)
                 for agent_idx, agent_name in enumerate(self.turn_order):
                     response_results = all_agent_responses[agent_idx]
                     
+                    # Step 1: Execute all rollout steps for this agent
                     for idx in range(len(rollout_idx_list)):
                         result = response_results[idx]
                         
@@ -544,10 +545,7 @@ class MultiAgentsExecutionEngine:
                             continue
                         
                         rollout_idx = result['rollout_idx']
-                        output_dpr = result['output_dpr']
                         response_str = result['response_str']
-                        prompt = result['prompt']
-                        policy_name = result['policy_name']
                         
                         current_agent = agent_groups[idx][agent_idx]
                         current_agent.update_from_model(response_str)
@@ -561,11 +559,24 @@ class MultiAgentsExecutionEngine:
                         except asyncio.TimeoutError:
                             current_agent.agent_reward = 0.0
                             current_agent.reward_history.append(0.0)
-                
-                # After all agents complete their steps, calculate rewards and update trajectory
-                for agent_idx, agent_name in enumerate(self.turn_order):
-                    response_results = all_agent_responses[agent_idx]
                     
+                    # Step 2: Calculate rewards for all rollouts of this agent
+                    for idx in range(len(rollout_idx_list)):
+                        current_agent = agent_groups[idx][agent_idx]
+                        env = envs_list[idx]
+                        
+                        # Calculate reward using agent's calculate_reward method
+                        if hasattr(current_agent, 'calculate_reward'):
+                            current_agent.calculate_reward(env)
+                        else:
+                            # Fallback: append current agent_reward to history if not already done
+                            if hasattr(current_agent, 'agent_reward'):
+                                if not hasattr(current_agent, 'reward_history'):
+                                    current_agent.reward_history = []
+                                if len(current_agent.reward_history) == 0 or current_agent.reward_history[-1] != current_agent.agent_reward:
+                                    current_agent.reward_history.append(current_agent.agent_reward)
+                    
+                    # Step 3: Update trajectory with rewards
                     for idx in range(len(rollout_idx_list)):
                         result = response_results[idx]
                         
@@ -580,14 +591,6 @@ class MultiAgentsExecutionEngine:
                         
                         current_agent = agent_groups[idx][agent_idx]
                         env = envs_list[idx]
-                        
-                        # Calculate reward using agent's calculate_reward method
-                        if hasattr(current_agent, 'calculate_reward'):
-                            current_agent.calculate_reward(env)
-                        else:
-                            # Fallback: append current agent_reward to history if not already done
-                            if hasattr(current_agent, 'agent_reward') and (not hasattr(current_agent, 'reward_history') or len(current_agent.reward_history) == 0 or current_agent.reward_history[-1] != current_agent.agent_reward):
-                                current_agent.reward_history.append(current_agent.agent_reward)
               
                         if agent_name == self.turn_order[-1]:
                             env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else env.state.to_dict()
@@ -618,6 +621,7 @@ class MultiAgentsExecutionEngine:
                                     output_dpr
                                 ])
                     
+                    # Step 4: Select best rollout and copy to all
                     rollout_score_idx = []
                     for idx in range(len(rollout_idx_list)):
                         current_agent = agent_groups[idx][agent_idx]
@@ -647,11 +651,9 @@ class MultiAgentsExecutionEngine:
                     break
                     
             else:
-                # Store all agent responses for this turn
-                all_agent_responses = []
-                
-                # First, generate responses and execute steps for all agents
+                # Process each agent sequentially (important for state selection)
                 for agent_idx, agent_name in enumerate(self.turn_order):
+                    # Step 1: Generate responses for all rollouts
                     response_results = []
                     for idx in range(len(rollout_idx_list)):
                         agent_config = self.agent_config_dict.get(agent_name, None)
@@ -659,7 +661,7 @@ class MultiAgentsExecutionEngine:
                         result = await async_generate_response(idx, agent_idx, agent_name, sample_num)
                         response_results.append(result)
                     
-                    # Execute agent steps
+                    # Step 2: Execute agent steps for all rollouts
                     for idx in range(len(rollout_idx_list)):
                         result = response_results[idx]
                         
@@ -667,10 +669,7 @@ class MultiAgentsExecutionEngine:
                             continue
                         
                         rollout_idx = result['rollout_idx']
-                        output_dpr = result['output_dpr']
                         response_str = result['response_str']
-                        prompt = result['prompt']
-                        policy_name = result['policy_name']
                         
                         current_agent = agent_groups[idx][agent_idx]
                         current_agent.update_from_model(response_str)
@@ -685,12 +684,23 @@ class MultiAgentsExecutionEngine:
                             current_agent.agent_reward = 0.0
                             current_agent.reward_history.append(0.0)
                     
-                    all_agent_responses.append(response_results)
-                
-                # After all agents complete their steps, calculate rewards and update trajectory
-                for agent_idx, agent_name in enumerate(self.turn_order):
-                    response_results = all_agent_responses[agent_idx]
+                    # Step 3: Calculate rewards for all rollouts of this agent
+                    for idx in range(len(rollout_idx_list)):
+                        current_agent = agent_groups[idx][agent_idx]
+                        env = envs_list[idx]
+                        
+                        # Calculate reward using agent's calculate_reward method
+                        if hasattr(current_agent, 'calculate_reward'):
+                            current_agent.calculate_reward(env)
+                        else:
+                            # Fallback: append current agent_reward to history if not already done
+                            if hasattr(current_agent, 'agent_reward'):
+                                if not hasattr(current_agent, 'reward_history'):
+                                    current_agent.reward_history = []
+                                if len(current_agent.reward_history) == 0 or current_agent.reward_history[-1] != current_agent.agent_reward:
+                                    current_agent.reward_history.append(current_agent.agent_reward)
                     
+                    # Step 4: Update trajectory with rewards
                     for idx in range(len(rollout_idx_list)):
                         result = response_results[idx]
                         
@@ -705,14 +715,6 @@ class MultiAgentsExecutionEngine:
                         
                         current_agent = agent_groups[idx][agent_idx]
                         env = envs_list[idx]
-                        
-                        # Calculate reward using agent's calculate_reward method
-                        if hasattr(current_agent, 'calculate_reward'):
-                            current_agent.calculate_reward(env)
-                        else:
-                            # Fallback: append current agent_reward to history if not already done
-                            if hasattr(current_agent, 'agent_reward') and (not hasattr(current_agent, 'reward_history') or len(current_agent.reward_history) == 0 or current_agent.reward_history[-1] != current_agent.agent_reward):
-                                current_agent.reward_history.append(current_agent.agent_reward)
               
                         if agent_name == self.turn_order[-1]:
                             env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else env.state.to_dict()
@@ -743,6 +745,7 @@ class MultiAgentsExecutionEngine:
                                     output_dpr
                                 ])
                     
+                    # Step 5: Select best rollout and copy to all
                     rollout_score_idx = []
                     for idx in range(len(rollout_idx_list)):
                         current_agent = agent_groups[idx][agent_idx]
