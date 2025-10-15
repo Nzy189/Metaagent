@@ -228,14 +228,13 @@ class MultiAgentsExecutionEngine:
                     return None
                 ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
                 model_path=ppo_trainer_config.actor_rollout_ref.model.path
-                if "checkpoint" in str(model_path):
-                    model_name = str(model_path)
-                else:
-                    model_name = "/".join(str(model_path).split("/")[-2:])
+                # Always use last 2 segments to match vLLM's model registration
+                # vLLM registers as: "/".join(model_path.split("/")[-2:])
+                model_name = "/".join(str(model_path).split("/")[-2:])
+                print(f"[Engine][MODEL_NAME] rollout_idx={rollout_idx} agent={agent_name} model_path={model_path} model_name={model_name}")
                 # Generate responses
                 output_dpr = None
-                response_str = None
-                #print(f"DEBUG: begin tp generate response for {agent_name} with model {model_name} using llm_async_generate")
+                response = None
                 
                 try:
                     _addresses = self.server_address_dict.get(policy_name)
@@ -258,8 +257,12 @@ class MultiAgentsExecutionEngine:
                     
                     # Get agent config for temperature settings
                     agent_config = self.agent_config_dict.get(agent_name, None)
-
-                    output_dpr,response_str = await llm_async_generate(
+                    
+                    # Check if this agent supports sampling (has sample_num attribute)
+                    agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
+                    
+                    print(f"[Engine][DEBUG] About to call llm_async_generate for rollout_idx={rollout_idx}, agent={agent_name}")
+                    output_dpr, response = await llm_async_generate(
                         rollout_idx=rollout_idx, 
                         turn_idx=turn_idx, 
                         agent_idx=agent_idx,
@@ -277,6 +280,7 @@ class MultiAgentsExecutionEngine:
                         mode=self.mode,
                         lora_id=lora_id,
                         agent_config=agent_config,
+                        sample_num=agent_sample_num,
                     )
                 except Exception as e:
                     self.multi_logger.log_env_agent_info(
@@ -286,9 +290,13 @@ class MultiAgentsExecutionEngine:
                     )
                
                     output_dpr = None
-                    response_str = None
+                    response = ""  # Use empty string instead of None
                     
-                current_agent.update_from_model(response_str)
+                # Handle None response (shouldn't happen but be defensive)
+                if response is None:
+                    response = ""
+                    
+                current_agent.update_from_model(response)
                 
               
                 try:
@@ -310,7 +318,7 @@ class MultiAgentsExecutionEngine:
                     'agent_name': agent_name,
                     'current_agent': current_agent,
                     'output_dpr': output_dpr,
-                    'response_str': response_str,
+                    'response': response,
                     'prompt': prompt,
                     'policy_name': policy_name
                 })
@@ -321,7 +329,7 @@ class MultiAgentsExecutionEngine:
                 agent_name = agent_output['agent_name']
                 current_agent = agent_output['current_agent']
                 output_dpr = agent_output['output_dpr']
-                response_str = agent_output['response_str']
+                response = agent_output['response']
                 prompt = agent_output['prompt']
                 policy_name = agent_output['policy_name']
                 
@@ -363,7 +371,7 @@ class MultiAgentsExecutionEngine:
                         "Trajectory information updated",
                         {
                             "agent_prompt": {"text": prompt, "image": None},
-                            "agent_response": response_str,
+                            "agent_response": response,
                             "env_state": env_state_compact,
                         }
                     )
@@ -442,7 +450,7 @@ class MultiAgentsExecutionEngine:
         agent_groups = [self.agent_groups_list[rollout_idx] for rollout_idx in rollout_idx_list]
         
         for turn_idx in range(self.max_turns):
-            async def async_generate_response(idx, agent_idx, agent_name, sample_num=1):
+            async def async_generate_response(idx, agent_idx, agent_name):
                 rollout_idx = rollout_idx_list[idx]
                 env = envs_list[idx]
                 current_agent = agent_groups[idx][agent_idx]
@@ -461,18 +469,21 @@ class MultiAgentsExecutionEngine:
                 )
                 ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
                 model_path = ppo_trainer_config.actor_rollout_ref.model.path
-               
-                if "checkpoint" in str(model_path):
-                    server_name = str(model_path)
-                else:
-                    server_name = "/".join(str(model_path).split("/")[-2:])
+                # Always use last 2 segments to match vLLM's model registration
+                # vLLM registers as: "/".join(model_path.split("/")[-2:])
+                server_name = "/".join(str(model_path).split("/")[-2:])
+                print(f"[Engine][MODEL_NAME] env_idx={env_idx} rollout_idx={rollout_idx} turn={turn_idx} agent={agent_name} model_path={model_path} server_name={server_name}")
                 
                 output_dpr = None
-                response_str = None
+                response = None
                 try:
                     _addresses = self.server_address_dict.get(policy_name)
                     if isinstance(_addresses, (list, tuple)):
-                        _address = random.choice(_addresses) if len(_addresses) > 0 else _addresses[0]
+                        _address = random.choice(_addresses) if len(_addresses) > 0 else None
+                    else:
+                        _address = _addresses
+                    if _address is None:
+                        raise ValueError(f"No server address configured for policy '{policy_name}'")
                     
                     lora_id = None
                     if self.lora_differ_mode and agent_name in self.agent_lora_mapping:
@@ -480,8 +491,13 @@ class MultiAgentsExecutionEngine:
                    
                     # Get agent config for temperature settings
                     agent_config = self.agent_config_dict.get(agent_name, None)
+                    
+                    # Check if this agent supports sampling (has sample_num attribute)
+                    agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
                    
-                    output_dpr, response_str = await llm_async_generate(
+                    print(f"[Engine][DEBUG] About to call llm_async_generate in async_generate_response for rollout_idx={rollout_idx}, agent={agent_name}, turn_idx={turn_idx}")
+                    print(f"[Engine][AWAIT_START] Calling llm_async_generate at {time.time()}")
+                    output_dpr, response = await llm_async_generate(
                         rollout_idx=rollout_idx, 
                         turn_idx=turn_idx, 
                         agent_idx=agent_idx,
@@ -499,10 +515,23 @@ class MultiAgentsExecutionEngine:
                         mode=self.mode,
                         lora_id=lora_id,
                         agent_config=agent_config,
+                        sample_num=agent_sample_num,
                     )
-                except Exception:
+                    print(f"[Engine][AWAIT_COMPLETE] llm_async_generate returned at {time.time()}")
+                    print(f"[Engine][DEBUG] llm_async_generate returned for rollout_idx={rollout_idx}, agent={agent_name}, response={'empty' if not response else 'has content'}")
+                except Exception as e:
+                    print(f"[Engine][ERROR] Exception in llm_async_generate for rollout_idx={rollout_idx}, agent={agent_name}: {e}")
                     output_dpr = None
-                    response_str = None
+                    response = None
+                    # log error to help diagnose empty responses
+                    try:
+                        self.multi_logger.log_env_agent_info(
+                            self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
+                            f"Failed to generate response: {e}",
+                            {"error": str(e), "traceback": traceback.format_exc()}
+                        )
+                    except Exception:
+                        pass
                 
                 return {
                     'idx': idx,
@@ -510,269 +539,183 @@ class MultiAgentsExecutionEngine:
                     'agent_name': agent_name,
                     'rollout_idx': rollout_idx,
                     'output_dpr': output_dpr,
-                    'response_str': response_str,
+                    'response': response,
                     'prompt': prompt,
                     'policy_name': policy_name,
                 }
             
-            if self.parallel:
-                tasks = []
-                for agent_idx, agent_name in enumerate(self.turn_order):
-                    for idx in range(len(rollout_idx_list)):
-                        agent_config = self.agent_config_dict.get(agent_name, None)
-                        sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
-                        tasks.append(async_generate_response(idx, agent_idx, agent_name, sample_num))
-                
-                flat_results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                all_agent_responses = []
-                for agent_idx in range(len(self.turn_order)):
-                    agent_responses = []
-                    for idx in range(len(rollout_idx_list)):
-                        flat_idx = agent_idx * len(rollout_idx_list) + idx
-                        agent_responses.append(flat_results[flat_idx])
-                    all_agent_responses.append(agent_responses)
-                
-                # Process each agent sequentially (important for state selection)
-                for agent_idx, agent_name in enumerate(self.turn_order):
-                    response_results = all_agent_responses[agent_idx]
-                    
-                    # Step 1: Execute all rollout steps for this agent
-                    for idx in range(len(rollout_idx_list)):
-                        result = response_results[idx]
-                        
-                        if isinstance(result, Exception):
-                            continue
-                        
-                        rollout_idx = result['rollout_idx']
-                        response_str = result['response_str']
-                        
-                        current_agent = agent_groups[idx][agent_idx]
-                        current_agent.update_from_model(response_str)
-                        
-                        env_worker_id = random.randint(0, self.num_workers - 1)
-                        try:
-                            await asyncio.wait_for(
-                                current_agent.step(self.envs[rollout_idx_list[idx]], env_worker=self.env_workers[env_worker_id]),
-                                timeout=self.step_timeout
-                            )
-                        except asyncio.TimeoutError:
-                            current_agent.agent_reward = 0.0
-                            current_agent.reward_history.append(0.0)
-                    
-                    # Step 2: Calculate rewards for all rollouts of this agent
-                    for idx in range(len(rollout_idx_list)):
-                        current_agent = agent_groups[idx][agent_idx]
-                        env = envs_list[idx]
-                        
-                        # Calculate reward using agent's calculate_reward method
-                        if hasattr(current_agent, 'calculate_reward'):
-                            current_agent.calculate_reward(env)
-                        else:
-                            # Fallback: append current agent_reward to history if not already done
-                            if hasattr(current_agent, 'agent_reward'):
-                                if not hasattr(current_agent, 'reward_history'):
-                                    current_agent.reward_history = []
-                                if len(current_agent.reward_history) == 0 or current_agent.reward_history[-1] != current_agent.agent_reward:
-                                    current_agent.reward_history.append(current_agent.agent_reward)
-                    
-                    # Step 3: Update trajectory with rewards
-                    for idx in range(len(rollout_idx_list)):
-                        result = response_results[idx]
-                        
-                        if isinstance(result, Exception):
-                            continue
-                        
-                        rollout_idx = result['rollout_idx']
-                        output_dpr = result['output_dpr']
-                        response_str = result['response_str']
-                        prompt = result['prompt']
-                        policy_name = result['policy_name']
-                        
-                        current_agent = agent_groups[idx][agent_idx]
-                        env = envs_list[idx]
               
-                        if agent_name == self.turn_order[-1]:
-                            env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else env.state.to_dict()
-                            self.multi_logger.log_env_agent_info(
-                                self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
-                                "Trajectory information updated",
-                                {
-                                    "agent_prompt": {"text": prompt, "image": None},
-                                    "agent_response": response_str,
-                                    "env_state": env_state_compact,
-                                }
-                            )
-
-                        if output_dpr is not None:
-                            output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
-                            output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
-                            
-                            if self.lora_differ_mode:
-                                batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
-                                lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
-                                output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
-                           
-                            if trajectory_per_task_dict[policy_name].batch is None:
-                                trajectory_per_task_dict[policy_name] = output_dpr
-                            else:
-                                trajectory_per_task_dict[policy_name] = DataProto.concat([
-                                    trajectory_per_task_dict[policy_name], 
-                                    output_dpr
-                                ])
-                    
-                    # Step 4: Select best rollout and copy to all
-                    rollout_score_idx = []
-                    for idx in range(len(rollout_idx_list)):
-                        current_agent = agent_groups[idx][agent_idx]
-                        agent_reward = current_agent.agent_reward if current_agent.agent_reward is not None else 0
-                        rollout_score_idx.append(agent_reward)
-                    
+          
+                # Process each agent sequentially (important for state selection)
+            for agent_idx, agent_name in enumerate(self.turn_order):
+                # Step 1: Generate responses for all rollouts (in parallel with timeout)
+                async def generate_with_timeout(idx, agent_idx, agent_name):
                     try:
-                        if if_greedy:
-                            best_i = int(np.argmax(np.asarray(rollout_score_idx)))
+                        result = await asyncio.wait_for(
+                            async_generate_response(idx, agent_idx, agent_name),
+                            timeout=self.generate_timeout
+                        )
+                        return result
+                    except asyncio.TimeoutError:
+                        # Return a result dict with None values on timeout
+                        rollout_idx = rollout_idx_list[idx]
+                        policy_name = self.agent_policy_mapping.get(agent_name)
+                        # Try to get prompt for logging even on timeout
+                        try:
+                            current_agent = agent_groups[idx][agent_idx]
+                            current_agent.update_from_env(turn_idx, envs_list[idx])
+                            prompt = current_agent.current_prompt
+                        except Exception:
+                            prompt = None
+                        
+                        print(f"[TIMEOUT] Generate response timeout for rollout {rollout_idx} agent {agent_name}")
+                        return {
+                            'idx': idx,
+                            'agent_idx': agent_idx,
+                            'agent_name': agent_name,
+                            'rollout_idx': rollout_idx,
+                            'output_dpr': None,
+                            'response': None,
+                            'prompt': prompt,
+                            'policy_name': policy_name,
+                        }
+                    except Exception as e:
+                        # Handle other exceptions
+                        rollout_idx = rollout_idx_list[idx]
+                        policy_name = self.agent_policy_mapping.get(agent_name)
+                        # Try to get prompt for logging even on exception
+                        try:
+                            current_agent = agent_groups[idx][agent_idx]
+                            current_agent.update_from_env(turn_idx, envs_list[idx])
+                            prompt = current_agent.current_prompt
+                        except Exception:
+                            prompt = None
+                        
+                        print(f"[ERROR] Generate response failed for rollout {rollout_idx} agent {agent_name}: {e}")
+                        return {
+                            'idx': idx,
+                            'agent_idx': agent_idx,
+                            'agent_name': agent_name,
+                            'rollout_idx': rollout_idx,
+                            'output_dpr': None,
+                            'response': None,
+                            'prompt': prompt,
+                            'policy_name': policy_name,
+                        }
+                
+                # Generate all rollout responses in parallel
+                tasks = [generate_with_timeout(idx, agent_idx, agent_name) for idx in range(len(rollout_idx_list))]
+                response_results = await asyncio.gather(*tasks, return_exceptions=False)
+                
+                # Step 2: Execute agent steps for all rollouts
+                for idx in range(len(rollout_idx_list)):
+                    result = response_results[idx]
+                    
+                    rollout_idx = result['rollout_idx']
+                    response = result['response']
+                    
+                    current_agent = agent_groups[idx][agent_idx]
+                    # Update from model (handle None response)
+                    if response is None:
+                        response = ""
+                    current_agent.update_from_model(response)
+                    
+                    env_worker_id = random.randint(0, self.num_workers - 1)
+                    try:
+                        await asyncio.wait_for(
+                            current_agent.step(self.envs[rollout_idx_list[idx]], env_worker=self.env_workers[env_worker_id]),
+                            timeout=self.step_timeout
+                        )
+                    except asyncio.TimeoutError:
+                        current_agent.agent_reward = 0.0
+                        current_agent.reward_history.append(0.0)
+                
+                # Step 3: Calculate rewards for all rollouts of this agent
+                for idx in range(len(rollout_idx_list)):
+                    current_agent = agent_groups[idx][agent_idx]
+                    env = envs_list[idx]
+                    
+                    # Calculate reward using agent's calculate_reward method
+                    if hasattr(current_agent, 'calculate_reward'):
+                        current_agent.calculate_reward(env)
+                    else:
+                        # Fallback: append current agent_reward to history if not already done
+                        if hasattr(current_agent, 'agent_reward'):
+                            if not hasattr(current_agent, 'reward_history'):
+                                current_agent.reward_history = []
+                            if len(current_agent.reward_history) == 0 or current_agent.reward_history[-1] != current_agent.agent_reward:
+                                current_agent.reward_history.append(current_agent.agent_reward)
+                
+                # Step 4: Update trajectory with rewards
+                for idx in range(len(rollout_idx_list)):
+                    result = response_results[idx]
+                    
+                    rollout_idx = result['rollout_idx']
+                    output_dpr = result['output_dpr']
+                    response = result['response']
+                    prompt = result['prompt']
+                    policy_name = result['policy_name']
+                    
+                    current_agent = agent_groups[idx][agent_idx]
+                    env = envs_list[idx]
+            
+                    if agent_name == self.turn_order[-1]:
+                        env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else env.state.to_dict()
+                        self.multi_logger.log_env_agent_info(
+                            self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
+                            "Trajectory information updated",
+                            {
+                                "agent_prompt": {"text": prompt if prompt is not None else "", "image": None},
+                                "agent_response": response,
+                                "env_state": env_state_compact,
+                            }
+                        )
+
+                    if output_dpr is not None:
+                        output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
+                        output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
+                        
+                        if self.lora_differ_mode and agent_name in self.agent_lora_mapping:
+                            batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
+                            lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
+                            output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
+                        
+                        if trajectory_per_task_dict[policy_name].batch is None:
+                            trajectory_per_task_dict[policy_name] = output_dpr
                         else:
-                            best_i = 0
-                    except Exception:
+                            trajectory_per_task_dict[policy_name] = DataProto.concat([
+                                trajectory_per_task_dict[policy_name], 
+                                output_dpr
+                            ])
+                
+                # Step 5: Select best rollout and copy to all
+                rollout_score_idx = []
+                for idx in range(len(rollout_idx_list)):
+                    current_agent = agent_groups[idx][agent_idx]
+                    agent_reward = current_agent.agent_reward if current_agent.agent_reward is not None else 0
+                    rollout_score_idx.append(agent_reward)
+                
+                try:
+                    if if_greedy:
+                        best_i = int(np.argmax(np.asarray(rollout_score_idx)))
+                    else:
                         best_i = 0
-                    
-                    selected_env = envs_list[best_i]
-                    selected_agent_group = agent_groups[best_i]
-                    
-                    task_done = selected_env.done
-                    
-                    envs_list = [copy.deepcopy(selected_env) for _ in envs_list]
-                    agent_groups = [copy.deepcopy(selected_agent_group) for _ in agent_groups]
-                    
-                    if task_done:
-                        break
+                except Exception:
+                    best_i = 0
+                
+                selected_env = envs_list[best_i]
+                selected_agent_group = agent_groups[best_i]
+                
+                task_done = selected_env.done
+                
+                envs_list = [copy.deepcopy(selected_env) for _ in envs_list]
+                agent_groups = [copy.deepcopy(selected_agent_group) for _ in agent_groups]
                 
                 if task_done:
                     break
-                    
-            else:
-                # Process each agent sequentially (important for state selection)
-                for agent_idx, agent_name in enumerate(self.turn_order):
-                    # Step 1: Generate responses for all rollouts
-                    response_results = []
-                    for idx in range(len(rollout_idx_list)):
-                        agent_config = self.agent_config_dict.get(agent_name, None)
-                        sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
-                        result = await async_generate_response(idx, agent_idx, agent_name, sample_num)
-                        response_results.append(result)
-                    
-                    # Step 2: Execute agent steps for all rollouts
-                    for idx in range(len(rollout_idx_list)):
-                        result = response_results[idx]
-                        
-                        if isinstance(result, Exception):
-                            continue
-                        
-                        rollout_idx = result['rollout_idx']
-                        response_str = result['response_str']
-                        
-                        current_agent = agent_groups[idx][agent_idx]
-                        current_agent.update_from_model(response_str)
-                        
-                        env_worker_id = random.randint(0, self.num_workers - 1)
-                        try:
-                            await asyncio.wait_for(
-                                current_agent.step(self.envs[rollout_idx_list[idx]], env_worker=self.env_workers[env_worker_id]),
-                                timeout=self.step_timeout
-                            )
-                        except asyncio.TimeoutError:
-                            current_agent.agent_reward = 0.0
-                            current_agent.reward_history.append(0.0)
-                    
-                    # Step 3: Calculate rewards for all rollouts of this agent
-                    for idx in range(len(rollout_idx_list)):
-                        current_agent = agent_groups[idx][agent_idx]
-                        env = envs_list[idx]
-                        
-                        # Calculate reward using agent's calculate_reward method
-                        if hasattr(current_agent, 'calculate_reward'):
-                            current_agent.calculate_reward(env)
-                        else:
-                            # Fallback: append current agent_reward to history if not already done
-                            if hasattr(current_agent, 'agent_reward'):
-                                if not hasattr(current_agent, 'reward_history'):
-                                    current_agent.reward_history = []
-                                if len(current_agent.reward_history) == 0 or current_agent.reward_history[-1] != current_agent.agent_reward:
-                                    current_agent.reward_history.append(current_agent.agent_reward)
-                    
-                    # Step 4: Update trajectory with rewards
-                    for idx in range(len(rollout_idx_list)):
-                        result = response_results[idx]
-                        
-                        if isinstance(result, Exception):
-                            continue
-                        
-                        rollout_idx = result['rollout_idx']
-                        output_dpr = result['output_dpr']
-                        response_str = result['response_str']
-                        prompt = result['prompt']
-                        policy_name = result['policy_name']
-                        
-                        current_agent = agent_groups[idx][agent_idx]
-                        env = envs_list[idx]
-              
-                        if agent_name == self.turn_order[-1]:
-                            env_state_compact = env.state.to_dict_compact() if hasattr(env.state, 'to_dict_compact') else env.state.to_dict()
-                            self.multi_logger.log_env_agent_info(
-                                self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
-                                "Trajectory information updated",
-                                {
-                                    "agent_prompt": {"text": prompt, "image": None},
-                                    "agent_response": response_str,
-                                    "env_state": env_state_compact,
-                                }
-                            )
-
-                        if output_dpr is not None:
-                            output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
-                            output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
-                            
-                            if self.lora_differ_mode:
-                                batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
-                                lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
-                                output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
-                           
-                            if trajectory_per_task_dict[policy_name].batch is None:
-                                trajectory_per_task_dict[policy_name] = output_dpr
-                            else:
-                                trajectory_per_task_dict[policy_name] = DataProto.concat([
-                                    trajectory_per_task_dict[policy_name], 
-                                    output_dpr
-                                ])
-                    
-                    # Step 5: Select best rollout and copy to all
-                    rollout_score_idx = []
-                    for idx in range(len(rollout_idx_list)):
-                        current_agent = agent_groups[idx][agent_idx]
-                        agent_reward = current_agent.agent_reward if current_agent.agent_reward is not None else 0
-                        rollout_score_idx.append(agent_reward)
-                    
-                    try:
-                        if if_greedy:
-                            best_i = int(np.argmax(np.asarray(rollout_score_idx)))
-                        else:
-                            best_i = 0
-                    except Exception:
-                        best_i = 0
-                    
-                    selected_env = envs_list[best_i]
-                    selected_agent_group = agent_groups[best_i]
-                    
-                    task_done = selected_env.done
-                    
-                    envs_list = [copy.deepcopy(selected_env) for _ in envs_list]
-                    agent_groups = [copy.deepcopy(selected_agent_group) for _ in agent_groups]
-                    
-                    if task_done:
-                        break
-                
-                if task_done:
-                    break
+            
+            if task_done:
+                break
         
         return trajectory_per_task_dict
 
@@ -789,7 +732,7 @@ class MultiAgentsExecutionEngine:
         if rollout_mode == "tree" and self.mode=="train" or self.env_name=="math_aggretion_env":
             tasks = [
                 asyncio.create_task(
-                    self.generate_env_idx_rollout(env_idx, if_dapo=getattr(self.config, 'if_dapo', True)), 
+                    self.generate_env_idx_rollout(env_idx, if_greedy=getattr(self.config, 'if_greedy', True)), 
                     name=f"env_{env_idx}_rollouts"
                 )
                 for env_idx in env_idx_list

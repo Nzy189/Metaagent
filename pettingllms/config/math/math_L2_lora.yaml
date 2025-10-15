@@ -66,7 +66,7 @@ training:
   experiment_name: math_eval_single_policy
   logger: [ 'console', 'wandb' ]
   model_checkpoints_dir: checkpoints
-  checkpoint_dir: checkpoint  
+  checkpoint_dir: checkpoints  
   save_freq: 40  
   ray_wait_register_center_timeout: 300
   train_batch_size: 32

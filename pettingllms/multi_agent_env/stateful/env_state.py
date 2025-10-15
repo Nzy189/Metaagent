@@ -425,7 +425,7 @@ class BlocksworldEnvState(EnvStateBase):
 # =========================================================
 
 @dataclass
-class Sudoku4x4EnvState(EnvStateBase):
+class SudukuEnvState(EnvStateBase):
     """Dynamic size Sudoku: Fill NxN grid satisfying row, column and sub-grid constraints (keep 4x4 name for compatibility)"""
     
     puzzle: Optional[List[List[int]]] = None
@@ -443,7 +443,15 @@ class Sudoku4x4EnvState(EnvStateBase):
         
         # Read map_size parameter from config if exists
         if self.config and hasattr(self.config, 'env') and hasattr(self.config.env, 'map_size'):
-            self.size = self.config.env.map_size
+            try:
+                self.size = int(self.config.env.map_size)
+            except Exception:
+                self.size = self.config.env.map_size
+        elif self.config and isinstance(self.config, dict) and 'env' in self.config and 'map_size' in self.config['env']:
+            try:
+                self.size = int(self.config['env']['map_size'])
+            except Exception:
+                self.size = self.config['env']['map_size']
         if self.size is None:
             self.size = 16
         
@@ -912,11 +920,19 @@ class PlanPathGridEnvState(EnvStateBase):
         super().__post_init__()
         # Read map_size parameter from config if exists
         if self.config and hasattr(self.config, 'env') and hasattr(self.config.env, 'map_size'):
-            self.grid_h = self.config.env.map_size
-            self.grid_w = self.config.env.map_size
+            try:
+                self.grid_h = int(self.config.env.map_size)
+                self.grid_w = int(self.config.env.map_size)
+            except Exception:
+                self.grid_h = self.config.env.map_size
+                self.grid_w = self.config.env.map_size
         elif self.config and isinstance(self.config, dict) and 'env' in self.config and 'map_size' in self.config['env']:
-            self.grid_h = self.config['env']['map_size']
-            self.grid_w = self.config['env']['map_size']
+            try:
+                self.grid_h = int(self.config['env']['map_size'])
+                self.grid_w = int(self.config['env']['map_size'])
+            except Exception:
+                self.grid_h = self.config['env']['map_size']
+                self.grid_w = self.config['env']['map_size']
         
         # Generate random environment based on seed
         grid, start, goal = self._generate_random_environment(self.seed, self.grid_h, self.grid_w, self.block_ratio)
@@ -1278,7 +1294,15 @@ class SokobanGridEnvState(EnvStateBase):
          # Read map_size parameter from config if exists
         self.size = None
         if self.config and hasattr(self.config, 'env') and hasattr(self.config.env, 'map_size'):
-            self.size = self.config.env.map_size
+            try:
+                self.size = int(self.config.env.map_size)
+            except Exception:
+                self.size = self.config.env.map_size
+        elif self.config and isinstance(self.config, dict) and 'env' in self.config and 'map_size' in self.config['env']:
+            try:
+                self.size = int(self.config['env']['map_size'])
+            except Exception:
+                self.size = self.config['env']['map_size']
         
         if self.size is None:
             self.size = 16
@@ -1291,11 +1315,11 @@ class SokobanGridEnvState(EnvStateBase):
             p_change_directions=0.35,
             num_steps=25,
             num_boxes=1,
-            tries=4,
+            tries=20,  # Increased from 4 to 20 for better success rate
             second_player=False,
-            search_depth=100,
+            search_depth=200,  # Increased from 100 to 200 for better initial state generation
             min_box_distance=2,  # Minimum distance between boxes and targets
-            min_difficulty_score=None,  # Will default to num_boxes * min_box_distance
+            min_difficulty_score=1,  # Lower difficulty requirement to ease generation
             seed=self.seed,  # Pass seed to ensure reproducible room generation
         )
 
@@ -1640,7 +1664,7 @@ class SokobanGridEnvState(EnvStateBase):
 STATE_REGISTRY = {
     "EightQueens": EightQueensEnvState,
     "Blocksworld": BlocksworldEnvState, 
-    "sudoku4x4": Sudoku4x4EnvState,
+    "suduku": SudukuEnvState,
     "plan_path": PlanPathGridEnvState,
     "sokoban": SokobanGridEnvState,  
 }

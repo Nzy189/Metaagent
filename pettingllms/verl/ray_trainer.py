@@ -421,8 +421,7 @@ class RayPPOTrainer:
         n_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
 
         # 1. Check total batch size for data correctness
-        real_train_batch_size = config.data.train_batch_size * config.actor_rollout_ref.rollout.n
-        # assert real_train_batch_size % n_gpus == 0, \
+        
         #     f"real_train_batch_size ({real_train_batch_size}) must be divisible by total n_gpus ({n_gpus})."
 
         # A helper function to check "micro_batch_size" vs "micro_batch_size_per_gpu"
@@ -797,14 +796,21 @@ class RayPPOTrainer:
         )
 
     def _save_checkpoint(self):
-        # path: given_path + `/experiment_name` + `/global_step_{global_steps}` + `/actor`
+        # path: checkpoints/{experiment_name}/{model_name}/global_step_{global_steps}/actor
         experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
         
         # Support custom checkpoint_dir if provided, otherwise use default
         if hasattr(self.config, 'checkpoint_dir') and self.config.checkpoint_dir is not None:
+            # checkpoint_dir already contains the full path: checkpoints/experiment_name/model_name
             experiment_folder = self.config.checkpoint_dir
         else:
-            experiment_folder = os.path.join(self.config.trainer.default_local_dir, experiment_name)
+            # Fallback to default_local_dir (should be 'checkpoints')
+            checkpoint_base = getattr(self.config.trainer, 'default_local_dir', 'checkpoints')
+            # Remove any trailing experiment_name from default_local_dir if it exists
+            if checkpoint_base.endswith(experiment_name):
+                experiment_folder = checkpoint_base
+            else:
+                experiment_folder = os.path.join(checkpoint_base, experiment_name)
         
         local_global_step_folder = os.path.join(experiment_folder, f'global_step_{self.global_steps}')
         # Make dirs from this absolute path

@@ -110,25 +110,29 @@ class ToolAgent(Agent):
                 ray_actor=env_worker,
             )
             env_data.state.code_extracted_answer = parse(code_execution_output)
+            # Update history records
+            env_data.state.code_generated_solution_history.append(env_data.state.code_generated_solution)
+            env_data.state.code_extracted_answer_history.append(env_data.state.code_extracted_answer)
+            self.answer_history.append(env_data.state.code_extracted_answer)
+            self.action_history.append(self.current_action)
+            if code_execution_output is None:
+                self.agent_reward = -1
+                return
+            is_correct = verify(parse(code_execution_output), parse(ground_truth_answer))
+            if is_correct:
+                self.success = True
+                self.agent_reward = 1.0
+                env_data.state.code_is_correct = True
+            else:
+                self.success = False
+                self.agent_reward = 0.0
+                env_data.state.code_is_correct = False
         except Exception as e:
             code_execution_output = f"error: {e}"
             env_data.state.code_extracted_answer = code_execution_output
+            self.agent_reward = -1
         
-        # Update history records
-        env_data.state.code_generated_solution_history.append(env_data.state.code_generated_solution)
-        env_data.state.code_extracted_answer_history.append(env_data.state.code_extracted_answer)
-        self.answer_history.append(env_data.state.code_extracted_answer)
-        self.action_history.append(self.current_action)
-                
-        is_correct = verify(parse(code_execution_output), parse(ground_truth_answer))
-        if is_correct:
-            self.success = True
-            self.agent_reward = 1.0
-            env_data.state.code_is_correct = True
-        else:
-            self.success = False
-            self.agent_reward = 0.0
-            env_data.state.code_is_correct = False
+        
         
         
         

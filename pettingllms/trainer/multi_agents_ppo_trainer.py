@@ -32,6 +32,7 @@ from pettingllms.verl.ray_trainer import RayPPOTrainer
 from verl.utils.torch_functional import pad_sequence_to_length
 from typing import Dict
 from pettingllms.utils.performance import simple_timer,colorful_print
+from pettingllms.trainer.async_generate import reset_event_loop_resources
 import ray
 
 
@@ -464,6 +465,8 @@ class MultiAgentsPPOTrainer:
                     self.agent_execution_engine.init_agents_and_envs(mode="train",step_idx=i)
                     for model_name,rollout_engine in self.rollout_engine_dict.items():
                         rollout_engine.wake_up()
+                    # Reset event loop resources before creating a new event loop
+                    reset_event_loop_resources()
                     gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list,rollout_mode=self.config.get("sample_mode","no_tree")))
                     for model_name, trainer in self.ppo_trainer_dict.items():
                         dp_world_size = trainer.actor_rollout_wg.world_size
@@ -673,23 +676,20 @@ class MultiAgentsPPOTrainer:
                 save_freq = self.config.training.get("save_freq", 0)
                 if save_freq > 0 and self.global_steps % save_freq == 0 and self.global_steps != 1:
                     with simple_timer("save_checkpoint", timing_raw):
-                        from datetime import datetime
                         import os
                         
-                        # Generate checkpoint path: checkpoint/date/experiment_name/policy
-                        current_time = datetime.now()
-                        date_str = current_time.strftime("%Y%m%d")
+                        # Generate checkpoint path: checkpoints/experiment_name/model_name
                         experiment_name = self.config.training.experiment_name
                         
                         for model_name, trainer in self.ppo_trainer_dict.items():
-                            # checkpoint/date/experiment_name/policy_name
-                            checkpoint_dir = getattr(self.config.training, 'checkpoint_dir', 'checkpoint')
-                            checkpoint_dir = os.path.join(checkpoint_dir, date_str, experiment_name, model_name)
-                            os.makedirs(checkpoint_dir, exist_ok=True)
+                            # Set checkpoint_dir in trainer config before saving
+                            checkpoint_base = getattr(self.config.training, 'checkpoint_dir', 'checkpoints')
+                            checkpoint_dir = os.path.join(checkpoint_base, experiment_name, model_name)
                             
                             colorful_print(f"Saving checkpoint for trainer {model_name} to: {checkpoint_dir}", "cyan")
                             
-                            
+                            # Pass checkpoint_dir to trainer
+                            trainer.config.checkpoint_dir = checkpoint_dir
                             trainer._save_checkpoint()
 
             # TODO: collect metrics
@@ -749,7 +749,9 @@ class MultiAgentsPPOTrainer:
             
         for _, rollout_engine in self.rollout_engine_dict.items():
             rollout_engine.wake_up()
-            
+        
+        # Reset event loop resources before creating a new event loop
+        reset_event_loop_resources()
         gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list))
         for model_name,rollout_engine in self.rollout_engine_dict.items():
             rollout_engine.sleep()

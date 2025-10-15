@@ -39,7 +39,7 @@ agent_policy_configs:
     agent_0:
       name: "reasoning_generator"
       policy_name: "shared_model"
-      enable_thinking: true
+      enable_thinking: false
       train_temperature: 1.0
       val_temperature: 0.6
 
@@ -47,9 +47,9 @@ agent_policy_configs:
     agent_1:
       name: "tool_generator"
       policy_name: "shared_model"
-      enable_thinking: true
+      enable_thinking: false
       train_temperature: 1.0
-      val_temperature: 0.
+      val_temperature: 0.6
 
 
 # Multi-agent interaction configuration

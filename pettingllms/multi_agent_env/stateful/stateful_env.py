@@ -11,7 +11,7 @@ from pettingllms.multi_agent_env.stateful.env_state import (
     PlanPathGridEnvState, 
     EightQueensEnvState, 
     BlocksworldEnvState, 
-    Sudoku4x4EnvState,
+    SudukuEnvState,
     get_state_class_by_benchmark
 )
 
@@ -81,8 +81,9 @@ class StatefulEnvBatch:
 
         if mode == "validate":
             env_idx_list = range(100)
-            rollout_idx_list = range(100)
-            samples = 1
+            samples = samples
+            rollout_idx_list = range(100*samples)
+            
 
         benchmark_name = getattr(config.env, "benchmark") if hasattr(config, "env") and hasattr(config.env, "benchmark") else "plan_path"
         dataset_name = getattr(config.env, "dataset") if hasattr(config, "env") and hasattr(config.env, "dataset") else "default"
@@ -131,7 +132,7 @@ class StatefulEnvBatch:
                     init_stacks=prob["init_stacks"],
                     goal_stacks=prob["goal_stacks"]
                 )
-            elif benchmark_name == "sudoku4x4":
+            elif benchmark_name == "suduku":
                 base_seed = env_indices[i] if i < len(env_indices) else i
                 if mode == "train":
                     seed = TRAIN_SEED_OFFSET + base_seed

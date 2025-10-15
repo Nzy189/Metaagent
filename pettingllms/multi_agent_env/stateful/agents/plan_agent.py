@@ -24,7 +24,7 @@ def truncatefn(s, length=300):
 class PlanAgent(Agent):
     """
     Unified PlanWalker:
-    - benchmark: plan_path | eight_queens | blocksworld | sudoku4x4
+    - benchmark: plan_path | eight_queens | blocksworld | suduku
     - Only prompt changes with benchmark; evaluation and write-back pipeline remains consistent.
     """
 
@@ -52,7 +52,7 @@ class PlanAgent(Agent):
         formatted_prompt = f"You are a planning and reasoning agent. You will receive: The original task description, The Code Agent’s code, The code execution output. Your job is to reason carefully, decide the final action, and format your response exactly as specified. Instructions: Read the task, inspect the code, and verify the execution output against the task requirements. If the code/output is correct and sufficient, adopt it; otherwise, improve or override it with your own reasoning. Keep your reasoning concise but explicit: justify why the final action is correct. Formatting is mandatory. Output the action list after a ####. "
         if self.benchmark in ("plan_path", "sokoban"):
             formatted_prompt+= "Format: output a single JSON list of moves after #### (e.g., a list of 'U','D','L','R'). Do not output placeholders. Please think step by step. Do not directly give the final action list. \n"
-        if self.benchmark == "sudoku4x4":
+        if self.benchmark == "suduku":
             formatted_prompt+= "Example: #### [[1,2,3,4],[3,4,1,2],[2,1,4,3],[4,3,2,1]] or #### [[0,1,2],[0,2,3],[1,0,4]].\n"
 
        
@@ -90,8 +90,6 @@ class PlanAgent(Agent):
             env_data.done = True
             self.success = True
         
-        if self.agent_reward is None:
-            self.agent_reward = 0.0
     
     def calculate_reward(self, env_data: Env):
         self.agent_reward = self.agent_reward+env_data.state.reward

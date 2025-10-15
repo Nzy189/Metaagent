@@ -39,7 +39,7 @@ class ToolAgent(Agent):
         formatted_prompt = (
             "You are an AI assistant specialized in solving planning problems through code generation. "
             "Instructions:\n"
-            "1. Write Python code enclosed in ```python and ``` tags\n"
+            "1. Write the whole Python code enclosed in only one ```python ``` \n"
             "2. Your code should output an action sequence using print() \n"
     
         )
@@ -51,10 +51,10 @@ class ToolAgent(Agent):
                 "3. Your code must compute moves from the given state; \n"
                 "4. Output format must be EXACTLY: **Actions List**: [\"U\",\"D\",\"L\",\"R\"] (or empty []).\n"
                 "5. If you cannot solve fully, output a partial but valid list.\n"
-                "6. Please use algorithm like BFS or A* to solve the problem. Very important, do not print action list directly. \n"
-                "7. Please print the final result. You must use 'print' to print the final result.\n\n"
+                "6. Please use algorithm like BFS or A* to solve the problem. Very important, print the final result. \n"
+                "7. ⚠️ Important: Your solution MUST write output using print() to print the final result.\n\n"
             )
-        elif self.benchmark == "sudoku4x4":
+        elif self.benchmark == "suduku":
             formatted_prompt += (
                 "3. For Sudoku, return the complete grid solution.\n"
                 "4. Ensure your code is executable and produces clear output\n\n"
@@ -68,7 +68,7 @@ class ToolAgent(Agent):
         
         if self.benchmark in ("plan_path", "sokoban"):
             formatted_prompt += ""
-        elif self.benchmark == "sudoku4x4":
+        elif self.benchmark == "suduku":
             formatted_prompt += (
                 "Important: Your code must output the final action in this exact format:\n"
                 "**Actions List**: [[1,2,3,4],[3,4,1,2],[2,1,4,3],[4,3,2,1]] (complete grid)\n"

@@ -15,7 +15,7 @@ resource:
 env:
   name: stateful_env
   dataset: "polaris"
-  benchmark: "plan_path"  # Supported benchmarks: plan_path, sokoban, EightQueens, Blocksworld, sudoku4x4
+  benchmark: "plan_path"  # Supported benchmarks: plan_path, sokoban, EightQueens, Blocksworld, suduku
   max_turns: 5
   resolve: false
   multi_modal: false

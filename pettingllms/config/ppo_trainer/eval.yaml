@@ -398,7 +398,7 @@ trainer:
   critic_warmup: 0
   default_hdfs_dir: null
   del_local_ckpt_after_load: False
-  default_local_dir: checkpoints/verl_examples/gsm8k
+  default_local_dir: checkpoints
   max_actor_ckpt_to_keep: 2
   max_critic_ckpt_to_keep: null
   # The timeout for ray worker group to wait for the register center to be ready

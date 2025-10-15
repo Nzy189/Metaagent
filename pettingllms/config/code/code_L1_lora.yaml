@@ -36,7 +36,7 @@ multi_agent_interaction:
 # Shared model configurations
 models:
   model_0:
-    path: "/home/your model path/models/Qwen3-4B-Instruct-2507"
+    path: "/home/lah003/models/Qwen3-4B-Instruct-2507"
     name: "code_generator_model"
     ppo_trainer_config:
       data: 
@@ -130,7 +130,7 @@ trainer:
   critic_warmup: 0
   default_hdfs_dir: null
   del_local_ckpt_after_load: False
-  default_local_dir: checkpoints/pettingllms/code_eval_single_agent
+  default_local_dir: checkpoints
   max_actor_ckpt_to_keep: 3
   max_critic_ckpt_to_keep: null
   ray_wait_register_center_timeout: 300
