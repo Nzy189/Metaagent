@@ -15,7 +15,7 @@
   <a href="https://arxiv.org/pdf/2510.11062">📄 Paper</a> •
   <a href="https://pettingllms-ai.github.io/">🌐 Website</a> •
   <a href="https://www.youtube.com/watch?v=8WM-gVTrSBc">🎮 Demo</a> •
-  <a href="https://https://pettingllms-docs.readthedocs.io/">📖 Documentation</a> •
+  <a href="https://pettingllms-docs.readthedocs.io/en/latest/">📖 Documentation</a> •
   <a href="https://pettingllms-docs.readthedocs.io/en/latest/About_us/">👥 About Us</a>
   
 </p>
