@@ -37,7 +37,7 @@ class ToolAgent(Agent):
         state = getattr(env_data, "state", None)
         
         formatted_prompt = (
-            "You are an AI assistant specialized in solving planning problems through code generation. "
+            "You are an AI assistant specialized in solving planning problems through code generation. Since your code will be executed directly, you need to print the final result. "
             "Instructions:\n"
             "1. Write the whole Python code enclosed in only one ```python ``` \n"
             "2. Your code should output an action sequence using print() \n"
@@ -50,7 +50,7 @@ class ToolAgent(Agent):
             formatted_prompt += (
                 "3. Your code must compute moves from the given state; \n"
                 "4. Output format must be EXACTLY: **Actions List**: [\"U\",\"D\",\"L\",\"R\"] (or empty []).\n"
-                "5. If you cannot solve fully, output a partial but valid list.\n"
+                "5. Remember, please do not return the result directly, you need to print the final result. \n"
                 "6. Please use algorithm like BFS or A* to solve the problem. Very important, print the final result. \n"
                 "7. ⚠️ Important: Your solution MUST write output using print() to print the final result.\n\n"
             )

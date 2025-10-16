@@ -161,10 +161,9 @@ config = {
 
 Now that you've run your first training session:
 
-- Learn about [Core Concepts](../core-concepts/overview.md)
-- Explore [Multi-Agent Workflows](../core-concepts/workflows.md)
-- Understand the [Training System](../core-concepts/training-system.md)
-- Check out [Benchmark Results](../results/benchmarks.md)
+- Prepare more datasets: [Dataset Guide](datasets.md)
+- Run model evaluation: [Evaluation Guide](evaluation.md)
+- Learn detailed training configurations: [Training Guide](training.md)
 
 ## Troubleshooting
 

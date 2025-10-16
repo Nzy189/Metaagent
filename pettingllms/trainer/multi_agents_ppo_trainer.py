@@ -190,6 +190,12 @@ class MultiAgentsPPOTrainer:
         colorful_print(f"All {len(self.ppo_trainer_dict)} trainers initialized successfully!", "green")
 
     def _update_parameters(self, batch, ppo_trainer, timing_raw):
+        """
+        Update parameters for a single trainer.
+        
+        Returns:
+            DataProto: The updated batch with computed advantages and other metrics
+        """
         ppo_trainer.global_steps += 1
         
         
@@ -392,6 +398,9 @@ class MultiAgentsPPOTrainer:
                     reward_extra_infos_dict=reward_extra_infos_dict,
                     dump_path=rollout_data_dir,
                 )
+        
+        # Return the updated batch with advantages and other computed values
+        return batch
 
     
 
@@ -513,17 +522,18 @@ class MultiAgentsPPOTrainer:
                            
                             local_timing_raw = {}
                          
-                            self._update_parameters(batch, trainer, local_timing_raw)
+                            # Get the updated batch with advantages
+                            updated_batch = self._update_parameters(batch, trainer, local_timing_raw)
                             
                             
                             trainer_metrics = {}
-                            if hasattr(batch, 'meta_info') and 'metrics' in batch.meta_info:
-                                trainer_metrics = batch.meta_info['metrics']
+                            if hasattr(updated_batch, 'meta_info') and 'metrics' in updated_batch.meta_info:
+                                trainer_metrics = updated_batch.meta_info['metrics']
                             
                            
                             agent_names = None
-                            if hasattr(batch, 'non_tensor_batch') and 'agent_name' in batch.non_tensor_batch:
-                                agent_names = batch.non_tensor_batch['agent_name']
+                            if hasattr(updated_batch, 'non_tensor_batch') and 'agent_name' in updated_batch.non_tensor_batch:
+                                agent_names = updated_batch.non_tensor_batch['agent_name']
                             
                             return {
                                 "status": "success",
@@ -531,7 +541,8 @@ class MultiAgentsPPOTrainer:
                                 "agent_name": agent_name,
                                 "timing": local_timing_raw,
                                 "metrics": trainer_metrics,
-                                "agent_names": agent_names
+                                "agent_names": agent_names,
+                                "updated_batch": updated_batch  # Return the updated batch
                             }
                         except Exception as e:
                             import traceback
@@ -641,6 +652,10 @@ class MultiAgentsPPOTrainer:
                                 task_desc = model_name + (f" (agent: {agent_name})" if agent_name else "")
                                 colorful_print(f"✓ Updated parameters for: {task_desc}", "green")
                                 success_count += 1
+                                
+                                # Update batch_per_trainer with the updated batch that includes advantages
+                                if "updated_batch" in result:
+                                    batch_per_trainer[model_name] = result["updated_batch"]
                                 
                                
                                 for key, value in result["timing"].items():

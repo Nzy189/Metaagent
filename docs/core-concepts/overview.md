@@ -77,9 +77,9 @@ PettingLLMs implements different agent workflows for different task domains:
 ### Game/Planning Workflow
 
 ```
-Planner → proposes action
+Tool agent → executes tools
     ↓
-Executor → executes & returns observation
+Plan agent → Plan final action
     ↓
 [Repeat until goal or budget]
 ```
@@ -119,11 +119,7 @@ See [Multi-Agent Workflows](workflows.md) for detailed examples.
 - Intermediate rewards guide learning
 - Terminates on success or turn budget
 
-### Evaluation (Flexible)
 
-- Can evaluate in single-agent or multi-agent mode
-- Single-agent: One model generates full solution
-- Multi-agent: Same collaborative workflow as training
 
 ## Policy Types
 
@@ -134,11 +130,6 @@ See [Multi-Agent Workflows](workflows.md) for detailed examples.
 - Suitable for tasks where roles are similar
 - More sample efficient
 
-**When to use:**
-- Games (Sudoku, Sokoban) 
-- Simple planning tasks
-- Tasks with symmetric agent roles
-
 ### Role-Specialized Policies
 
 - **Separate policy** for each agent role
@@ -146,10 +137,6 @@ See [Multi-Agent Workflows](workflows.md) for detailed examples.
 - Suitable for tasks requiring distinct skills
 - Better final performance
 
-**When to use:**
-- Code generation (Tester vs Coder)
-- Complex math reasoning
-- Tasks with asymmetric agent roles
 
 ## Reward Structure
 
@@ -165,18 +152,18 @@ PettingLLMs uses a mixed reward structure:
 - Different for each agent
 - Encourages specialization
 
-### Example: Code Task
+### Example: Game Task
 
 ```python
 # Global reward: Test pass rate
-global_reward = tests_passed / total_tests
+global_reward = final env reword
 
 # Local rewards
-tester_reward = test_quality_score  
-coder_reward = code_correctness_score
+tool_agent_reward= the action of tool agent execution  reward
+plan_agent_reward= the action of plan agent execution reward
 
 # Combined
-final_reward = alpha * global_reward + (1-alpha) * local_reward
+final_reward = alpha * global_reward + local_reward
 ```
 
 ## Configuration System
@@ -201,8 +188,9 @@ Each config specifies:
 
 ## Next Steps
 
-- Learn about [AT-GRPO Algorithm](at-grpo.md)
-- Explore [Multi-Agent Workflows](workflows.md)
-- Understand [Training System](training-system.md)
-- Check [Training Overview](../training/overview.md)
+Dive deeper into core concepts:
+
+- Understand the training algorithm: [AT-GRPO Algorithm](at-grpo.md)
+- Learn about distributed training: [Training System](training-system.md)
+- Explore agent specialization levels: [Three-Level Specialization](three-level-specialization.md)
 

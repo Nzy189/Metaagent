@@ -71,29 +71,111 @@ for agent_role in agent_roles:
 
 ## Tree-Structured Sampling
 
-AT-GRPO uses tree-structured sampling for efficient exploration:
+AT-GRPO uses tree-structured sampling with best-of-N selection at each agent step:
+
+### Training Algorithm Flow
+
+For each environment prompt, AT-GRPO maintains N parallel rollouts and builds a tree structure:
 
 ```
-                    Root Prompt
-                        |
-        +---------------+---------------+
-        |               |               |
-    Rollout 1      Rollout 2      Rollout 3
-        |               |               |
-    Turn 1 (shared prefix)
-        |
-    +---+---+---+
-    |   |   |   |
-   A1  A2  A3  A4  (Agent actions)
+Initial State (env_idx)
     |
-    Turn 2
+    |
+    |
+Turn 1:
+    Agent 1 acts:
+        - Generate responses in parallel
+        - Execute environment steps
+        - Calculate rewards for all N rollouts
+        - Select best rollout (highest reward)
+        - Copy best state to all N rollouts  ← Tree branch selection
+    
+    Agent 2 acts:
+        - Generate responses in parallel (from shared state)
+        - Execute environment steps
+        - Calculate rewards
+        - Select best rollout
+        - Copy best state to all N rollouts  ← Tree branch selection
+    
+    ... (continue for all agents in turn)
+
+Turn 2:
+    (Repeat same process with shared state from Turn 1)
     ...
 ```
 
+### Key Implementation Details
+
+**Step-by-Step Execution** (from `generate_env_idx_rollout`):
+
+1. . **Sequential Environment Execution**: Execute agent actions in environment
+   ```python
+   for idx in range(N):
+       current_agent.update_from_model(response)
+       await current_agent.step(env)
+   ```
+
+3. **Reward Calculation**: Calculate rewards for all N rollouts
+   ```python
+   for idx in range(N):
+       current_agent.calculate_reward(env)
+   ```
+
+4. **Best-of-N Selection**: Select rollout with highest reward
+   ```python
+   if if_greedy:
+       best_i = argmax([agent.agent_reward for agent in agents])
+   else:
+       best_i = 0
+   ```
+
+5. **State Broadcasting**: Copy best state to all rollouts
+   ```python
+   selected_env = envs_list[best_i]
+   selected_agent_group = agent_groups[best_i]
+   
+   # Broadcast to all rollouts
+   envs_list = [deepcopy(selected_env) for _ in envs_list]
+   agent_groups = [deepcopy(selected_agent_group) for _ in agent_groups]
+   ```
+
+### Tree Structure Visualization
+
+```
+                    Initial State
+                         |
+        +----------------+----------------+
+        |                |                |
+    Rollout 0       Rollout 1       Rollout N-1
+        |                |                |
+    Agent 1 generates N different responses
+        ↓                ↓                ↓
+    [Reward: 0.5]   [Reward: 0.8]   [Reward: 0.3]
+        |                |                |
+        +-------→ Select Best (1) ←-------+
+                         |
+            All rollouts copy state from Rollout 1
+                         |
+        +----------------+----------------+
+        |                |                |
+    Rollout 0       Rollout 1       Rollout N-1
+    (all same)      (all same)      (all same)
+        |                |                |
+    Agent 2 generates N different responses
+        ↓                ↓                ↓
+    [Reward: 0.6]   [Reward: 0.4]   [Reward: 0.9]
+        |                |                |
+        +-------→ Select Best (N-1) ←-----+
+                         |
+                   (Continue...)
+```
+
 **Benefits**:
-- Explores multiple paths from shared states
-- More efficient than independent sampling
-- Natural variance for advantage estimation
+- Efficient exploration: N parallel attempts per agent
+- Progressive refinement: Best decisions cascade forward
+- Memory efficient: Only one state tree instead of N independent trajectories
+- Credit assignment: Each agent's contribution is evaluated separately
+- Natural variance for advantage estimation through parallel sampling
 
 ## Mixed Reward Structure
 
@@ -194,70 +276,18 @@ def AT_GRPO(env, policies, num_iterations):
 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 ```
 
-### Value Function
 
-AT-GRPO can optionally use a value function:
 
-```python
-# With value function
-advantages = rewards + gamma * values_next - values
 
-# Without value function (default)
-advantages = rewards - rewards.mean()
-```
 
-### Clipping
 
-PPO-style clipping prevents large policy updates:
 
-```python
-epsilon = 0.2  # Clipping parameter
-clipped_ratio = torch.clamp(ratio, 1-epsilon, 1+epsilon)
-```
-
-## Hyperparameters
-
-Key hyperparameters for AT-GRPO:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `alpha` | 0.7 | Global/local reward mixing |
-| `epsilon` | 0.2 | PPO clipping parameter |
-| `ppo_epochs` | 3 | Training epochs per batch |
-| `batch_size` | 128 | Batch size for training |
-| `gamma` | 0.99 | Discount factor |
-| `lr` | 1e-5 | Learning rate |
-| `tree_width` | 4 | Rollouts per tree node |
-
-## Comparison with Other Algorithms
-
-| Algorithm | Multi-Agent | Turn-wise | Tree Sampling |
-|-----------|-------------|-----------|---------------|
-| PPO | ❌ | ❌ | ❌ |
-| GRPO | ❌ | ❌ | ✅ |
-| AT-GRPO | ✅ | ✅ | ✅ |
-
-## Results
-
-AT-GRPO significantly outperforms single-agent GRPO:
-
-### Planning Tasks (Plan-Path)
-- Single GRPO: 11% → **47%**
-- AT-GRPO: 11% → **96-97%**
-
-### Code Tasks (LiveCodeBench, Qwen3-8B)
-- Single GRPO: 22.8% → **25.7%**
-- AT-GRPO: 22.8% → **30.3-33.1%**
-
-### Math Tasks (AIME24, Qwen3-8B)
-- Single GRPO: 18.3% → **18.3%** (no improvement)
-- AT-GRPO: 18.3% → **50-57%**
-
-See [Benchmark Results](../results/benchmarks.md) for full results.
 
 ## Next Steps
 
-- Learn about [Multi-Agent Workflows](workflows.md)
-- Understand the [Training System](training-system.md)
-- Explore [Training Guides](../training/overview.md)
+Continue exploring core concepts:
+
+- Learn about distributed architecture: [Training System](training-system.md)
+- Understand agent specialization: [Three-Level Specialization](three-level-specialization.md)
+- Return to concepts overview: [Core Concepts](overview.md)
 
