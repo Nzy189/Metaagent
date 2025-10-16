@@ -181,9 +181,9 @@ PettingLLMs uses a tiered approach to define agent roles, ranging from simple in
 If you find PettingLLMs useful for your research or projects, please cite:
 
 ```bibtex
-@article{pettingllms2025,
-  title={PettingLLMs: Reinforcement Learning for Multi-Agent Large Language Models},
-  author={Your Authors},
+@article{zhao2025stronger,
+  title={Stronger Together: On-Policy Reinforcement Learning for Collaborative LLMs},
+  author={Zhao, Yujie and Hu, Lanxiang and Wang, Yang and Hou, Minmin and Zhang, Hao and Ding, Ke and Zhao, Jishen},
   journal={arXiv preprint arXiv:2510.11062},
   year={2025}
 }
