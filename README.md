@@ -196,7 +196,7 @@ This work was primarily conducted by **Yujie Zhao** during her summer internship
 
 
 - **VERL**: [VERL: Efficient RL Training for LLMs](https://github.com/volcengine/verl) - For efficient distributed RL training infrastructure
-- **RLLM**: [RLLM: Reinforcement Learning with Language Models](https://github.com/mukobi/rllm) - For foundational RL algorithms for LLMs
+- **RLLM**: [RLLM: Reinforcement Learning with Language Models](https://github.com/rllm-org/rllm) - For foundational RL algorithms for LLMs
 
 ---
 
