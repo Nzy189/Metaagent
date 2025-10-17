@@ -192,7 +192,7 @@ If you find PettingLLMs useful for your research or projects, please cite:
 
 ## 🔗 Acknowledgements
 
-This work was primarily conducted by **Yujie Zhao** during her summer internship at **Intel Corporation**. We gratefully acknowledge Intel's support and resources that made this research possible.
+This work was primarily conducted by Yujie Zhao during her summer internship at **Intel Corporation**. We gratefully acknowledge Intel's support and resources that made this research possible.
 
 
 - **VERL**: [VERL: Efficient RL Training for LLMs](https://github.com/volcengine/verl) - For efficient distributed RL training infrastructure

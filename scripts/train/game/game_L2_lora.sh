@@ -1,0 +1,42 @@
+set -x
+
+export CUDA_VISIBLE_DEVICES=3
+export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
+export VLLM_ATTENTION_BACKEND=FLASH_ATTN
+export VLLM_USE_FLASHINFER_SAMPLER=0
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:False"
+export VLLM_USE_V1=1
+export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+export VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
+export HYDRA_FULL_ERROR=1
+export NCCL_IB_DISABLE=1
+export NCCL_NET_GDR_LEVEL=0
+
+
+export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda}
+export LD_LIBRARY_PATH=$CUDA_HOME/targets/x86_64-linux/lib:${LD_LIBRARY_PATH}
+
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}
+
+
+GPU_num=1
+
+
+model_0_config_path="models.model_0.ppo_trainer_config"
+model_0_resource="resource.n_gpus_per_node=$GPU_num  $model_0_config_path.trainer.n_gpus_per_node=$GPU_num $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=$GPU_num"
+
+
+python3 -m pettingllms.trainer.train --config-path ../config/stateful --config-name stateful_L2_lora \
+    $model_0_resource \
+    base_models.policy_0.path="your base model path"\
+    training.experiment_name=stateful_1.7B_lora\
+    training.total_training_steps=200\
+    training.epoch_size=20\
+    training.train_batch_size=32\
+    training.train_sample_num=8\
+    training.validate_sample_num=5\
+    training.max_prompt_length=8192\
+    training.max_response_length=8192\
+    training.val_freq=10\
+    training.resample_freq=3\
+    env.benchmark=sokoban\
