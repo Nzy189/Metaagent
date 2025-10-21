@@ -29,7 +29,7 @@ model_0_resource="resource.n_gpus_per_node=$GPU_num  $model_0_config_path.traine
 python3 -m pettingllms.trainer.train --config-path ../config/stateful --config-name stateful_L1_prompt \
     $model_0_resource \
     lora_rank=0\
-    base_models.policy_0.path="/home/lah003/models/Qwen3-1.7B"\
+    base_models.policy_0.path="your base model path"\
     training.experiment_name=stateful_1.7B_prompt\
     training.total_training_steps=200\
     training.epoch_size=20\
