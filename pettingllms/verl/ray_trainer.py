@@ -816,7 +816,8 @@ class RayPPOTrainer:
 
     def _save_checkpoint(self):
         # path: checkpoints/{experiment_name}/{model_name}/global_step_{global_steps}/actor
-        experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
+        experiment_name = getattr(self.config.trainer, 'experiment_name', 
+                                   getattr(self.config, 'experiment_name', 'default_experiment'))
         
         # Support custom checkpoint_dir if provided, otherwise use default
         if hasattr(self.config, 'checkpoint_dir') and self.config.checkpoint_dir is not None:
@@ -884,7 +885,8 @@ class RayPPOTrainer:
         if self.config.trainer.default_hdfs_dir is not None:
             raise NotImplementedError("load from hdfs is not implemented yet")
         else:
-            experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
+            experiment_name = getattr(self.config.trainer, 'experiment_name', 
+                                       getattr(self.config, 'experiment_name', 'default_experiment'))
             checkpoint_folder = os.path.join(self.config.trainer.default_local_dir, experiment_name)  # TODO: check path
             if not os.path.isabs(checkpoint_folder):
                 working_dir = os.getcwd()
@@ -975,6 +977,9 @@ class RayPPOTrainer:
                     # Sleep the manager if it's running
                     if hasattr(self.async_rollout_manager, 'sleep'):
                         self.async_rollout_manager.sleep()
+                    # Perform full cleanup
+                    if hasattr(self.async_rollout_manager, 'cleanup'):
+                        self.async_rollout_manager.cleanup()
                     print("  Cleaned up async_rollout_manager")
                 except Exception as e:
                     print(f"  Warning: Error cleaning up async_rollout_manager: {e}")

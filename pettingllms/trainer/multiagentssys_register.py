@@ -47,6 +47,7 @@ AGENT_CLASSES = {
     "test_generator": safe_import("pettingllms.multi_agent_env.code.agents.unit_test_agent", "UnitTestGenerationAgent"),
     "code_generator_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.agents.code_agent", "CodeGenerationAgent"),
     "reasoning_generator": safe_import("pettingllms.multi_agent_env.math.agents.reasoning_agent", "ReasoningAgent"),
+    "reasoning_single_agent": safe_import("pettingllms.multi_agent_env.math.agents.reasoning_single_agent", "ReasoningAgent"),
     "tool_generator": safe_import("pettingllms.multi_agent_env.math.agents.tool_agent", "ToolAgent"),
     "math_agent_single_agent": safe_import("pettingllms.multi_agent_env.math_single_agent.agents.math_agent", "MathGenerationAgent"),
     "aggreted_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.aggreted_agent", "AggregationAgent"),

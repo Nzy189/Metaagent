@@ -49,24 +49,28 @@ class ReasoningAgent(Agent):
             formatted_prompt = (
                 f"Problem:\n{problem}\n\n"
                 f"Please think step by step and solve this problem.\n"
-                f"When you have a final answer, output it in \\boxed{{}} format to indicate completion.\n"
-                f"Example: \\boxed{{123}}\n\n"
+                f"You can continue reasoning in multiple turns. In each turn, either:\n"
+                f"1. Continue your reasoning and thinking process, OR\n"
+                f"2. When you are confident about your final answer, output it in \\boxed{{}} format and then output <TERMINATE> to end.\n"
+                f"Example: \\boxed{{123}}\n<TERMINATE>\n\n"
             )
         else:
             # Subsequent turns: show previous attempts and ask to continue or refine
-            prompt_for_history = "Here is the history of your previous reasoning attempts:\n"
+            prompt_for_history = "Here is the history of your previous reasoning:\n"
             if reasoning_generated_solution_history is not None:
                 for i in range(len(reasoning_generated_solution_history)):
-                    prompt_for_history += f"\nAttempt {i+1}:\n{reasoning_generated_solution_history[i]}\n"
+                    prompt_for_history += f"\n--- Turn {i+1} ---\n{reasoning_generated_solution_history[i]}\n"
                     if reasoning_extracted_answer_history[i] is not None:
                         prompt_for_history += f"Extracted answer: {reasoning_extracted_answer_history[i]}\n"
             
             formatted_prompt = (
                 f"Problem:\n{problem}\n\n"
                 f"{prompt_for_history}\n"
-                f"Please continue reasoning or refine your solution.\n"
-                f"When you have a final answer, output it in \\boxed{{}} format to indicate completion.\n"
-                f"Example: \\boxed{{123}}\n\n"
+                f"--- Current Turn ---\n"
+                f"Based on your previous reasoning above, you can now:\n"
+                f"1. Continue reasoning and refining your solution, OR\n"
+                f"2. If you are confident about your answer, output it in \\boxed{{}} format and then output <TERMINATE> to end.\n"
+                f"Example: \\boxed{{123}}\n<TERMINATE>\n\n"
             )
         
         self.current_prompt = {"text": formatted_prompt, "image": None}
@@ -80,7 +84,7 @@ class ReasoningAgent(Agent):
     async def step(self, env_data: Env, env_worker: Any = None):
         """
         Process the generated reasoning solution and check for termination token.
-        The agent terminates when it outputs an answer in \boxed{} format.
+        The agent terminates when it outputs <TERMINATE> token.
         """
         # Store the full solution
         env_data.state.reasoning_generated_solution = truncatefn(self.current_action)
@@ -93,13 +97,13 @@ class ReasoningAgent(Agent):
         env_data.state.reasoning_extracted_answer_history.append(extracted_answer)
         self.answer_history.append(extracted_answer)
         
-        # Check if agent has produced a termination token (\boxed{} with an answer)
-        # If an answer is successfully extracted, consider it a termination signal
-        if extracted_answer is not None:
-            # Agent has signaled completion by providing an answer in \boxed{} format
-            env_data.done = True
+        # Check if agent has produced the termination token <TERMINATE>
+        has_terminate_token = "<TERMINATE>" in self.current_action
+        
+        
             
-            # Evaluate correctness against ground truth
+        # Evaluate correctness against ground truth if an answer was extracted
+        if extracted_answer is not None:
             ground_truth_answer = env_data.state.ground_truth_answer
             if ground_truth_answer is not None:
                 is_correct = verify(extracted_answer, parse(ground_truth_answer))
@@ -111,6 +115,14 @@ class ReasoningAgent(Agent):
                 env_data.state.reasoning_is_correct = False
                 env_data.state.success = False
                 self.success = False
+        else:
+            # Terminated but no valid answer extracted
+            env_data.state.reasoning_is_correct = False
+            env_data.state.success = False
+            self.success = False
+        if has_terminate_token:
+            # Agent has explicitly signaled completion with <TERMINATE>
+            env_data.done = True
         else:
             # No termination token found, episode continues
             env_data.state.reasoning_is_correct = False

@@ -16,7 +16,7 @@ env:
   name: code_env
   dataset: "code_contests"
   benchmark: "code_contests"
-  max_turns: 5
+  max_turns: 4
   resolve: false
   multi_modal: false
   batched_init: true

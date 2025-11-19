@@ -570,8 +570,8 @@ def main():
     project_root = Path(__file__).resolve().parents[2]
     
     # Create train and test directories
-    train_dir = project_root / "datasets" / "code" / "train"
-    test_dir = project_root / "datasets" / "code" / "test"
+    train_dir = project_root / "data" / "code" / "train"
+    test_dir = project_root / "data" / "code" / "test"
     os.makedirs(train_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
     print(f"train_dir: {train_dir}")
@@ -605,9 +605,9 @@ def main():
 
     # 2. Apps(test)
     df_apps_test = process_apps_test()
-    (test_dir / "apps .parquet").unlink(missing_ok=True)
-    df_apps_test.to_parquet(test_dir / "apps .parquet", index=False)
-    print(f"Saved: {test_dir / 'apps .parquet'}")
+    (test_dir / "apps.parquet").unlink(missing_ok=True)
+    df_apps_test.to_parquet(test_dir / "apps.parquet", index=False)
+    print(f"Saved: {test_dir / 'apps.parquet'}")
 
     # 3. LiveCodeBench v6 (save as livecodebench_test.parquet to match loader)
     df_lcb = process_livecodebench()
