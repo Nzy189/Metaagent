@@ -127,7 +127,7 @@ class ReasoningAgent(Agent):
         
     
     def calculate_reward(self, env_data: Env):
-        self.agent_reward = int(env_data.state.reasoning_is_correct)
+        self.agent_reward = int(env_data.state.reasoning_is_correct)+ int(env_data.state.reasoning_is_correct)
         self.reward_history.append(self.agent_reward)
 
     def reset(self):

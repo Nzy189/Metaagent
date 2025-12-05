@@ -172,9 +172,9 @@ PettingLLMs uses a tiered approach to define agent roles, ranging from simple in
 
 | Level | Role Specialization Method | Description |
 | :--- | :--- | :--- |
-| **L0** | **Prompt** | Roles are defined *solely through instructions* in the prompt. The base model is identical for all agents, offering a flexible but performance-limited baseline. |
-| **L1** | **LoRA** | Each role is specialized using a unique, lightweight **LoRA adapter**. This creates distinct, cost-effective agent "personalities" on top of a shared base model. |
-| **L2** | **Full-Model** | The **entire model's weights** are optimized for a specific role using reinforcement learning. This creates a highly specialized expert agent for maximum performance on complex tasks. |
+| **L0** | **Shared model** | Roles are defined *solely through instructions* in the prompt. The base model is identical for all agents, offering a flexible but performance-limited baseline. |
+| **L1** | **Role-specific LoRA** | Each role is specialized using a unique, lightweight **LoRA adapter**. This creates distinct, cost-effective agent "personalities" on top of a shared base model. |
+| **L2** | **Role-specific Model** | The **entire model's weights** are optimized for a specific role using reinforcement learning. This creates a highly specialized expert agent for maximum performance on complex tasks. |
 
 ## 📚 Citation
 

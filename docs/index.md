@@ -132,7 +132,7 @@ PettingLLMs uses a tiered approach to define agent roles, ranging from simple in
 
 | Level | Role Specialization Method | Description |
 | :--- | :--- | :--- |
-| **L0** | **Prompt** | Roles are defined *solely through instructions* in the prompt. The base model is identical for all agents, offering a flexible but performance-limited baseline. |
+| **L0** | **Shared model** | Roles are defined *solely through instructions* in the prompt. The base model is identical for all agents, offering a flexible but performance-limited baseline. |
 | **L1** | **LoRA** | Each role is specialized using a unique, lightweight **LoRA adapter**. This creates distinct, cost-effective agent "personalities" on top of a shared base model. |
 | **L2** | **Full-Model** | The **entire model's weights** are optimized for a specific role using reinforcement learning. This creates a highly specialized expert agent for maximum performance on complex tasks. |
 
@@ -144,22 +144,11 @@ PettingLLMs uses a tiered approach to define agent roles, ranging from simple in
 - [Training Guides](training/overview.md) - Train on different tasks
 - [API Reference](api/index.md) - Detailed API documentation
 
-## 📚 Citation
 
-If you find PettingLLMs useful for your research or projects, please cite:
-
-```bibtex
-@article{pettingllms2025,
-  title={PettingLLMs: Reinforcement Learning for Multi-Agent Large Language Models},
-  author={Your Authors},
-  journal={arXiv preprint arXiv:2510.11062},
-  year={2025}
-}
-```
 
 ## 🔗 Acknowledgements
 
-This work was primarily conducted by **Yujie Zhao** during her summer internship at **Intel Corporation**. We gratefully acknowledge Intel's support and resources that made this research possible.
+This work was primarily conducted by Yujie Zhao during her summer internship at **Intel Corporation**. We gratefully acknowledge Intel's support and resources that made this research possible.
 
 - **VERL**: [VERL: Efficient RL Training for LLMs](https://github.com/volcengine/verl) - For efficient distributed RL training infrastructure
 - **RLLM**: [RLLM: Reinforcement Learning with Language Models](https://github.com/mukobi/rllm) - For foundational RL algorithms for LLMs

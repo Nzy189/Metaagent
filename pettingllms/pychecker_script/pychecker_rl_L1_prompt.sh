@@ -1,6 +1,6 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -26,18 +26,19 @@ model_0_config_path="models.model_0.ppo_trainer_config"
 model_0_resource="resource.n_gpus_per_node=$GPU_num  $model_0_config_path.trainer.n_gpus_per_node=$GPU_num $model_0_config_path.trainer.nnodes=1 $model_0_config_path.actor_rollout_ref.rollout.tensor_model_parallel_size=$GPU_num"
 
 
-python3 -m pettingllms.trainer.train --config-path ../config/stateful --config-name stateful_L1_prompt \
+python3 -m pettingllms.trainer.train --config-path ../config/pychecker_rl --config-name pychecker_rl_L1_prompt \
     $model_0_resource \
-    lora_rank=0\
-    base_models.policy_0.path="your base model path"\
-    training.experiment_name=stateful_1.7B_prompt\
+    base_models.policy_0.path="/home/lah003/models/Qwen3-1.7B"\
+    training.experiment_name=pychecker_rl_1.7B_prompt\
     training.total_training_steps=200\
     training.epoch_size=20\
     training.train_batch_size=32\
     training.train_sample_num=8\
     training.validate_sample_num=5\
-    training.max_prompt_length=8192\
-    training.max_response_length=8192\
+    training.max_prompt_length=4096\
+    training.max_response_length=2048\
     training.val_freq=10\
     training.resample_freq=3\
-    env.benchmark=sokoban\
+    env.dataset=pychecker\
+    env.benchmark=pychecker
+
