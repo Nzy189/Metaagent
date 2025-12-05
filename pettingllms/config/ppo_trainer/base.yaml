@@ -74,7 +74,7 @@ actor_rollout_ref:
     checkpoint:
       contents: ['model', 'optimizer', 'extra']  # with 'hf_model' you can save whole model as hf format, now only use sharded model checkpoint to save space
     optim:
-      lr: 1e-5
+      lr: 1e-6
       lr_warmup_steps: -1 # Prioritized. Negative values mean delegating to lr_warmup_steps_ratio.
       lr_warmup_steps_ratio: 0.  # the total steps will be injected during runtime
       min_lr_ratio: null   # only useful for warmup with cosine
@@ -156,7 +156,7 @@ actor_rollout_ref:
       # sampling parameters for validation
       top_k: -1 # 0 for hf rollout, -1 for vllm rollout
       top_p: 1.0
-      temperature: 0
+      temperature: 0.3
       n: 1
       do_sample: False # default eager for validation
     multi_turn: 
@@ -203,7 +203,7 @@ critic:
     # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
     _target_: verl.workers.config.FSDPOptimizerConfig
       # Learning rate
-    lr: 1e-5
+    lr: 1e-6
 
     # Warmup steps ratio; total steps will be injected at runtime
     lr_warmup_steps_ratio: 0.0

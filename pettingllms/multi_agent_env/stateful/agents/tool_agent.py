@@ -37,7 +37,7 @@ class ToolAgent(Agent):
         state = getattr(env_data, "state", None)
 
         formatted_prompt = (
-            "You are an AI assistant specialized in solving planning problems through code generation. Your task is to analyze the given scenario and generate Python code that produces a sequence of actions to solve the problem.\n\nInstructions:\n1. Write Python code enclosed in ```python and ``` tags\n2. Your code should output an action sequence using print() function\n"
+            "You are an AI assistant specialized in solving planning problems through code generation. Your task is to analyze the given scenario and generate Python code that produces a sequence of actions to solve the problem.\n\nInstructions:\n1. Write Python code enclosed in ```python and ``` tags\n2. Your code MUST output the result using print() function\n3. Example of correct output format:\n   print(\"**Actions List**:\", [\"U\", \"R\", \"D\", \"L\"])\n"
 
         )
 
@@ -69,34 +69,48 @@ class ToolAgent(Agent):
         
         if self.benchmark in ("plan_path", "sokoban"):
             formatted_prompt += (
-                "3. Actions should be represented as a list of strings: ['U', 'D', 'L', 'R'] (Up, Down, Left, Right)\n"
-                "4. You may return either the complete action sequence to reach the goal, or a partial sequence if you're uncertain\n"
-                "5. Remember, please do not return the result directly, you need to print the final result. If your algorithm produces numerical results, convert them using: action_map = {0:'U', 1:'D', 2:'L', 3:'R'}\n6. Ensure your code is executable and produces clear output\n\n\n5. Remember, please do not return the result directly, you need to print the final result. \n6. Please use algorithm like BFS or A* to solve the problem. Very important, print the final result. \n7. Important: Your code must output the final action sequence in this exact format:\n**Actions List**: [\"U\", \"R\", \"D\", \"L\"] (example for path planning)\n\nNote: If your algorithm produces numerical results, convert them using action_map = {{0:'U', 1:'D', 2:'L', 3:'R'}} before outputting.\n\n"
-                
+                "4. Actions should be represented as a list of strings: ['U', 'D', 'L', 'R'] (Up, Down, Left, Right)\n"
+                "5. You may return either the complete action sequence to reach the goal, or a partial sequence if you're uncertain\n"
+                "6. CRITICAL: You MUST use print() to output the result. Do NOT just return a value.\n"
+                "7. Please use algorithm like BFS or A* to solve the problem.\n"
+                "8. Your code must output the final action sequence in this exact format:\n"
+                "   print(\"**Actions List**:\", [\"U\", \"R\", \"D\", \"L\"])\n\n"
+                "Example code structure:\n"
+                "```python\n"
+                "# Your algorithm here (BFS, A*, etc.)\n"
+                "actions = ['U', 'R', 'D', 'L']  # Result from your algorithm\n"
+                "print(\"**Actions List**:\", actions)  # MUST print the result\n"
+                "```\n\n"
+                "Note: If your algorithm produces numerical results, convert them using:\n"
+                "action_map = {0:'U', 1:'D', 2:'L', 3:'R'}\n"
+                "actions = [action_map[num] for num in numerical_results]\n"
+                "print(\"**Actions List**:\", actions)\n\n"
             )
         elif self.benchmark == "suduku":
             formatted_prompt += (
-                "3. For Sudoku, return the complete grid solution.\n"
-                "4. Ensure your code is executable and produces clear output\n\n"
+                "4. For Sudoku, return the complete grid solution.\n"
+                "5. CRITICAL: You MUST use print() to output the result.\n"
+                "6. Example: print(\"**Actions List**:\", [[1,2,3,4],[3,4,1,2],[2,1,4,3],[4,3,2,1]])\n\n"
             )
         else:
             formatted_prompt += (
-                "3. Actions should be represented as a list of strings: ['U', 'D', 'L', 'R'] (Up, Down, Left, Right)\n"
-                "4. You may return either the complete action sequence to reach the goal, or a partial sequence if you're uncertain\n"
-                "5. Ensure your code is executable and produces clear output\n\n"
+                "4. Actions should be represented as a list of strings: ['U', 'D', 'L', 'R'] (Up, Down, Left, Right)\n"
+                "5. You may return either the complete action sequence to reach the goal, or a partial sequence if you're uncertain\n"
+                "6. CRITICAL: You MUST use print() to output the result.\n"
+                "7. Example: print(\"**Actions List**:\", [\"U\", \"R\", \"D\", \"L\"])\n\n"
             )
         
         if self.benchmark in ("plan_path", "sokoban"):
             formatted_prompt += ""
         elif self.benchmark == "suduku":
             formatted_prompt += (
-                "Important: Your code must output the final action in this exact format:\n"
-                "**Actions List**: [[1,2,3,4],[3,4,1,2],[2,1,4,3],[4,3,2,1]] (complete grid)\n"
+                "Remember: Your code must use print() to output the result:\n"
+                "print(\"**Actions List**:\", [[1,2,3,4],[3,4,1,2],[2,1,4,3],[4,3,2,1]])\n"
             )
         else:
             formatted_prompt += (
-                "Important: Your code must output the final action sequence in this exact format:\n"
-                "**Actions List**: [\"U\", \"R\", \"D\", \"L\"] (example). If solved/no moves needed, output an empty list [].\n"
+                "Remember: Your code must use print() to output the result:\n"
+                "print(\"**Actions List**:\", [\"U\", \"R\", \"D\", \"L\"])  # If solved/no moves needed, use []\n"
             )
         
         self.current_prompt = {"text": formatted_prompt, "image": None}
@@ -118,6 +132,7 @@ class ToolAgent(Agent):
         env_data.state.code_generated_action = generated_code
 
         code_execution_output = None
+        has_output = False
         try:
             code_execution_output = await get_code_execution_output(
                 generated_code,
@@ -125,12 +140,12 @@ class ToolAgent(Agent):
                 ray_actor=env_worker,
             )
             env_data.state.code_execution_output = code_execution_output
+            # Check if there is valid output (not null, not empty, not error)
+            if code_execution_output and code_execution_output.strip() and not code_execution_output.startswith("error:"):
+                has_output = True
         except Exception as e:
             code_execution_output = f"error: {e}"
             env_data.state.code_execution_output = code_execution_output
-
-        if code_execution_output is None:
-            self.agent_reward = 0.0  # No output - failure
 
         env_data.state.tool_execution_output = code_execution_output
         env_data.state.tool_code = generated_code
@@ -152,14 +167,17 @@ class ToolAgent(Agent):
         state = copy.deepcopy(env_data.state)
         state.step(self.current_action)
 
-        if self.benchmark in ("plan_path", "sokoban") and self.current_action is None:
-            self.agent_reward = 0.0  # No action - failure
-        else:
-            self.agent_reward = state.reward  # Binary reward from state (0 or 1)
-
-
+        # Reward logic:
+        # - If code has print output (not null): 0.3
+        # - If task is successful (done): 1.0
+        # - Otherwise: 0.0
         if hasattr(state, 'done') and state.done:
+            self.agent_reward = 1.0  # Success
             self.success = True
+        elif has_output:
+            self.agent_reward = 0.3  # Code has valid output
+        else:
+            self.agent_reward = 0.0  # No output or failure
     
     def calculate_reward(self, env_data: Env):
         self.agent_reward = self.agent_reward+env_data.state.reward

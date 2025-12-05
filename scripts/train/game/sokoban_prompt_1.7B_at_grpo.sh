@@ -28,14 +28,13 @@ model_0_resource="resource.n_gpus_per_node=$GPU_num  $model_0_config_path.traine
 
 python3 -m pettingllms.trainer.train --config-path ../config/stateful --config-name stateful_L1_prompt \
     $model_0_resource \
-    lora_rank=0\
     +rollout_mode=tree\
     env.max_turns=4\
     base_models.policy_0.path="/home/nvidia/data/models/Qwen3-1.7B"\
     training.experiment_name=sokoban_1.7B_prompt_at_grpo\
     training.total_training_steps=200\
     training.train_batch_size=32\
-    training.train_sample_num=8\
+    training.train_sample_num=4\
     training.validate_sample_num=1\
     training.max_prompt_length=4096\
     training.max_response_length=2048\

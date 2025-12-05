@@ -86,8 +86,17 @@ def load_problem_batch(
     
     print(f"Loading dataset from: {parquet_file}")
     try:
-        ds = hf_load_dataset("parquet", data_files=str(parquet_file), split="train")
-        print(f"Successfully loaded dataset with {len(ds)} samples")
+        import pyarrow.parquet as pq
+        
+        parquet_file_obj = pq.ParquetFile(parquet_file)
+        
+        all_rows = []
+        for batch in parquet_file_obj.iter_batches(batch_size=100):
+            df_batch = batch.to_pandas()
+            all_rows.extend(df_batch.to_dict('records'))
+        
+        print(f"Successfully loaded dataset with {len(all_rows)} samples using pyarrow batching")
+        ds = all_rows
     except Exception as e:
         raise Exception(f"Failed to load dataset: {e}")
     
@@ -95,17 +104,36 @@ def load_problem_batch(
     
     if mode == "train":
         for idx in indices:
-            example = ds[idx]
+            if isinstance(ds, list):
+                example = ds[idx]
+            else:
+                example = ds[idx]
             problem_dict = _format_competition_problem(example, idx, mode="train")
             if problem_dict:
                 batch_results.append(problem_dict)
     else:
-        for i, example in enumerate(ds):
-            problem_dict = _format_competition_problem(example, i, mode="validate")
-            if problem_dict:
-                batch_results.append(problem_dict)
-                if i % 100 == 0:
-                    print(f"Loaded validation problem {i+1}/{len(ds)}")
+        # For validate mode, randomly sample 200 if dataset exceeds 200
+        if len(ds) > 200:
+            print(f"Dataset has {len(ds)} samples, randomly sampling 200 for validation")
+            sampled_indices = random.sample(range(len(ds)), 200)
+            sampled_ds = [ds[i] for i in sampled_indices]
+        else:
+            sampled_ds = ds
+            
+        if isinstance(sampled_ds, list):
+            for i, example in enumerate(sampled_ds):
+                problem_dict = _format_competition_problem(example, i, mode="validate")
+                if problem_dict:
+                    batch_results.append(problem_dict)
+                    if i % 100 == 0:
+                        print(f"Loaded validation problem {i+1}/{len(sampled_ds)}")
+        else:
+            for i, example in enumerate(sampled_ds):
+                problem_dict = _format_competition_problem(example, i, mode="validate")
+                if problem_dict:
+                    batch_results.append(problem_dict)
+                    if i % 100 == 0:
+                        print(f"Loaded validation problem {i+1}/{len(sampled_ds)}")
     
     print(f"Successfully loaded {len(batch_results)} problems")
     return batch_results
@@ -128,18 +156,31 @@ def _format_competition_problem(example: Dict, index: int, mode: str = "train") 
     try:
         question = example.get("question", "")
         test_input = example.get("test_input", "")
-        if len(test_input)>4:
-            test_input=test_input[:4]
         test_output = example.get("test_output", "")
-        if len(test_output)>4:
-            test_output=test_output[:4]
+        
+        if isinstance(test_input, np.ndarray):
+            test_input = test_input.tolist()
+        if isinstance(test_output, np.ndarray):
+            test_output = test_output.tolist()
+        
+        if isinstance(test_input, list) and len(test_input) > 4:
+            test_input = test_input[:4]
+        if isinstance(test_output, list) and len(test_output) > 4:
+            test_output = test_output[:4]
+        
         if mode == "train":
             solution = example.get("solution", "")
         else:  # validation mode
             solution = example.get("solution", "")
         
-        if not question or not test_input or not test_output:
-            print(f"Warning: Skipping example {index}: missing required fields")
+        if not question:
+            print(f"Warning: Skipping example {index}: missing question")
+            return None
+        if not test_input or (isinstance(test_input, list) and len(test_input) == 0):
+            print(f"Warning: Skipping example {index}: missing test_input")
+            return None
+        if not test_output or (isinstance(test_output, list) and len(test_output) == 0):
+            print(f"Warning: Skipping example {index}: missing test_output")
             return None
         
         return {

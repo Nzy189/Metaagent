@@ -475,8 +475,8 @@ async def llm_async_generate(
             default_top_k = 20
             default_min_p = 0.0
         else:
-            default_temp = 0.7
-            default_top_p = 0.8
+            default_temp = 0
+            default_top_p = 0.95
             default_top_k = 20
             default_min_p = 0.0
     

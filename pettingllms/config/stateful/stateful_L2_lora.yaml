@@ -2,8 +2,8 @@
 defaults:
   - ../ppo_trainer@models.model_0.ppo_trainer_config: eval
   - _self_
-lora_rank: 16
-lora_alpha: 32
+lora_rank: 8
+lora_alpha: 16
 
 specialization: "lora" # prompt, lora, full
 resource:
