@@ -43,10 +43,11 @@ AGENT_CLASSES = {
     # Aliases aligned with config.multi_agent_interaction.turn_order values
     "code_generator": safe_import("pettingllms.multi_agent_env.code.agents.code_agent", "CodeGenerationAgent"),
     "test_generator": safe_import("pettingllms.multi_agent_env.code.agents.unit_test_agent", "UnitTestGenerationAgent"),
-    "code_generator_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.agents.code_agent", "CodeGenerationAgent"),
+    # Single agent versions (L0 configs)
+    "code_selfverify_single_agent": safe_import("pettingllms.multi_agent_env.code.agents.selfverify_single_agent", "CodeGenerationAgent"),
     "reasoning_generator": safe_import("pettingllms.multi_agent_env.math.agents.reasoning_agent", "ReasoningAgent"),
     "tool_generator": safe_import("pettingllms.multi_agent_env.math.agents.tool_agent", "ToolAgent"),
-    "math_agent_single_agent": safe_import("pettingllms.multi_agent_env.math_single_agent.agents.math_agent", "MathGenerationAgent"),
+    "math_selfverify_single_agent": safe_import("pettingllms.multi_agent_env.math.agents.selfverify_single_agent", "ReasoningAgent"),
     "aggreted_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.aggreted_agent", "AggregationAgent"),
     "sample_tool_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.sample_tool_agent", "ToolAgent"),
     "sample_reasoning_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.sample_reasoning_agent", "ReasoningAgent"),
@@ -56,6 +57,8 @@ AGENT_CLASSES = {
     # Stateful agents
     "plan_agent": safe_import("pettingllms.multi_agent_env.stateful.agents.plan_agent", "PlanAgent"),
     "tool_call_agent": safe_import("pettingllms.multi_agent_env.stateful.agents.tool_agent", "ToolAgent"),
+    "pychecker_agent": safe_import("pettingllms.multi_agent_env.pychecker_rl.agents.pychecker_agent", "PyCheckerAgent"),
+    "gen_tb_agent": safe_import("pettingllms.multi_agent_env.pychecker_rl.agents.gen_tb_agent", "GenTBAgent"),
 }
 
 ENV_WORKER_CLASSES = {
