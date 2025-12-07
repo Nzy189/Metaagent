@@ -55,7 +55,7 @@ actor_rollout_ref:
     use_dynamic_bsz: True
     ppo_micro_batch_size: null # will be deprecated, use ppo_micro_batch_size_per_gpu
     ppo_micro_batch_size_per_gpu: null
-    ppo_max_token_len_per_gpu: 20480 # Must be >= max_prompt_length + max_response_length (increased for multi-agent with thinking)
+    ppo_max_token_len_per_gpu: 16384 # n * ${data.max_prompt_length} + ${data.max_response_length}
     grad_clip: 1.0
     # pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
     clip_ratio: 0.2 # default value if clip_ratio_low and clip_ratio_high are not specified
@@ -95,7 +95,7 @@ actor_rollout_ref:
       
 
   ref:
-
+    
     strategy: fsdp
     fsdp_config:
       _target_: verl.workers.config.FSDPEngineConfig
@@ -110,7 +110,7 @@ actor_rollout_ref:
     log_prob_use_dynamic_bsz: False
     ppo_micro_batch_size: 1
     ppo_micro_batch_size_per_gpu: null
-    log_prob_max_token_len_per_gpu: 20480  # Must match max sequence length
+    log_prob_max_token_len_per_gpu: 16384
     ulysses_sequence_parallel_size: 1 # sp size
     entropy_from_logits_with_chunking: False
   rollout:
@@ -125,21 +125,21 @@ actor_rollout_ref:
     response_length: ${data.max_response_length}
     # for vllm rollout
     dtype: bfloat16 # should align with FSDP
-    gpu_memory_utilization: 0.7  # Reduced from 0.85 to prevent OOM
+    gpu_memory_utilization: 0.8  
     ignore_eos: False
-    enforce_eager: True
+    enforce_eager: True  
     free_cache_engine: False
-    load_format: auto
+    load_format: auto  
     layered_summon: False # for huge model, layered summon can save memory (prevent OOM) but make it slower
     tensor_model_parallel_size: 1
-    max_num_batched_tokens: 6144  # Reduced from 8192 to save memory
-    max_model_len: 20480  # Increased to accommodate multi-agent with thinking (was 16384)
+    max_num_batched_tokens: 8192
+    max_model_len: 2048
     max_num_seqs: 256
     data_parallel_size: 1
     log_prob_micro_batch_size: 1 # will be deprecated, use log_prob_micro_batch_size_per_gpu
     log_prob_micro_batch_size_per_gpu: null
     log_prob_use_dynamic_bsz: False
-    log_prob_max_token_len_per_gpu: 20480  # Must match max sequence length
+    log_prob_max_token_len_per_gpu: 16384
     disable_log_stats: True
     enable_chunked_prefill: True # may get higher throughput when set to True. When activated, Please increase max_num_batched_tokens or decrease max_model_len.
     # for hf rollout
@@ -156,7 +156,7 @@ actor_rollout_ref:
       # sampling parameters for validation
       top_k: -1 # 0 for hf rollout, -1 for vllm rollout
       top_p: 1.0
-      temperature: 0.3
+      temperature: 0
       n: 1
       do_sample: False # default eager for validation
     multi_turn: 
@@ -203,7 +203,7 @@ critic:
     # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
     _target_: verl.workers.config.FSDPOptimizerConfig
       # Learning rate
-    lr: 1e-6
+    lr: 1e-5
 
     # Warmup steps ratio; total steps will be injected at runtime
     lr_warmup_steps_ratio: 0.0

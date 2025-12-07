@@ -228,7 +228,7 @@ print(f'Loaded {len(data)} problems')
 
 After preparing datasets:
 
-1. Review [Training Overview](../training/overview.md)
-2. Configure your training in [Core Concepts](../core-concepts/overview.md)
-3. Start training with [Quick Start](quick-start.md)
+- Run your first training: [Quick Start Guide](quick-start.md)
+- Configure training parameters: [Training Guide](training.md)
+- Set up evaluation: [Evaluation Guide](evaluation.md)
 

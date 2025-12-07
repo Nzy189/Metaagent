@@ -15,7 +15,7 @@ Before installing PettingLLMs, ensure you have:
 The easiest way to install PettingLLMs is using the provided setup script:
 
 ```bash
-git clone https://github.com/NorahYujieZhao/PettingLLMs.git
+git clone https://github.com/pettingllms-ai/PettingLLMs.git
 cd PettingLLMs
 bash setup.bash
 ```
@@ -33,7 +33,7 @@ If you prefer to install manually, follow these steps:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/NorahYujieZhao/PettingLLMs.git
+git clone https://github.com/pettingllms-ai/PettingLLMs.git
 cd PettingLLMs
 ```
 

@@ -308,7 +308,6 @@ def process_code_contests(split: str) -> pd.DataFrame:
     print(f"Loading deepmind/code_contests split={split} ...")
     ds = load_dataset("deepmind/code_contests", split=split)
     rows = []
-    skipped_no_solution = 0
     for ex in ds:
 
         tests = (ex.get("public_tests") or {}) if split == "test" else (ex.get("private_tests") or {})
@@ -322,12 +321,6 @@ def process_code_contests(split: str) -> pd.DataFrame:
         else:
             py = _pick_first_py(solutions, k=1)
             solution = _clean_solution(py[0]) if py else ""
-        
-        # For training set, skip samples without valid solution
-        if split == "train" and (not solution or len(solution.strip()) == 0):
-            skipped_no_solution += 1
-            continue
-        
         rows.append({
             "question": (ex.get("description") or "").strip(),
             "solution": solution,
@@ -336,8 +329,6 @@ def process_code_contests(split: str) -> pd.DataFrame:
         })
     df = pd.DataFrame(rows, columns=["question","test_input","test_output","solution"])
     df = _filter_nonempty_io(df)
-    if split == "train":
-        print(f"Skipped {skipped_no_solution} samples without solution in train split")
     print(f"Completed code_contests/{split}: {len(df)}")
     return df
 
@@ -408,7 +399,6 @@ def process_apps_train() -> pd.DataFrame:
     )
     ds = list(ds)
     rows = []
-    skipped_no_solution = 0
     
     for ex in ds[500:4500]:
         # Parse solutions and input_output fields
@@ -429,11 +419,6 @@ def process_apps_train() -> pd.DataFrame:
         else:
             # apps dataset solutions is a list of strings, take the first one
             solution = _clean_solution(solutions[0]) if solutions else ""
-        
-        # For training set, skip samples without valid solution
-        if not solution or len(solution.strip()) == 0:
-            skipped_no_solution += 1
-            continue
             
         # Process test input and output
         test_input = []
@@ -460,7 +445,6 @@ def process_apps_train() -> pd.DataFrame:
     
     df = pd.DataFrame(rows, columns=["question", "test_input", "test_output", "solution"])
     df = _filter_nonempty_io(df)
-    print(f"Skipped {skipped_no_solution} samples without solution in apps train")
     print(f"Completed apps: {len(df)}")
     return df
 
@@ -580,261 +564,14 @@ def process_livecodebench() -> pd.DataFrame:
     print(f"Completed livecodebench v6: {len(df)}")
     return df
 
-def _load_lcb_lite_v5() -> pd.DataFrame:
-    HF_PREFIX = "hf://datasets/livecodebench/code_generation_lite/"
-    V5_FILES = [f"{HF_PREFIX}test5.jsonl"]
-    ds = load_dataset("json", data_files=V5_FILES, split="train")
-    rows = []
-    for ex in ds:
-        title = ex.get("question_title") or ""
-        content = ex.get("question_content") or ""
-        question = (title + ("\n\n" if title and content else "") + content).strip()
-
-        def _parse_simple_tests(raw):
-            if not raw:
-                return [], []
-            try:
-                data = json.loads(raw) if isinstance(raw, str) else raw
-                if isinstance(data, dict) and "input" in data and "output" in data:
-                    ins = data.get("input") or []
-                    outs = data.get("output") or []
-                    ins = ins if isinstance(ins, list) else [ins]
-                    outs = outs if isinstance(outs, list) else [outs]
-                    return [str(x) for x in ins], [str(x) for x in outs]
-                elif isinstance(data, list):
-                    ins, outs = [], []
-                    for item in data:
-                        if isinstance(item, dict):
-                            ins.append(str(item.get("input", "")))
-                            outs.append(str(item.get("output", "")))
-                    return ins, outs
-            except Exception:
-                pass
-            return [str(raw)], [""]
-
-        pub_raw = ex.get("public_test_cases") or ""
-        pri_raw = ex.get("private_test_cases") or ""
-        pub_in, pub_out = _parse_simple_tests(pub_raw)
-        pri_in, pri_out = _parse_simple_tests(pri_raw)
-        test_input = pub_in if pub_in else pri_in
-        test_output = pub_out if pub_out else pri_out
-
-        rows.append({
-            "question": question,
-            "solution": "", 
-            "test_input": [ _normalize_cell(x) for x in test_input ],
-            "test_output": [ _normalize_cell(x) for x in test_output ],
-        })
-
-    df = pd.DataFrame(rows, columns=["question", "solution", "test_input", "test_output"])
-    df = _filter_nonempty_io(df)
-    print(f"LCB v5 loaded: {len(df)}")
-    return df
-
-def process_livecodebench_v5() -> pd.DataFrame:
-    print(f"Loading LiveCodeBench v5 ...")
-    df = _load_lcb_lite_v5()
-    print(f"Completed livecodebench v5: {len(df)}")
-    return df
-
-def _load_lcb_lite_v2() -> pd.DataFrame:
-    HF_PREFIX = "hf://datasets/livecodebench/code_generation_lite/"
-    V2_FILES = [f"{HF_PREFIX}test2.jsonl"]
-    ds = load_dataset("json", data_files=V2_FILES, split="train")
-    rows = []
-    for ex in ds:
-        title = ex.get("question_title") or ""
-        content = ex.get("question_content") or ""
-        question = (title + ("\n\n" if title and content else "") + content).strip()
-
-        def _parse_simple_tests(raw):
-            if not raw:
-                return [], []
-            try:
-                data = json.loads(raw) if isinstance(raw, str) else raw
-                if isinstance(data, dict) and "input" in data and "output" in data:
-                    ins = data.get("input") or []
-                    outs = data.get("output") or []
-                    ins = ins if isinstance(ins, list) else [ins]
-                    outs = outs if isinstance(outs, list) else [outs]
-                    return [str(x) for x in ins], [str(x) for x in outs]
-                elif isinstance(data, list):
-                    ins, outs = [], []
-                    for item in data:
-                        if isinstance(item, dict):
-                            ins.append(str(item.get("input", "")))
-                            outs.append(str(item.get("output", "")))
-                    return ins, outs
-            except Exception:
-                pass
-            return [str(raw)], [""]
-
-        pub_raw = ex.get("public_test_cases") or ""
-        pri_raw = ex.get("private_test_cases") or ""
-        pub_in, pub_out = _parse_simple_tests(pub_raw)
-        pri_in, pri_out = _parse_simple_tests(pri_raw)
-        test_input = pub_in if pub_in else pri_in
-        test_output = pub_out if pub_out else pri_out
-
-        rows.append({
-            "question": question,
-            "solution": "", 
-            "test_input": [ _normalize_cell(x) for x in test_input ],
-            "test_output": [ _normalize_cell(x) for x in test_output ],
-        })
-
-    df = pd.DataFrame(rows, columns=["question", "solution", "test_input", "test_output"])
-    df = _filter_nonempty_io(df)
-    print(f"LCB v2 loaded: {len(df)}")
-    return df
-
-def process_livecodebench_v2() -> pd.DataFrame:
-    print(f"Loading LiveCodeBench v2 ...")
-    df = _load_lcb_lite_v2()
-    print(f"Completed livecodebench v2: {len(df)}")
-    return df
-
-def _load_livecodebench_cure() -> pd.DataFrame:
-    print("Loading Gen-Verse/LiveCodeBench-ReasonFlux ...")
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-    from datasets import Features, Value, Sequence
-    
-    features = Features({
-        'dataset': Value('string'),
-        'question': Value('string'),
-        'test_input': Sequence(Value('large_string')),
-        'test_output': Sequence(Value('large_string')),
-        'example_input': Sequence(Value('large_string')),
-        'example_output': Sequence(Value('large_string')),
-        'solutions': Value('string'),
-        'difficulty': Value('string'),
-        'task_id': Value('int64'),
-        'test_time_limit': Value('int64'),
-        'exe_method': Value('string'),
-    })
-    
-    try:
-        ds = load_dataset("Gen-Verse/LiveCodeBench-ReasonFlux", split="test", features=features)
-    except Exception as e:
-        print(f"Failed to load with features, trying streaming: {e}")
-        ds = load_dataset("Gen-Verse/LiveCodeBench-ReasonFlux", split="test", streaming=True)
-        ds = list(ds)
-    
-    rows = []
-    for ex in ds:
-        question = (ex.get("question") or "").strip()
-        if not question:
-            continue
-        
-        test_input = ex.get("test_input") or []
-        test_output = ex.get("test_output") or []
-        
-        if not isinstance(test_input, list):
-            test_input = [test_input]
-        if not isinstance(test_output, list):
-            test_output = [test_output]
-        
-        if not (test_input and test_output):
-            continue
-        
-        test_input = [_normalize_cell(str(x)) for x in test_input]
-        test_output = [_normalize_cell(str(x)) for x in test_output]
-        
-        rows.append({
-            "question": question,
-            "solution": "",
-            "test_input": test_input,
-            "test_output": test_output,
-        })
-    
-    df = pd.DataFrame(rows, columns=["question", "solution", "test_input", "test_output"])
-    df = _filter_nonempty_io(df)
-    print(f"LiveCodeBench-ReasonFlux loaded: {len(df)}")
-    return df
-
-def process_livecodebench_cure() -> pd.DataFrame:
-    print(f"Loading LiveCodeBench-ReasonFlux (CURE) ...")
-    df = _load_livecodebench_cure()
-    print(f"Completed livecodebench_cure: {len(df)}")
-    return df
-
-def _load_codecontests_cure(dataset_name: str, split: str) -> pd.DataFrame:
-    print(f"Loading {dataset_name} split={split} ...")
-    from datasets import Features, Value, Sequence
-    
-    features = Features({
-        'dataset': Value('string'),
-        'question': Value('string'),
-        'exe_method': Value('string'),
-        'solutions': Value('string'),
-        'task_id': Value('int64'),
-        'test_time_limit': Value('int64'),
-        'example_input': Sequence(Value('large_string')),
-        'example_output': Sequence(Value('large_string')),
-        'test_input': Sequence(Value('large_string')),
-        'test_output': Sequence(Value('large_string')),
-    })
-    
-    try:
-        ds = load_dataset(dataset_name, split=split, features=features)
-    except Exception as e:
-        print(f"Failed to load with features, trying streaming: {e}")
-        ds = load_dataset(dataset_name, split=split, streaming=True)
-        ds = list(ds)
-    
-    rows = []
-    for ex in ds:
-        question = (ex.get("question") or "").strip()
-        if not question:
-            continue
-        
-        test_input = ex.get("test_input") or []
-        test_output = ex.get("test_output") or []
-        
-        if not isinstance(test_input, list):
-            test_input = [test_input]
-        if not isinstance(test_output, list):
-            test_output = [test_output]
-        
-        if not (test_input and test_output):
-            continue
-        
-        test_input = [_normalize_cell(str(x)) for x in test_input]
-        test_output = [_normalize_cell(str(x)) for x in test_output]
-        
-        rows.append({
-            "question": question,
-            "solution": "",
-            "test_input": test_input,
-            "test_output": test_output,
-        })
-    
-    df = pd.DataFrame(rows, columns=["question", "solution", "test_input", "test_output"])
-    df = _filter_nonempty_io(df)
-    print(f"{dataset_name} {split} loaded: {len(df)}")
-    return df
-
-def process_codecontests_cure_train() -> pd.DataFrame:
-    print(f"Loading CodeContests CURE (train) ...")
-    df = _load_codecontests_cure("Gen-Verse/CodeContests_train", "train")
-    print(f"Completed code_contests_cure train: {len(df)}")
-    return df
-
-def process_codecontests_cure_test() -> pd.DataFrame:
-    print(f"Loading CodeContests CURE (test) ...")
-    df = _load_codecontests_cure("Gen-Verse/CodeContests", "test")
-    print(f"Completed code_contests_cure test: {len(df)}")
-    return df
-
 
 
 def main():
     project_root = Path(__file__).resolve().parents[2]
     
     # Create train and test directories
-    train_dir = project_root / "data" / "code" / "train"
-    test_dir = project_root / "data" / "code" / "test"
+    train_dir = project_root / "datasets" / "code" / "train"
+    test_dir = project_root / "datasets" / "code" / "test"
     os.makedirs(train_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
     print(f"train_dir: {train_dir}")
@@ -855,12 +592,6 @@ def main():
     (train_dir / "apps.parquet").unlink(missing_ok=True)
     df_apps_train.to_parquet(train_dir / "apps.parquet", index=False)
     print(f"Saved: {train_dir / 'apps.parquet'}")
-
-    # 3. CodeContests CURE(train)
-    df_cc_cure_train = process_codecontests_cure_train()
-    (train_dir / "code_contests_cure.parquet").unlink(missing_ok=True)
-    df_cc_cure_train.to_parquet(train_dir / "code_contests_cure.parquet", index=False)
-    print(f"Saved: {train_dir / 'code_contests_cure.parquet'}")
     
     # ============================================================
     # TEST dataset
@@ -874,39 +605,15 @@ def main():
 
     # 2. Apps(test)
     df_apps_test = process_apps_test()
-    (test_dir / "apps.parquet").unlink(missing_ok=True)
-    df_apps_test.to_parquet(test_dir / "apps.parquet", index=False)
-    print(f"Saved: {test_dir / 'apps.parquet'}")
+    (test_dir / "apps .parquet").unlink(missing_ok=True)
+    df_apps_test.to_parquet(test_dir / "apps .parquet", index=False)
+    print(f"Saved: {test_dir / 'apps .parquet'}")
 
     # 3. LiveCodeBench v6 (save as livecodebench_test.parquet to match loader)
     df_lcb = process_livecodebench()
     (test_dir / "livecodebench.parquet").unlink(missing_ok=True)
     df_lcb.to_parquet(test_dir / "livecodebench.parquet", index=False)
     print(f"Saved: {test_dir / 'livecodebench.parquet'}")
-
-    # 4. LiveCodeBench v5
-    df_lcb_v5 = process_livecodebench_v5()
-    (test_dir / "livecodebench_v5.parquet").unlink(missing_ok=True)
-    df_lcb_v5.to_parquet(test_dir / "livecodebench_v5.parquet", index=False)
-    print(f"Saved: {test_dir / 'livecodebench_v5.parquet'}")
-
-    # 5. LiveCodeBench v2
-    df_lcb_v2 = process_livecodebench_v2()
-    (test_dir / "livecodebench_v2.parquet").unlink(missing_ok=True)
-    df_lcb_v2.to_parquet(test_dir / "livecodebench_v2.parquet", index=False)
-    print(f"Saved: {test_dir / 'livecodebench_v2.parquet'}")
-
-    # 6. LiveCodeBench-ReasonFlux (CURE)
-    df_lcb_cure = process_livecodebench_cure()
-    (test_dir / "livecodebench_cure.parquet").unlink(missing_ok=True)
-    df_lcb_cure.to_parquet(test_dir / "livecodebench_cure.parquet", index=False)
-    print(f"Saved: {test_dir / 'livecodebench_cure.parquet'}")
-
-    # 7. CodeContests CURE(test)
-    df_cc_cure_test = process_codecontests_cure_test()
-    (test_dir / "code_contests_cure.parquet").unlink(missing_ok=True)
-    df_cc_cure_test.to_parquet(test_dir / "code_contests_cure.parquet", index=False)
-    print(f"Saved: {test_dir / 'code_contests_cure.parquet'}")
 
 if __name__ == "__main__":
     main()

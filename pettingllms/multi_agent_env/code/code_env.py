@@ -94,7 +94,7 @@ class CodeEnv(Env):
 class CodeEnvBatch:
     def __init__(self, env_idx_list: List[int], env_indices: List[int], rollout_idx_list: List[int], samples: int, max_turns: int, config: dict, mode="train", *, env_workers: List=None):
         if mode=="train":
-            self.problem_list=load_problem_batch(env_indices,benchmark_name="train",mode="train")
+            self.problem_list=load_problem_batch(env_indices,benchmark_name="train",mode="train",difficulty=getattr(config.env,"difficulty") if hasattr(config,"env") and hasattr(config.env,"difficulty") else "difficult")
         else:
             benchmark_name=getattr(config.env,"benchmark") if hasattr(config,"env") and hasattr(config.env,"benchmark") else "test"
             #difficulty=getattr(config,"difficulty") if hasattr(config,"difficulty") else "difficult"
@@ -108,8 +108,7 @@ class CodeEnvBatch:
         for i,problem in enumerate(self.problem_list):
             ground_truth_test_input=problem["test_input"]
             ground_truth_test_output=problem["test_output"]
-            golden_code=problem.get("solution", None)
-            state=CodeEnvState(problem=problem["question"],golden_code=golden_code,ground_truth_test_input=ground_truth_test_input,ground_truth_test_output=ground_truth_test_output)
+            state=CodeEnvState(problem=problem["question"],ground_truth_test_input=ground_truth_test_input,ground_truth_test_output=ground_truth_test_output)
             for s in range(samples):
                 env=CodeEnv(env_idx=i, rollout_idx=rollout_idx_list[i*samples+s], max_turns=max_turns, config=None)
                 env.state=copy.deepcopy(state)

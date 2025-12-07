@@ -130,25 +130,6 @@ class ResourcePoolManager:
         """Get the number of gpus in this cluster."""
         return sum([n_gpus for process_on_nodes in self.resource_pool_spec.values() for n_gpus in process_on_nodes])
 
-    def cleanup(self):
-        """Clean up all resource pools"""
-        print("Cleaning up resource pools...")
-        for pool_name, resource_pool in self.resource_pool_dict.items():
-            try:
-                # Kill all actors in the resource pool
-                if hasattr(resource_pool, '_actor_pool') and resource_pool._actor_pool:
-                    for actor in resource_pool._actor_pool:
-                        try:
-                            ray.kill(actor)
-                            print(f"  Killed actor in pool {pool_name}: {actor}")
-                        except Exception as e:
-                            print(f"  Warning: Failed to kill actor in pool {pool_name}: {e}")
-                print(f"Cleaned up resource pool: {pool_name}")
-            except Exception as e:
-                print(f"Warning: Error cleaning up resource pool {pool_name}: {e}")
-        self.resource_pool_dict.clear()
-        print("Resource pools cleanup completed")
-
     def _check_resource_available(self):
         """Check if the resource pool can be satisfied in this ray cluster."""
         node_available_resources = ray.state.available_resources_per_node()
@@ -816,8 +797,7 @@ class RayPPOTrainer:
 
     def _save_checkpoint(self):
         # path: checkpoints/{experiment_name}/{model_name}/global_step_{global_steps}/actor
-        experiment_name = getattr(self.config.trainer, 'experiment_name', 
-                                   getattr(self.config, 'experiment_name', 'default_experiment'))
+        experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
         
         # Support custom checkpoint_dir if provided, otherwise use default
         if hasattr(self.config, 'checkpoint_dir') and self.config.checkpoint_dir is not None:
@@ -885,8 +865,7 @@ class RayPPOTrainer:
         if self.config.trainer.default_hdfs_dir is not None:
             raise NotImplementedError("load from hdfs is not implemented yet")
         else:
-            experiment_name = getattr(self.config.trainer, 'experiment_name', 
-                                       getattr(self.config, 'experiment_name', 'default_experiment'))
+            experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
             checkpoint_folder = os.path.join(self.config.trainer.default_local_dir, experiment_name)  # TODO: check path
             if not os.path.isabs(checkpoint_folder):
                 working_dir = os.getcwd()
@@ -965,68 +944,4 @@ class RayPPOTrainer:
         batch.reorder(global_idx)
         global_balance_stats = log_seqlen_unbalance(seqlen_list=global_seqlen_lst, partitions=global_partition_lst, prefix=logging_prefix)
         metrics.update(global_balance_stats)
-
-    def cleanup(self):
-        """Clean up all worker groups and async rollout manager"""
-        print("Cleaning up RayPPOTrainer resources...")
-
-        try:
-            # Clean up async rollout manager
-            if hasattr(self, 'async_rollout_manager') and self.async_rollout_manager is not None:
-                try:
-                    # Sleep the manager if it's running
-                    if hasattr(self.async_rollout_manager, 'sleep'):
-                        self.async_rollout_manager.sleep()
-                    # Perform full cleanup
-                    if hasattr(self.async_rollout_manager, 'cleanup'):
-                        self.async_rollout_manager.cleanup()
-                    print("  Cleaned up async_rollout_manager")
-                except Exception as e:
-                    print(f"  Warning: Error cleaning up async_rollout_manager: {e}")
-
-            # Clean up worker groups
-            worker_groups = []
-            if self.hybrid_engine and hasattr(self, 'actor_rollout_wg'):
-                worker_groups.append(('actor_rollout', self.actor_rollout_wg))
-            else:
-                if hasattr(self, 'actor_wg'):
-                    worker_groups.append(('actor', self.actor_wg))
-                if hasattr(self, 'rollout_wg'):
-                    worker_groups.append(('rollout', self.rollout_wg))
-
-            if self.use_critic and hasattr(self, 'critic_wg'):
-                worker_groups.append(('critic', self.critic_wg))
-
-            if self.use_reference_policy and hasattr(self, 'ref_policy_wg'):
-                worker_groups.append(('ref_policy', self.ref_policy_wg))
-
-            if self.use_rm and hasattr(self, 'rm_wg'):
-                worker_groups.append(('rm', self.rm_wg))
-
-            for wg_name, wg in worker_groups:
-                try:
-                    # Try to get workers and kill them
-                    if hasattr(wg, 'workers') and wg.workers:
-                        for worker in wg.workers:
-                            try:
-                                ray.kill(worker)
-                                print(f"  Killed worker in {wg_name}")
-                            except Exception as e:
-                                print(f"  Warning: Failed to kill worker in {wg_name}: {e}")
-                    print(f"  Cleaned up worker group: {wg_name}")
-                except Exception as e:
-                    print(f"  Warning: Error cleaning up {wg_name}: {e}")
-
-            # Clean up resource pool manager
-            if hasattr(self, 'resource_pool_manager') and self.resource_pool_manager is not None:
-                try:
-                    if hasattr(self.resource_pool_manager, 'cleanup'):
-                        self.resource_pool_manager.cleanup()
-                    print("  Cleaned up resource_pool_manager")
-                except Exception as e:
-                    print(f"  Warning: Error cleaning up resource_pool_manager: {e}")
-
-            print("RayPPOTrainer cleanup completed")
-        except Exception as e:
-            print(f"Error during RayPPOTrainer cleanup: {e}")
 

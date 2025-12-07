@@ -77,12 +77,11 @@ class CodeGenerationAgent(Agent):
         if turn_idx == 0:
             # Generation mode
             formatted_prompt = (
-                f"<|im_start|>You are a helpful assistant help user solve problems. \
-<|im_end|>\n<|im_start|>User: You need to think first then write  python script.\n\n"
+                f"You are a helpful assistant that generates python code to solve programming problems. Please think step by step and then generate the code.\n\n"
                 f"⚠️ Important: Your solution MUST read input using input() and write output using print().\n\n"
                 f"The input values will be provided externally when the program runs, so do NOT hardcode or generate inputs yourself.\n\n"
                 f"Now solve the following problem:\n\n"
-                f"Problem:\n{question}<|im_end|>\n<|im_start|>\n\n"
+                f"Problem:\n{question}\n\n"
                 f"Please first think how many and the type of inputs you need, and write like x = int(input()),b=int(input()), and then generate the function to solve the problem, at last print the result.\n\n"
                 f"Respond in the format:\n\n"
                 f"**Code:**\n```python\n# your code here\n```\n\n"
@@ -95,7 +94,7 @@ class CodeGenerationAgent(Agent):
                 f"⚠️ Important: Your solution MUST read input using input() and write output using print().\n\n"
                 f"The input values will be provided externally when the program runs, so do NOT hardcode or generate inputs yourself.\n\n"
                 f"Now solve the following problem:\n\n"
-                f"Problem:\n{question}<|im_end|>\n<|im_start|>\n\n"
+                f"Problem:\n{question}\n\n"
                 f"Please generate correct, efficient, and readable code that solves the problem and can pass comprehensive tests.\n\n"
                 f"Respond in the format:\n\n"
                 f"**Code:**\n```python\n# your code here\n```\n\n")
@@ -157,12 +156,10 @@ class CodeGenerationAgent(Agent):
             
             if passed_ratio >= 1.0 and len(ground_truth_test_input) > 0:
                 self.success = True
-                env_data.state.success = True
             else:
                 self.success = False
-                env_data.state.success = False
     def calculate_reward(self, env_data: Env):
-        self.agent_reward = env_data.state.ground_truth_test_vs_generated_code_match_ratio
+        self.agent_reward = env_data.state.ground_truth_test_vs_generated_code_match_ratio+env_data.state.ground_truth_test_vs_generated_code_match_ratio
         self.reward_history.append(self.agent_reward)
                 
  

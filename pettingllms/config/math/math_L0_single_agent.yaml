@@ -29,14 +29,20 @@ base_models:
   
  
 
-# Multi-agent configuration for single policy
+# Multi-agent configuration for two policies
 agent_policy_configs:
   # Number of agents to train
-  num_agents: 1
-  policy_list: ["reasoning_single_agent"]
+  num_agents: 2
+  policy_list: ["reasoning_generator", "tool_generator"]
   agent_configs:
     agent_0:
-      name: "reasoning_single_agent"
+      name: "reasoning_generator"
+      policy_name: "shared_model"
+      enable_thinking: false
+
+      
+    agent_1:
+      name: "tool_generator"
       policy_name: "shared_model"
       enable_thinking: false
 
@@ -45,7 +51,7 @@ agent_policy_configs:
 multi_agent_interaction:
   
   # Turn order for agents (list of agent names)
-  turn_order: ["reasoning_single_agent"]
+  turn_order: ["reasoning_generator",]
   
   # Number of agents that interact per episode
   num_interacting_agents: 1
@@ -67,6 +73,7 @@ training:
   sample_temperature: 1
   val_freq: 10
   resample_freq: 3
+  epoch_size: 20
   max_prompt_length: 4096
   max_response_length: 2048
   lora_rank: ${lora_rank}
@@ -94,3 +101,4 @@ models:
         trainer:
           n_gpus_per_node: ${resource.n_gpus_per_node}
           n_training_gpus_per_node: ${resource.n_gpus_per_node}
+          default_local_dir: ${trainer.default_local_dir}

@@ -73,6 +73,78 @@ class MultiAgentsPPOTrainer:
                 policy_name = agent_config.policy_name
                 self.agent_policy_mapping[agent_name] = policy_name
                 colorful_print(f"Agent mapping: {agent_name} -> {policy_name}", "green")
+
+        # Validate and handle base_models and models configuration
+        num_base_models = len(config.base_models) if hasattr(config, 'base_models') else 0
+        num_models = len(config.models) if hasattr(config, 'models') else 0
+        num_agents = len(self.agent_policy_mapping) if self.agent_policy_mapping else 0
+
+        colorful_print(f"Configuration check: base_models={num_base_models}, models={num_models}, agents={num_agents}, specialization={config.specialization}", "cyan")
+
+        # Check if specialization is 'full' with single base_model
+        if config.specialization == "full" and num_base_models == 1:
+            colorful_print("=" * 80, "yellow")
+            colorful_print("SPECIAL MODE: specialization='full' with single base_model detected", "yellow")
+            colorful_print(f"All {num_agents} agents will use the same base model initially,", "yellow")
+            colorful_print("but each agent will train into different parameters during training.", "yellow")
+            colorful_print(f"Automatically replicating model config to match {num_agents} agents...", "yellow")
+
+            # Get the single base model config
+            base_model_key = list(config.base_models.keys())[0]
+            base_model_config = config.base_models[base_model_key]
+
+            # If models config only has 1 entry, replicate it for all agents
+            if num_models == 1:
+                colorful_print(f"Replicating single model config across {num_agents} agents...", "cyan")
+
+                # Get the original model config
+                original_model_key = list(config.models.keys())[0]
+                original_model_config = config.models[original_model_key]
+
+                # Create new model configs for each agent
+                from copy import deepcopy
+                new_models_dict = {}
+
+                for idx, (agent_name, policy_name) in enumerate(self.agent_policy_mapping.items()):
+                    model_key = f"model_{idx}"
+                    model_config = deepcopy(original_model_config)
+
+                    # Update model name to match policy
+                    model_config.name = policy_name
+                    model_config.path = base_model_config.path
+
+                    # Update actor_rollout_ref model path if it exists
+                    if hasattr(model_config, 'ppo_trainer_config') and \
+                       hasattr(model_config.ppo_trainer_config, 'actor_rollout_ref') and \
+                       hasattr(model_config.ppo_trainer_config.actor_rollout_ref, 'model'):
+                        model_config.ppo_trainer_config.actor_rollout_ref.model.path = base_model_config.path
+
+                    new_models_dict[model_key] = model_config
+                    colorful_print(f"  Created {model_key}: {policy_name} -> {base_model_config.path}", "green")
+
+                # Replace the models config
+                config.models = OmegaConf.create(new_models_dict)
+                num_models = len(config.models)
+                colorful_print(f"Successfully created {num_models} model configs from single base_model", "green")
+
+            colorful_print("=" * 80, "yellow")
+
+        # Final validation: check if base_models and models counts match (if base_models exists)
+        if hasattr(config, 'base_models'):
+            num_base_models = len(config.base_models)
+            num_models = len(config.models)
+
+            # For specialization != 'full', base_models and models should match
+            if config.specialization != "full" and num_base_models != num_models:
+                error_msg = (
+                    f"Configuration error: Number of base_models ({num_base_models}) does not match "
+                    f"number of models ({num_models}) for specialization='{config.specialization}'. "
+                    f"They must be equal unless specialization='full' with single base_model."
+                )
+                colorful_print("=" * 80, "red")
+                colorful_print("ERROR: " + error_msg, "red")
+                colorful_print("=" * 80, "red")
+                raise ValueError(error_msg)
         
         # Initialize ppo_trainer_dict from models configuration
         self.ppo_trainer_config_dict = {}
@@ -125,8 +197,14 @@ class MultiAgentsPPOTrainer:
                     lora_id = f"agent_{agent_name}_lora_{agent_idx}"
                     self.agent_lora_mapping[agent_name] = lora_id
                     colorful_print(f"  Agent '{agent_name}' -> LoRA adapter '{lora_id}'", "cyan")
-                
+
                 colorful_print(f"Total {len(self.agent_lora_mapping)} agent-specific LoRA adapters created", "green")
+
+                # Update all PPO trainers with LoRA configuration
+                for model_name, ppo_trainer in self.ppo_trainer_dict.items():
+                    ppo_trainer.lora_num = self.lora_num
+                    ppo_trainer.agent_lora_mapping = self.agent_lora_mapping
+                    colorful_print(f"Updated PPO trainer '{model_name}' with lora_num={self.lora_num} and agent_lora_mapping", "green")
             colorful_print("=" * 60, "yellow")
         else:
             colorful_print("LoRA Differ Mode DISABLED - using standard multi-model training", "cyan")
@@ -348,7 +426,7 @@ class MultiAgentsPPOTrainer:
                     for agent_name in unique_agents:
                         agent_mask = np.array([name == agent_name for name in agent_names])
                         agent_indices = np.where(agent_mask)[0].tolist()
-                        # 为每个代理构造子批次，并在需要时对齐到 dp world size，避免分布式更新时阻塞
+                        # Construct sub-batch for each agent and align to dp world size if needed to avoid blocking in distributed updates
                         sub_batch = batch.select_idxs(agent_indices)
                         try:
                             dp_world_size = ppo_trainer.actor_rollout_wg.world_size
@@ -392,8 +470,6 @@ class MultiAgentsPPOTrainer:
                     reward_extra_infos_dict=reward_extra_infos_dict,
                     dump_path=rollout_data_dir,
                 )
-        
-        return batch
 
     
 
@@ -467,19 +543,18 @@ class MultiAgentsPPOTrainer:
                     self.agent_execution_engine.init_agents_and_envs(mode="train",step_idx=i)
                     for model_name,rollout_engine in self.rollout_engine_dict.items():
                         rollout_engine.wake_up()
-                    gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list,rollout_mode=self.config.get("rollout_mode","no_tree")))
+                    gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list,rollout_mode=self.config.get("rollout_mode","tree")))
                     for model_name, trainer in self.ppo_trainer_dict.items():
                         dp_world_size = trainer.actor_rollout_wg.world_size
                         batch_per_trainer_temp = self._pad_dataproto_to_world_size(
                             gen_batch_output_per_policy[model_name], dp_world_size
                         )
                         if batch_per_trainer[model_name].batch is None:
-                        # If empty, assi`gn directly
+                        # If empty, assign directly
                             
                             batch_per_trainer[model_name] = batch_per_trainer_temp
                         else:
-                            # Use concat instead of union, because each response content is different
-                            
+                            # Use concat instead of union because each response content is different
                             batch_per_trainer[model_name] = DataProto.concat([
                                 batch_per_trainer[model_name], 
                                 batch_per_trainer_temp
@@ -500,7 +575,7 @@ class MultiAgentsPPOTrainer:
                                 filter_ratio=filter_ratio, 
                                 mode=filter_method, 
                                 sample_num=sample_num,
-                                rollout_mode=self.config.get("rollout_mode","no_tree")
+                                rollout_mode=self.config.get("rollout_mode","tree")
                             )
                     
                     all_trainer_metrics = {}
@@ -508,13 +583,13 @@ class MultiAgentsPPOTrainer:
                     def update_single_trainer(model_name, batch, trainer):
                         try:
                             local_timing_raw = {}
-                            updated_batch = self._update_parameters(batch, trainer, local_timing_raw)
+                            self._update_parameters(batch, trainer, local_timing_raw)
                             
-                            trainer_metrics = updated_batch.meta_info.get('metrics', {}) if hasattr(updated_batch, 'meta_info') else {}
-                            agent_names = updated_batch.non_tensor_batch.get('agent_name') if hasattr(updated_batch, 'non_tensor_batch') else None
+                            trainer_metrics = batch.meta_info.get('metrics', {}) if hasattr(batch, 'meta_info') else {}
+                            agent_names = batch.non_tensor_batch.get('agent_name') if hasattr(batch, 'non_tensor_batch') else None
                             
                             return {"status": "success", "model_name": model_name, "timing": local_timing_raw, 
-                                    "metrics": trainer_metrics, "agent_names": agent_names, "batch": updated_batch}
+                                    "metrics": trainer_metrics, "agent_names": agent_names}
                         except Exception as e:
                             import traceback
                             return {"status": "error", "model_name": model_name, "error": str(e), 
@@ -528,9 +603,6 @@ class MultiAgentsPPOTrainer:
                             if result["status"] == "error":
                                 colorful_print(f"Training failed for {result['model_name']}: {result['error']}", "red")
                                 raise RuntimeError(f"Training failed: {result['error']}")
-                            
-                            # Update batch_per_trainer with the modified batch that includes advantages and returns
-                            batch_per_trainer[model_name] = result["batch"]
                             
                             # Merge timing metrics
                             for key, value in result["timing"].items():
@@ -607,7 +679,7 @@ class MultiAgentsPPOTrainer:
         for _, rollout_engine in self.rollout_engine_dict.items():
             rollout_engine.wake_up()
             
-        gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list, rollout_mode="no_tree"))
+        gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list, rollout_mode="tree"))
         for model_name,rollout_engine in self.rollout_engine_dict.items():
             rollout_engine.sleep()
         for model_name in self.ppo_trainer_dict.keys():
@@ -665,7 +737,7 @@ class MultiAgentsPPOTrainer:
         validation_metrics["validation/env_state_success_rate"] = env_success_rate
         
         # Save checkpoint if enabled and this is the best validation result
-        if_save = getattr(self.config.training, 'if_save', False)
+        if_save = getattr(self.config.training, 'if_save', True)
 
         if if_save:
             if self.global_steps == 0:
@@ -712,7 +784,7 @@ class MultiAgentsPPOTrainer:
         # for the padded dataproto, make the traj mask to 0. is_last_step also False
         return batch
     
-    def _assign_consistent_uids(self, data_proto, filter_ratio=0.0, mode="mean", sample_num=1, rollout_mode="no_tree"):
+    def _assign_consistent_uids(self, data_proto, filter_ratio=0.0, mode="mean", sample_num=1, rollout_mode="tree"):
         """
         Assign consistent UIDs to data and optionally filter based on rewards.
         
@@ -770,9 +842,10 @@ class MultiAgentsPPOTrainer:
     
         
         def range_normalized_variance(rewards_in_group):
+            """Calculate variance normalized by the range squared"""
             rewards_in_group = np.asarray(rewards_in_group, dtype=float)
             rng = np.max(rewards_in_group) - np.min(rewards_in_group)
-            if rng == 0:   
+            if rng == 0:
                 return 0.0
             return np.var(rewards_in_group, ddof=0) / (rng ** 2)
         
@@ -809,7 +882,7 @@ class MultiAgentsPPOTrainer:
                         sample_to_remove.add(sample_idx)
 
         elif filter_ratio > 0:
-            # calculate the variance of each uid group
+            # Calculate the variance of each uid group
             
             if mode == "std":
                 uid_variances = {}

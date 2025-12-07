@@ -1,0 +1,148 @@
+site_name: PettingLLMs
+site_description: Reinforcement Learning Framework for Multi LLM Agents
+site_author: PettingLLMs Team
+site_url: https://pettingllms.readthedocs.io/
+
+repo_name: 
+repo_url: https://github.com/pettingllms-ai/PettingLLMs
+edit_uri: ""
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: black
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: white
+      accent: white
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+  icon:
+    repo: fontawesome/brands/github
+
+# Extensions
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Plugins
+plugins:
+  - search:
+      lang:
+        - en
+        - zh
+  - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_category_heading: true
+            members_order: source
+            merge_init_into_class: true
+
+# Additional JavaScript
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+# Additional CSS
+extra_css:
+  - stylesheets/extra.css
+
+# Navigation
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quick-start.md
+    - Datasets: getting-started/datasets.md
+    - Training: getting-started/training.md
+    - Evaluation: getting-started/evaluation.md
+
+  - Environment Setup:
+    - Overview: environment_setup/index.md
+    - Data Preparation: environment_setup/data-preparation.md
+    - Core Architecture: environment_setup/core-architecture.md
+    - Agent Functions: environment_setup/agent-functions.md
+    - Environment State: environment_setup/environment-state.md
+    - Configuration: environment_setup/configuration.md
+    - Registration: environment_setup/registration.md
+
+  - Core Concepts:
+    - Overview: core-concepts/overview.md
+    - AT-GRPO Algorithm: core-concepts/at-grpo.md
+    - Three-Level Specialization: core-concepts/three-level-specialization.md
+    - Training System: core-concepts/training-system.md
+
+  - About Us: About_us/index.md
+
+
+
+# Footer
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/pettingllms-ai/PettingLLMs
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pettingllms/
+

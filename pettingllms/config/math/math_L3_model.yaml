@@ -4,7 +4,7 @@ defaults:
   - _self_
 
 
-specialization: "lora" # prompt, lora, full
+specialization: "full" # prompt, lora, full
 lora_rank: 16
 lora_alpha: 32
 resource:
@@ -47,7 +47,7 @@ agent_policy_configs:
       
     agent_1:
       name: "tool_generator"
-      policy_name: "reasoning_generator_model"
+      policy_name: "tool_generator_model"
 
 
 # Multi-agent interaction configuration
@@ -76,6 +76,7 @@ training:
   sample_temperature: 1
   val_freq: 10
   resample_freq: 3
+  epoch_size: 20
   max_prompt_length: 4096
   max_response_length: 2048
   lora_rank: ${lora_rank}

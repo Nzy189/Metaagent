@@ -11,9 +11,12 @@
 </div>
 
 <p align="center">
-  <a href="https://www.notion.so/STRONGER-TOGETHER-ON-POLICY-REINFORCEMENT-LEARNING-FOR-COLLABORATIVE-LLMS-2833b123b9438102b496d3673c8b4094?source=copy_link">📝 Blog</a>•<a href="https://arxiv.org/pdf/2510.11062">📄 Paper</a> •
-  <a href="https://pettingllms.github.io">🌐 Website</a> •
-  <a href="https://www.youtube.com/watch?v=8WM-gVTrSBc">🎮 Demo</a> 
+ 
+  <a href="https://arxiv.org/pdf/2510.11062">📄 Paper</a> •
+  <a href="https://pettingllms-ai.github.io/">🌐 Website</a> •
+  <a href="https://www.youtube.com/watch?v=8WM-gVTrSBc">🎮 Demo</a> •
+  <a href="https://pettingllms-docs.readthedocs.io/en/latest/">📖 Documentation</a> •
+  <a href="https://pettingllms-docs.readthedocs.io/en/latest/About_us/">👥 About Us</a>
   
 </p>
 
@@ -169,18 +172,18 @@ PettingLLMs uses a tiered approach to define agent roles, ranging from simple in
 
 | Level | Role Specialization Method | Description |
 | :--- | :--- | :--- |
-| **L0** | **Prompt** | Roles are defined *solely through instructions* in the prompt. The base model is identical for all agents, offering a flexible but performance-limited baseline. |
-| **L1** | **LoRA** | Each role is specialized using a unique, lightweight **LoRA adapter**. This creates distinct, cost-effective agent "personalities" on top of a shared base model. |
-| **L2** | **Full-Model** | The **entire model's weights** are optimized for a specific role using reinforcement learning. This creates a highly specialized expert agent for maximum performance on complex tasks. |
+| **L0** | **Shared model** | Roles are defined *solely through instructions* in the prompt. The base model is identical for all agents, offering a flexible but performance-limited baseline. |
+| **L1** | **Role-specific LoRA** | Each role is specialized using a unique, lightweight **LoRA adapter**. This creates distinct, cost-effective agent "personalities" on top of a shared base model. |
+| **L2** | **Role-specific Model** | The **entire model's weights** are optimized for a specific role using reinforcement learning. This creates a highly specialized expert agent for maximum performance on complex tasks. |
 
 ## 📚 Citation
 
 If you find PettingLLMs useful for your research or projects, please cite:
 
 ```bibtex
-@article{pettingllms2025,
-  title={PettingLLMs: Reinforcement Learning for Multi-Agent Large Language Models},
-  author={Your Authors},
+@article{zhao2025stronger,
+  title={Stronger Together: On-Policy Reinforcement Learning for Collaborative LLMs},
+  author={Zhao, Yujie and Hu, Lanxiang and Wang, Yang and Hou, Minmin and Zhang, Hao and Ding, Ke and Zhao, Jishen},
   journal={arXiv preprint arXiv:2510.11062},
   year={2025}
 }
@@ -189,11 +192,11 @@ If you find PettingLLMs useful for your research or projects, please cite:
 
 ## 🔗 Acknowledgements
 
-This work was primarily conducted by **Yujie Zhao** during her summer internship at **Intel Corporation**. We gratefully acknowledge Intel's support and resources that made this research possible.
+This work was primarily conducted by Yujie Zhao during her summer internship at **Intel Corporation**. We gratefully acknowledge Intel's support and resources that made this research possible.
 
 
 - **VERL**: [VERL: Efficient RL Training for LLMs](https://github.com/volcengine/verl) - For efficient distributed RL training infrastructure
-- **RLLM**: [RLLM: Reinforcement Learning with Language Models](https://github.com/mukobi/rllm) - For foundational RL algorithms for LLMs
+- **RLLM**: [RLLM: Reinforcement Learning with Language Models](https://github.com/rllm-org/rllm) - For foundational RL algorithms for LLMs
 
 ---
 

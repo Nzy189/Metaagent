@@ -1,11 +1,11 @@
 # python venv
 pettingllms_venv/*
-*.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-scripts/train/
+# scripts/train/
 data/
 requiements_venv_cu128.txt
 default/
@@ -33,7 +33,6 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-verl
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -226,7 +225,7 @@ training.txt
 **/outputs/
 **/wandb/
 **/checkpoints/
-verl/*
+
 
 # Machine Learning and AI specific
 models/
@@ -294,8 +293,3 @@ local_config.py
 local_settings.py
 .local/
 config.local.*
-pettingllms_venv/*
-tmp/
-.claude/
-.github/
-.gitattributes

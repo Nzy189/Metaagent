@@ -75,6 +75,7 @@ training:
   sample_temperature: 1
   val_freq: 10
   resample_freq: 3
+  epoch_size: 20
   max_prompt_length: 4096
   max_response_length: 2048
   lora_rank: ${lora_rank}
@@ -86,7 +87,7 @@ models:
     path: ${base_models.policy_0.path}
     name: ${base_models.policy_0.name}
     ppo_trainer_config:
-      filter_method: dapo
+      filter_method: mean
       filter_ratio: 0.5
       data: 
         max_prompt_length: ${training.max_prompt_length}

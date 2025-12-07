@@ -35,27 +35,27 @@ export LD_LIBRARY_PATH=$CUDA_HOME/targets/x86_64-linux/lib:$CUDA_HOME/lib64:$LD_
 # Configuration - Edit these parameters
 # ============================================
 MODEL_PATHS=(
-    "/home/nvidia/data/models/Qwen2.5-7B-Instruct"
+    "your base model path"
 )
-EXPERIMENT_NAME="code_L1_lora"
+EXPERIMENT_NAME="code_L1_prompt"
 # Assuming execution from repository root
 REPO_ROOT="$(pwd)"
 CONFIG_PATH="${REPO_ROOT}/pettingllms/config/code"
-CONFIG_NAME="code_L1_lora"
-BENCHMARK="livecodebench_cure"
+CONFIG_NAME="code_L1_prompt"
+BENCHMARK="code_contests"
 BASE_VLLM_PORT=8301
 BASE_PROXY_PORT=8320
-GPU_START_ID=5
+GPU_START_ID=1
 HOST="127.0.0.1"
 GPU_MEM=0.8
-TP_SIZE=2  # Tensor parallel size (number of GPUs per model)
+TP_SIZE=1  # Tensor parallel size (number of GPUs per model)
            # This value will be used for:
            # - vLLM tensor_parallel_size
            # - config resource.n_gpus_per_node
            # - config tensor_model_parallel_size
 MAX_PROMPT_LENGTH=8192
 MAX_RESPONSE_LENGTH=8192
-MAX_TURNS=4
+MAX_TURNS=5
 MAX_LEN=32768
 MAX_WAIT=180  # Maximum wait time in seconds
 CHECK_INTERVAL=2  # Check interval in seconds

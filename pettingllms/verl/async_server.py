@@ -133,11 +133,7 @@ class ChatCompletionScheduler:
             max_cache_size: int, max cache size of request_id to address mapping.
         """
         self.config = config
-        # Match vLLM's model registration logic
-        if "checkpoint" in model_path:
-            self.model_name = model_path
-        else:
-            self.model_name = "/".join(model_path.split("/")[-2:])
+        self.model_name = "/".join(model_path.split("/")[-2:])
         local_path = copy_to_local(model_path)
         self.tokenizer = hf_tokenizer(local_path, trust_remote_code=True)
 
@@ -438,49 +434,6 @@ class AsyncLLMServerManager:
             # Wait for the future to complete and return its result
             # We need to use asyncio.wrap_future to await a concurrent.futures.Future
             return await asyncio.wrap_future(future)
-
-    def cleanup(self):
-        """Clean up all async LLM servers and scheduler resources"""
-        print("Cleaning up AsyncLLMServerManager...")
-        
-        try:
-            # 1. Stop chat scheduler loop
-            if self.chat_scheduler_loop is not None and self.chat_scheduler_loop.is_running():
-                try:
-                    self.chat_scheduler_loop.call_soon_threadsafe(self.chat_scheduler_loop.stop)
-                    print("  Stopped chat scheduler event loop")
-                except Exception as e:
-                    print(f"  Warning: Failed to stop chat scheduler loop: {e}")
-            
-            # 2. Wait for scheduler thread to complete
-            if hasattr(self, 'chat_scheduler_thread') and self.chat_scheduler_thread is not None:
-                if self.chat_scheduler_thread.is_alive():
-                    try:
-                        self.chat_scheduler_thread.join(timeout=5)
-                        if self.chat_scheduler_thread.is_alive():
-                            print("  Warning: Chat scheduler thread did not terminate within timeout")
-                        else:
-                            print("  Chat scheduler thread terminated")
-                    except Exception as e:
-                        print(f"  Warning: Error waiting for scheduler thread: {e}")
-            
-            # 3. Kill all async LLM server actors
-            if hasattr(self, 'async_llm_servers') and self.async_llm_servers:
-                killed_count = 0
-                for i, server in enumerate(self.async_llm_servers):
-                    if server is not None:
-                        try:
-                            ray.kill(server)
-                            killed_count += 1
-                            print(f"  Killed async_llm_server {i}")
-                        except Exception as e:
-                            print(f"  Warning: Failed to kill server {i}: {e}")
-                self.async_llm_servers.clear()
-                print(f"  Cleaned up {killed_count} async LLM servers")
-            
-            print("AsyncLLMServerManager cleanup completed")
-        except Exception as e:
-            print(f"Error during AsyncLLMServerManager cleanup: {e}")
 
 
 def async_server_class(rollout_backend: str) -> Type[AsyncServerBase]:

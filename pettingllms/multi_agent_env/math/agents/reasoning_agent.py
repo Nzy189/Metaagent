@@ -8,7 +8,7 @@ from math_verify import parse, verify
 logger = logging.getLogger(__name__)
 
 
-def truncatefn(s, length=600):
+def truncatefn(s, length=300):
     if isinstance(s, str):
         pass
     else:
@@ -16,7 +16,7 @@ def truncatefn(s, length=600):
     if len(s) <= length:
         return s
 
-    return s[:length//2] + "\n\n...(reasoning steps truncated)...\n\n" + s[-length//2:]
+    return s[:500] + "\n\n...(reasoning steps truncated)...\n\n" + s[-500:]
 
 
 class ReasoningAgent(Agent):
@@ -104,7 +104,7 @@ class ReasoningAgent(Agent):
         extracted_answer = env_data.state.reasoning_extracted_answer
         ground_truth_answer = env_data.state.ground_truth_answer
         is_correct = False
-        env_data.state.success = False
+        
         if extracted_answer is not None and ground_truth_answer is not None:
             
             is_correct =verify(extracted_answer, parse(ground_truth_answer))
@@ -113,11 +113,9 @@ class ReasoningAgent(Agent):
             if is_correct:
                 self.success = True
                 env_data.state.reasoning_is_correct = True
-                env_data.state.success = True
             else:
                 self.success = False
                 env_data.state.reasoning_is_correct = False
-                
         
         if env_data.state.code_extracted_answer is not None and env_data.state.reasoning_extracted_answer is not None:
             is_aligned = verify(env_data.state.code_extracted_answer, env_data.state.reasoning_extracted_answer)
@@ -129,7 +127,7 @@ class ReasoningAgent(Agent):
         
     
     def calculate_reward(self, env_data: Env):
-        self.agent_reward = int(env_data.state.reasoning_is_correct)
+        self.agent_reward = int(env_data.state.reasoning_is_correct)+ int(env_data.state.reasoning_is_correct)
         self.reward_history.append(self.agent_reward)
 
     def reset(self):

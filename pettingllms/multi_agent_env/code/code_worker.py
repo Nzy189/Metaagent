@@ -53,7 +53,6 @@ async def _worker_docker(
     stdout_file = None
     stderr_file = None
     printed_output = None
-    proc = None
     
     try:
         with open(script_path, "w", encoding="utf-8") as f:
@@ -141,53 +140,39 @@ async def _worker_docker(
                 await asyncio.wait_for(proc.wait(), timeout=timeout-2)
                 rc = proc.returncode
             except asyncio.TimeoutError:
-                # Timeout occurred - need to kill the process and all its children
-                print(f"Process timeout after {timeout}s, cleaning up...")
-                
-                # First try SIGTERM to allow graceful shutdown
                 try:
-                    os.killpg(proc.pid, signal.SIGTERM)
-                except (ProcessLookupError, PermissionError):
-                    pass
-                except Exception as e:
-                    print(f"Failed to send SIGTERM to process group: {e}")
-                
-                # Wait a bit for graceful shutdown
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=0.5)
-                except asyncio.TimeoutError:
-                    # Force kill with SIGKILL
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except Exception:
                     try:
-                        os.killpg(proc.pid, signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError):
-                        pass
-                    except Exception as e:
-                        print(f"Failed to send SIGKILL to process group: {e}")
-                        # Fallback: try killing just the process
-                        try:
-                            proc.kill()
-                        except Exception:
-                            pass
-                    
-                    # Wait for process to actually die
-                    try:
-                        await asyncio.wait_for(proc.wait(), timeout=2.0)
-                    except asyncio.TimeoutError:
-                        print(f"Warning: Process {proc.pid} still alive after SIGKILL")
+                        proc.kill()
                     except Exception:
                         pass
-                
-                # Write timeout message to stderr
                 try:
                     with open(stderr_path, "ab") as f_err_append:
                         msg = f"[parent] Timeout after {timeout}s; process killed.\n".encode()
                         f_err_append.write(msg)
                 except Exception:
                     pass
-                
-                rc = proc.returncode if proc.returncode is not None else -1
+                try:
+                    await proc.wait()
+                except Exception:
+                    pass
+                rc = None
                 printed_output = None
-                print(f"Process cleaned up, returncode: {rc}")
+                print("printed_output: None (timeout)")
+                try:
+                    if proc.returncode is None:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                try:
+                    await proc.wait()
+                except Exception:
+                    pass
+                rc = proc.returncode
             if printed_output is None and rc is None:
                 pass
             elif rc is not None:
@@ -213,21 +198,6 @@ async def _worker_docker(
                         combined = last_line
                     printed_output = f"error: exit {rc}: {combined}"
         finally:
-            # Ensure process is dead before closing files
-            if proc and proc.returncode is None:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except Exception:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=1.0)
-                except Exception:
-                    pass
-            
-            # Now safe to close file handles
             for file_handle, file_name in [(stdin_file, "stdin"), (stdout_file, "stdout"), (stderr_file, "stderr")]:
                 if file_handle is not None:
                     try:
@@ -240,23 +210,6 @@ async def _worker_docker(
         printed_output = f"error: {e}"
 
     finally:
-        # Final cleanup: ensure all processes are terminated
-        if proc is not None:
-            try:
-                if proc.returncode is None:
-                    print(f"Warning: Process still running in final cleanup, killing...")
-                    try:
-                        os.killpg(proc.pid, signal.SIGKILL)
-                    except Exception:
-                        try:
-                            proc.kill()
-                        except Exception:
-                            pass
-                    # Don't wait here, just ensure kill signal is sent
-            except Exception as e:
-                print(f"Final process cleanup error: {e}")
-        
-        # Clean up temporary directory
         shutil.rmtree(tmpdir, ignore_errors=True)
         cleanup_tmpdir()
 
