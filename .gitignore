@@ -225,7 +225,7 @@ training.txt
 **/outputs/
 **/wandb/
 **/checkpoints/
-verl/*
+
 
 # Machine Learning and AI specific
 models/
