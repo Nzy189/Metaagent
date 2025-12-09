@@ -485,9 +485,21 @@ async def llm_async_generate(
     # Determine which model to use: LoRA adapter or base model
     # In vllm, LoRA is selected by specifying the lora_name as the model parameter
     if lora_id is not None:
-        actual_model = lora_id  # Use LoRA adapter name as model
+        # Convert lora_id to standardized format "lora_X"
+        if isinstance(lora_id, (int, np.integer)):
+            lora_int_id = int(lora_id)
+        elif isinstance(lora_id, str):
+            # Parse from formats like "agent_reasoning_generator_lora_0" -> 0
+            if 'lora_' in lora_id:
+                lora_int_id = int(lora_id.split('lora_')[-1])
+            else:
+                lora_int_id = int(lora_id) if lora_id.isdigit() else 0
+        else:
+            lora_int_id = 0
+
+        actual_model = f"lora_{lora_int_id}"  # Use standardized LoRA adapter name
         try:
-            print(f"[LLM][llm_async_generate] Using LoRA adapter: {lora_id}")
+            print(f"[LLM][llm_async_generate] Using LoRA adapter: {actual_model} (from lora_id={lora_id})")
         except Exception:
             pass
     else:

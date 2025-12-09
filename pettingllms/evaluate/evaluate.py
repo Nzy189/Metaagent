@@ -128,10 +128,11 @@ def init_agent_execution_engine(config: DictConfig, address: str):
             print("Each agent will use a different LoRA adapter")
             
             # Create LoRA adapter mapping for each agent
+            # Use integer IDs for easier vLLM LoRA integration
             for agent_idx, agent_name in enumerate(agent_policy_mapping.keys()):
-                lora_id = f"agent_{agent_name}_lora_{agent_idx}"
+                lora_id = agent_idx  # Use integer ID directly (0, 1, 2, ...)
                 agent_lora_mapping[agent_name] = lora_id
-                print(f"  Agent '{agent_name}' -> LoRA adapter '{lora_id}'")
+                print(f"  Agent '{agent_name}' -> LoRA adapter 'lora_{lora_id}' (ID: {lora_id})")
             
             print(f"Total {len(agent_lora_mapping)} agent-specific LoRA adapters to load")
             print("=" * 60)

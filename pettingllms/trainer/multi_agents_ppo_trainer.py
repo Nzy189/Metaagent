@@ -80,62 +80,7 @@ class MultiAgentsPPOTrainer:
         num_agents = len(self.agent_policy_mapping) if self.agent_policy_mapping else 0
 
         colorful_print(f"Configuration check: base_models={num_base_models}, models={num_models}, agents={num_agents}, specialization={config.specialization}", "cyan")
-
-        # Check if specialization is 'full' with single base_model
-        if config.specialization == "full" and num_base_models == 1:
-            colorful_print("=" * 80, "yellow")
-            colorful_print("SPECIAL MODE: specialization='full' with single base_model detected", "yellow")
-            colorful_print(f"All {num_agents} agents will use the same base model initially,", "yellow")
-            colorful_print("but each agent will train into different parameters during training.", "yellow")
-            colorful_print(f"Automatically replicating model config to match {num_agents} agents...", "yellow")
-
-            # Get the single base model config
-            base_model_key = list(config.base_models.keys())[0]
-            base_model_config = config.base_models[base_model_key]
-
-            # If models config only has 1 entry, replicate it for all agents
-            if num_models == 1:
-                colorful_print(f"Replicating single model config across {num_agents} agents...", "cyan")
-
-                # Get the original model config
-                original_model_key = list(config.models.keys())[0]
-                original_model_config = config.models[original_model_key]
-
-                # Create new model configs for each agent
-                from copy import deepcopy
-                new_models_dict = {}
-
-                for idx, (agent_name, policy_name) in enumerate(self.agent_policy_mapping.items()):
-                    model_key = f"model_{idx}"
-                    model_config = deepcopy(original_model_config)
-
-                    # Update model name to match policy
-                    model_config.name = policy_name
-                    model_config.path = base_model_config.path
-
-                    # Update actor_rollout_ref model path if it exists
-                    if hasattr(model_config, 'ppo_trainer_config') and \
-                       hasattr(model_config.ppo_trainer_config, 'actor_rollout_ref') and \
-                       hasattr(model_config.ppo_trainer_config.actor_rollout_ref, 'model'):
-                        model_config.ppo_trainer_config.actor_rollout_ref.model.path = base_model_config.path
-
-                    new_models_dict[model_key] = model_config
-                    colorful_print(f"  Created {model_key}: {policy_name} -> {base_model_config.path}", "green")
-
-                # Replace the models config
-                config.models = OmegaConf.create(new_models_dict)
-                num_models = len(config.models)
-                colorful_print(f"Successfully created {num_models} model configs from single base_model", "green")
-
-            colorful_print("=" * 80, "yellow")
-
-        # Final validation: check if base_models and models counts match (if base_models exists)
-        if hasattr(config, 'base_models'):
-            num_base_models = len(config.base_models)
-            num_models = len(config.models)
-
-            # For specialization != 'full', base_models and models should match
-            if config.specialization != "full" and num_base_models != num_models:
+        if num_base_models != num_models:
                 error_msg = (
                     f"Configuration error: Number of base_models ({num_base_models}) does not match "
                     f"number of models ({num_models}) for specialization='{config.specialization}'. "
@@ -145,7 +90,46 @@ class MultiAgentsPPOTrainer:
                 colorful_print("ERROR: " + error_msg, "red")
                 colorful_print("=" * 80, "red")
                 raise ValueError(error_msg)
-        
+
+        # Check if specialization is 'full' with single base_model
+        if config.specialization == "full" and num_base_models == 1:
+            colorful_print("=" * 80, "yellow")
+            colorful_print("SPECIAL MODE: specialization='full' with single base_model detected", "yellow")
+            colorful_print(f"num_base_models: {num_base_models}", "cyan")
+            colorful_print(f"num_models: {num_models}", "cyan")
+            colorful_print(f"num_agents: {num_agents}", "cyan")
+
+            # Simply copy config.base_models and config.models to match agent_num
+            from copy import deepcopy
+
+            # Get the single base_model and model configs
+            base_model_key = list(config.base_models.keys())[0]
+            base_model_config = config.base_models[base_model_key]
+
+            original_model_key = list(config.models.keys())[0]
+            original_model_config = config.models[original_model_key]
+
+            # Replicate base_models to match num_agents
+            new_base_models_dict = {}
+            for idx in range(num_agents):
+                new_base_models_dict[f"base_model_{idx}"] = deepcopy(base_model_config)
+            config.base_models = OmegaConf.create(new_base_models_dict)
+
+            # Replicate models to match num_agents
+            new_models_dict = {}
+            for idx in range(num_agents):
+                new_models_dict[f"model_{idx}"] = deepcopy(original_model_config)
+            config.models = OmegaConf.create(new_models_dict)
+
+            colorful_print(f"Replicated configs: base_models={len(config.base_models)}, models={len(config.models)}", "green")
+            colorful_print("=" * 80, "yellow")
+
+        # Final validation: check if base_models and models counts match (if base_models exists)
+        if hasattr(config, 'base_models'):
+            num_base_models = len(config.base_models)
+            num_models = len(config.models)
+
+           
         # Initialize ppo_trainer_dict from models configuration
         self.ppo_trainer_config_dict = {}
         self.rollout_sample_dict = {}
@@ -193,10 +177,11 @@ class MultiAgentsPPOTrainer:
                 self.lora_differ_mode = False
             else:
                 # Create LoRA adapter mapping for each agent
+                # Use integer IDs for easier vLLM LoRA integration
                 for agent_idx, agent_name in enumerate(self.agent_policy_mapping.keys()):
-                    lora_id = f"agent_{agent_name}_lora_{agent_idx}"
+                    lora_id = agent_idx  # Use integer ID directly (0, 1, 2, ...)
                     self.agent_lora_mapping[agent_name] = lora_id
-                    colorful_print(f"  Agent '{agent_name}' -> LoRA adapter '{lora_id}'", "cyan")
+                    colorful_print(f"  Agent '{agent_name}' -> LoRA adapter 'lora_{lora_id}' (ID: {lora_id})", "cyan")
 
                 colorful_print(f"Total {len(self.agent_lora_mapping)} agent-specific LoRA adapters created", "green")
 

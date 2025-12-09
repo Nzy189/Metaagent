@@ -35,6 +35,8 @@ class MultiAgentsExecutionEngine:
         self.num_interacting_agents = self.config.multi_agent_interaction.num_interacting_agents
         self.parallel = getattr(self.config.multi_agent_interaction, 'parallel', False)
         self.generate_timeout = getattr(self.config.training, 'generate_timeout', 300.0)
+        # Multi-modal support configuration
+        self.enable_multimodal = getattr(self.config.training, 'enable_multimodal', False)
         if self.num_interacting_agents != len(self.turn_order):
             raise ValueError("num_interacting_agents must be equal to the length of turn_order")
           
@@ -146,12 +148,17 @@ class MultiAgentsExecutionEngine:
         
         # Initialize enable_thinking mapping for each agent
         self.agent_enable_thinking = {}
+        # Initialize enable_multimodal mapping for each agent
+        self.agent_enable_multimodal = {}
         for agent_name in self.turn_order:
             agent_config = self.agent_config_dict.get(agent_name, None)
             # Read enable_thinking from agent config, default to False
             enable_thinking = getattr(agent_config, 'enable_thinking', False) if agent_config else False
             self.agent_enable_thinking[agent_name] = enable_thinking
-            print(f"Agent '{agent_name}' enable_thinking: {enable_thinking}")
+            # Read enable_multimodal from agent config, fallback to global setting
+            enable_multimodal = getattr(agent_config, 'enable_multimodal', self.enable_multimodal) if agent_config else self.enable_multimodal
+            self.agent_enable_multimodal[agent_name] = enable_multimodal
+            print(f"Agent '{agent_name}' enable_thinking: {enable_thinking}, enable_multimodal: {enable_multimodal}")
         
         if mode=="validate":
             self.sample_num=self.config.training.validate_sample_num
@@ -238,13 +245,21 @@ class MultiAgentsExecutionEngine:
                     prompt = current_agent.current_prompt
                     policy_name = self.agent_policy_mapping.get(agent_name)
                     agent_enable_thinking = self.agent_enable_thinking.get(agent_name, False)
-                    
+                    agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
+
+                    # Extract image data if multimodal is enabled
+                    image_data = None
+                    if agent_enable_multimodal and hasattr(current_agent, 'get_image_data'):
+                        image_data = current_agent.get_image_data()
+                    elif agent_enable_multimodal and hasattr(env, 'get_image_data'):
+                        image_data = env.get_image_data()
+
                     format_prompt = convert_prompt_to_dpr(
                         self.tokenizer_dict[policy_name],
                         self.processor_dict.get(policy_name),
                         prompt,
                         self.max_prompt_length,
-                        multi_modal=False,
+                        multi_modal=agent_enable_multimodal,
                         enable_thinking=agent_enable_thinking
                     )
                     
@@ -276,7 +291,7 @@ class MultiAgentsExecutionEngine:
                         agent_config = self.agent_config_dict.get(agent_name, None)
                         agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
                         
-                        print(f"[Engine][PARALLEL_GEN] rollout_idx={rollout_idx} agent={agent_name} calling LLM")
+                        print(f"[Engine][PARALLEL_GEN] rollout_idx={rollout_idx} agent={agent_name} calling LLM (multimodal={agent_enable_multimodal})")
                         output_dpr, response = await llm_async_generate(
                             rollout_idx=rollout_idx,
                             turn_idx=turn_idx,
@@ -287,7 +302,7 @@ class MultiAgentsExecutionEngine:
                             model_name=model_name,
                             tokenizer=self.tokenizer_dict[policy_name],
                             enable_thinking=agent_enable_thinking,
-                            image_data=None,
+                            image_data=image_data,
                             application_id=str(uuid.uuid4()),
                             env_idx=rollout_idx // self.sample_num,
                             policy_name=policy_name,
@@ -368,13 +383,21 @@ class MultiAgentsExecutionEngine:
                     prompt = current_agent.current_prompt
                     policy_name = self.agent_policy_mapping.get(agent_name)
                     agent_enable_thinking = self.agent_enable_thinking.get(agent_name, False)
-                    
+                    agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
+
+                    # Extract image data if multimodal is enabled
+                    image_data = None
+                    if agent_enable_multimodal and hasattr(current_agent, 'get_image_data'):
+                        image_data = current_agent.get_image_data()
+                    elif agent_enable_multimodal and hasattr(env, 'get_image_data'):
+                        image_data = env.get_image_data()
+
                     format_prompt = convert_prompt_to_dpr(
                         self.tokenizer_dict[policy_name],
                         self.processor_dict.get(policy_name),
                         prompt,
                         self.max_prompt_length,
-                        multi_modal=False,
+                        multi_modal=agent_enable_multimodal,
                         enable_thinking=agent_enable_thinking
                     )
                     
@@ -413,7 +436,7 @@ class MultiAgentsExecutionEngine:
                         agent_config = self.agent_config_dict.get(agent_name, None)
                         agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
                         
-                        print(f"[Engine][DEBUG] About to call llm_async_generate for rollout_idx={rollout_idx}, agent={agent_name}")
+                        print(f"[Engine][DEBUG] About to call llm_async_generate for rollout_idx={rollout_idx}, agent={agent_name} (multimodal={agent_enable_multimodal})")
                         output_dpr, response = await llm_async_generate(
                             rollout_idx=rollout_idx,
                             turn_idx=turn_idx,
@@ -424,7 +447,7 @@ class MultiAgentsExecutionEngine:
                             model_name=model_name,
                             tokenizer=self.tokenizer_dict[policy_name],
                             enable_thinking=agent_enable_thinking,
-                            image_data=None,
+                            image_data=image_data,
                             application_id=str(uuid.uuid4()),
                             env_idx=rollout_idx // self.sample_num,
                             policy_name=policy_name,
@@ -526,11 +549,26 @@ class MultiAgentsExecutionEngine:
                 
                 # Use captured state snapshot for this specific agent
                 env_state_compact = agent_output.get('env_state_snapshot') or (env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else env.state)
+
+                # Include image data in logging if multimodal is enabled
+                agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
+                current_agent = agent_group[agent_idx]
+                image_info = None
+                if agent_enable_multimodal:
+                    if hasattr(current_agent, 'get_image_data'):
+                        img_data = current_agent.get_image_data()
+                        if img_data is not None:
+                            image_info = {"has_image": True, "type": type(img_data).__name__}
+                    elif hasattr(env, 'get_image_data'):
+                        img_data = env.get_image_data()
+                        if img_data is not None:
+                            image_info = {"has_image": True, "type": type(img_data).__name__}
+
                 self.multi_logger.log_env_agent_info(
                         self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
                         "Trajectory information updated",
                         {
-                            "agent_prompt": {"text": prompt, "image": None},
+                            "agent_prompt": {"text": prompt, "image": image_info},
                             "agent_response": response,
                             "env_state": env_state_compact,
                         }
@@ -616,15 +654,24 @@ class MultiAgentsExecutionEngine:
                 current_agent = agent_groups[idx][agent_idx]
                 current_agent.update_from_env(turn_idx, env)
                 prompt = current_agent.current_prompt
-                policy_name = self.agent_policy_mapping.get(agent_name) 
+                policy_name = self.agent_policy_mapping.get(agent_name)
                 # Get enable_thinking for this specific agent
                 agent_enable_thinking = self.agent_enable_thinking.get(agent_name, False)
+                agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
+
+                # Extract image data if multimodal is enabled
+                image_data = None
+                if agent_enable_multimodal and hasattr(current_agent, 'get_image_data'):
+                    image_data = current_agent.get_image_data()
+                elif agent_enable_multimodal and hasattr(env, 'get_image_data'):
+                    image_data = env.get_image_data()
+
                 format_prompt = convert_prompt_to_dpr(
-                    self.tokenizer_dict[policy_name], 
-                    self.processor_dict.get(policy_name), 
-                    prompt, 
+                    self.tokenizer_dict[policy_name],
+                    self.processor_dict.get(policy_name),
+                    prompt,
                     self.max_prompt_length,
-                    multi_modal=False,
+                    multi_modal=agent_enable_multimodal,
                     enable_thinking=agent_enable_thinking
                 )
                 ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
@@ -658,19 +705,19 @@ class MultiAgentsExecutionEngine:
                     # Check if this agent supports sampling (has sample_num attribute)
                     agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
                    
-                    print(f"[Engine][DEBUG] About to call llm_async_generate in async_generate_response for rollout_idx={rollout_idx}, agent={agent_name}, turn_idx={turn_idx}")
+                    print(f"[Engine][DEBUG] About to call llm_async_generate in async_generate_response for rollout_idx={rollout_idx}, agent={agent_name}, turn_idx={turn_idx} (multimodal={agent_enable_multimodal})")
                     print(f"[Engine][AWAIT_START] Calling llm_async_generate at {time.time()}")
                     output_dpr, response = await llm_async_generate(
-                        rollout_idx=rollout_idx, 
-                        turn_idx=turn_idx, 
+                        rollout_idx=rollout_idx,
+                        turn_idx=turn_idx,
                         agent_idx=agent_idx,
-                        prompt_dpr=format_prompt, 
+                        prompt_dpr=format_prompt,
                         ppo_trainer_config=ppo_trainer_config,
                         address=_address,
                         model_name=server_name,
                         tokenizer=self.tokenizer_dict[policy_name],
                         enable_thinking=agent_enable_thinking,
-                        image_data=None,
+                        image_data=image_data,
                         application_id=str(uuid.uuid4()),
                         env_idx=env_idx,
                         policy_name=policy_name,
@@ -831,11 +878,25 @@ class MultiAgentsExecutionEngine:
                         if agent_name == self.turn_order[-1]:
                             # Use captured state snapshot for this specific agent
                             env_state_compact = result.get('env_state_snapshot') or (env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else env.state)
+
+                            # Include image data in logging if multimodal is enabled
+                            agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
+                            image_info = None
+                            if agent_enable_multimodal:
+                                if hasattr(current_agent, 'get_image_data'):
+                                    img_data = current_agent.get_image_data()
+                                    if img_data is not None:
+                                        image_info = {"has_image": True, "type": type(img_data).__name__}
+                                elif hasattr(env, 'get_image_data'):
+                                    img_data = env.get_image_data()
+                                    if img_data is not None:
+                                        image_info = {"has_image": True, "type": type(img_data).__name__}
+
                             self.multi_logger.log_env_agent_info(
                                 self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
                                 "Trajectory information updated",
                                 {
-                                    "agent_prompt": {"text": prompt if prompt is not None else "", "image": None},
+                                    "agent_prompt": {"text": prompt if prompt is not None else "", "image": image_info},
                                     "agent_response": response,
                                     "env_state": env_state_compact,
                                 }
@@ -999,11 +1060,25 @@ class MultiAgentsExecutionEngine:
                         env = envs_list[idx]
                         # Use captured state snapshot for this specific agent
                         env_state_compact = result.get('env_state_snapshot') or (env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else env.state)
+
+                        # Include image data in logging if multimodal is enabled
+                        agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
+                        image_info = None
+                        if agent_enable_multimodal:
+                            if hasattr(current_agent, 'get_image_data'):
+                                img_data = current_agent.get_image_data()
+                                if img_data is not None:
+                                    image_info = {"has_image": True, "type": type(img_data).__name__}
+                            elif hasattr(env, 'get_image_data'):
+                                img_data = env.get_image_data()
+                                if img_data is not None:
+                                    image_info = {"has_image": True, "type": type(img_data).__name__}
+
                         self.multi_logger.log_env_agent_info(
                             self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
                             "Trajectory information updated",
                             {
-                                "agent_prompt": {"text": prompt if prompt is not None else "", "image": None},
+                                "agent_prompt": {"text": prompt if prompt is not None else "", "image": image_info},
                                 "agent_response": response,
                                 "env_state": env_state_compact,
                             }
