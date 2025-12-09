@@ -31,7 +31,6 @@ python3 -m pettingllms.trainer.train --config-path ../config/code --config-name 
     models.model_0.path="your model path"\
     training.experiment_name=code_single_agent\
     training.total_training_steps=200\
-    training.epoch_size=20\
     training.train_batch_size=32\
     training.train_sample_num=8\
     training.validate_sample_num=1\

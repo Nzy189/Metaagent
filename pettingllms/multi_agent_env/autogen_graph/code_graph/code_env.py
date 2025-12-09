@@ -132,16 +132,19 @@ class CodeEnvBatch:
         # Load problems based on mode
         if mode == "train":
             difficulty = getattr(config.env, "difficulty", "difficult") if hasattr(config, "env") else "difficult"
+            # Ensure env_indices are safe by using list to pass to load function
+            safe_env_indices = list(env_indices) if not isinstance(env_indices, list) else env_indices
             self.problem_list = load_problem_batch(
-                env_indices,
+                safe_env_indices,
                 benchmark_name="train",
                 mode="train",
                 difficulty=difficulty
             )
         else:
             benchmark_name = getattr(config.env, "benchmark", "test") if hasattr(config, "env") else "test"
+            safe_env_indices = list(env_indices) if not isinstance(env_indices, list) else env_indices
             self.problem_list = load_problem_batch(
-                env_indices,
+                safe_env_indices,
                 mode=mode,
                 benchmark_name=benchmark_name
             )

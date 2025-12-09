@@ -207,10 +207,12 @@ class MultiAgentsExecutionEngine:
 
         self.env_batch_class=ENV_BATCH_CLASS_MAPPING[self.env_name]
         env_indices=range(step_idx*self.gen_batch_size, (step_idx+1)*self.gen_batch_size)
+        # Convert to list for safety
+        env_indices_list = list(env_indices)
         self.envs_batch=self.env_batch_class(
             env_idx_list=range(self.gen_batch_size),
             rollout_idx_list=range(self.gen_batch_size*self.sample_num),
-            env_indices=env_indices,
+            env_indices=env_indices_list,
             samples=self.sample_num,
             max_turns=self.max_turns,
             config=self.config,

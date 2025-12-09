@@ -94,7 +94,9 @@ def load_problem_batch(
     batch_results = []
     
     if mode == "train":
-        for idx in indices:
+        # Ensure indices don't exceed dataset length using modulo operation
+        safe_indices = [idx % len(ds) for idx in indices]
+        for idx in safe_indices:
             example = ds[idx]
             problem_dict = _format_competition_problem(example, idx, mode="train")
             if problem_dict:

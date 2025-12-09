@@ -92,10 +92,14 @@ def load_math_problem_batch(
     batch_results = []
     
     if mode == "train":
+        # Use modulo operation to ensure indices don't exceed dataset length
         if len(ds) < len(env_indices):
-            raise ValueError(f"Dataset has {len(ds)} samples, but {len(env_indices)} requested")
+            print(f"Warning: Dataset has {len(ds)} samples, but {len(env_indices)} requested. Will cycle through dataset.")
+            # Sample with replacement by using modulo
+            indices = [random.randint(0, len(ds) - 1) for _ in range(len(env_indices))]
+        else:
+            indices = random.sample(range(len(ds)), len(env_indices))
         
-        indices = random.sample(range(len(ds)), len(env_indices))
         for idx in indices:
             problem_dict = _format_math_problem(ds[idx], idx, mode="train")
             if problem_dict:

@@ -31,7 +31,6 @@ python3 -m pettingllms.trainer.train --config-path ../config/math --config-name 
     base_models.policy_0.path="your base model path"\
     training.experiment_name=math_1.7B_lora\
     training.total_training_steps=200\
-    training.epoch_size=20\
     training.train_batch_size=32\
     training.train_sample_num=8\
     training.validate_sample_num=5\

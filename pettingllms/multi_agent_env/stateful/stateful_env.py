@@ -83,14 +83,16 @@ class StatefulEnvBatch:
             env_idx_list = range(100)
             samples = samples
             rollout_idx_list = range(100*samples)
-            
+        
+        # Convert env_indices to list for safety
+        safe_env_indices = list(env_indices) if not isinstance(env_indices, list) else env_indices
 
         benchmark_name = getattr(config.env, "benchmark") if hasattr(config, "env") and hasattr(config.env, "benchmark") else "plan_path"
         dataset_name = getattr(config.env, "dataset") if hasattr(config, "env") and hasattr(config.env, "dataset") else "default"
         
         # Load problem batch based on benchmark and dataset
         problem_list = load_plan_path_problem_batch(
-            env_indices=env_indices,
+            env_indices=safe_env_indices,
             dataset_name=dataset_name,
             split=mode,
             mode=mode,

@@ -31,7 +31,6 @@ python3 -m pettingllms.trainer.train --config-path ../config/pychecker_rl --conf
     base_models.policy_0.path="/home/lah003/models/Qwen3-1.7B"\
     training.experiment_name=pychecker_rl_1.7B_prompt\
     training.total_training_steps=200\
-    training.epoch_size=20\
     training.train_batch_size=32\
     training.train_sample_num=8\
     training.validate_sample_num=5\

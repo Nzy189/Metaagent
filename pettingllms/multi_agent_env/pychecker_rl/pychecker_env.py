@@ -170,8 +170,11 @@ class PyCheckerEnvBatch:
             mode: "train" or "validate"
             env_workers: Optional list of workers
         """
+        # Convert env_indices to list for safety
+        safe_env_indices = list(env_indices) if not isinstance(env_indices, list) else env_indices
+        
         # Load problems from dataset
-        self.problem_list = self.load_pychecker_problems(env_indices, mode=mode, config=config)
+        self.problem_list = self.load_pychecker_problems(safe_env_indices, mode=mode, config=config)
         self.env_list = []
         
         if mode == "validate":
@@ -244,10 +247,12 @@ class PyCheckerEnvBatch:
                 # Random sample based on the length of env_indices
                 sample_num = len(env_indices)
                 if sample_num > len(all_problems):
-                    raise ValueError(f"Dataset has {len(all_problems)} samples, but {sample_num} requested")
-
-                # Randomly sample without replacement
-                indices = random.sample(range(len(all_problems)), sample_num)
+                    logger.warning(f"Dataset has {len(all_problems)} samples, but {sample_num} requested. Will sample with replacement.")
+                    # Sample with replacement using random choices
+                    indices = [random.randint(0, len(all_problems) - 1) for _ in range(sample_num)]
+                else:
+                    # Randomly sample without replacement
+                    indices = random.sample(range(len(all_problems)), sample_num)
                 sampled_problems = [all_problems[idx] for idx in indices]
                 logger.info(f"Randomly sampled {len(sampled_problems)} problems for training")
             else:

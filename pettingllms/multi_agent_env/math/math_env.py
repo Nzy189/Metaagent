@@ -62,8 +62,11 @@ class MathEnv(Env):
 
 class MathEnvBatch:
     def __init__(self, env_idx_list: List[int],env_indices: List[int], rollout_idx_list: List[int], samples: int, max_turns: int, config: dict, mode="train", *, env_workers: List = None):
+        # Convert env_indices to list for safety
+        safe_env_indices = list(env_indices) if not isinstance(env_indices, list) else env_indices
+        
         benchmark_name=getattr(config.env,"benchmark") if hasattr(config,"env") and hasattr(config.env,"benchmark") else "AIME24"
-        self.problem_list = load_math_problem_batch(env_indices, mode=mode, config=config,benchmark_name=benchmark_name)
+        self.problem_list = load_math_problem_batch(safe_env_indices, mode=mode, config=config,benchmark_name=benchmark_name)
         self.env_list = []
         if mode == "validate":
             rollout_idx_list = range(len(self.problem_list) * samples)

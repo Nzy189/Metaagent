@@ -192,7 +192,7 @@ cython_debug/
 # DS_Store
 .DS_Store
 
-
+scripts/train/**_exp
 data/.cache/
 **/cache/
 *.egg-info/
@@ -255,6 +255,9 @@ pettingllms/data/preprocess/*.json
 pettingllms/data/preprocess/code/*.json
 pettingllms/data/preprocess/math/*.json
 tmp/
+
+# Ignore scripts/train experiment directories
+scripts/train/*exp*
 
 # Ignore debug logs and run result logs
 logs/

@@ -218,10 +218,13 @@ class SearchEnvBatch:
         self.mode = mode
         self.env_list = []
         
+        # Convert env_indices to list for safety
+        safe_env_indices = list(env_indices) if not isinstance(env_indices, list) else env_indices
+        
         # Load search problems
         # Default benchmark for test mode is "bamboogle", but ignored for train mode
         benchmark_name = getattr(config, "benchmark", "bamboogle") if hasattr(config, "benchmark") else "bamboogle"
-        self.problem_list = load_search_problem_batch(env_indices, dataset_name=benchmark_name, mode=mode, config=config)
+        self.problem_list = load_search_problem_batch(safe_env_indices, dataset_name=benchmark_name, mode=mode, config=config)
         
         if mode == "validate":
             rollout_idx_list = range(len(self.problem_list) * samples)
