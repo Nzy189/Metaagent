@@ -171,22 +171,36 @@ async def _worker_docker(
     return result
 
 
-def get_ray_docker_worker_cls():
+def get_ray_docker_worker_cls(num_workers=180):
     """
-    Get or create the Ray Docker worker class.
+    Get or create the Ray Docker worker class with dynamic CPU allocation.
     
     Returns a Ray remote actor class that can execute Python scripts
     with timeout handling. Uses caching to avoid recreating the class.
+    
+    Args:
+        num_workers: Number of workers to create (used for CPU allocation)
     
     Returns:
         Ray remote actor class for code execution
     """
     _ensure_ray_initialized()
 
-    if hasattr(get_ray_docker_worker_cls, "_cls"):
-        return getattr(get_ray_docker_worker_cls, "_cls")
+    cache_key = f"_cls_{num_workers}"
+    if hasattr(get_ray_docker_worker_cls, cache_key):
+        return getattr(get_ray_docker_worker_cls, cache_key)
 
-    @ray.remote(num_cpus=0.001, max_concurrency=2000)
+    try:
+        import multiprocessing
+        total_cpus = multiprocessing.cpu_count()
+        cpus_per_worker = min(4.0, (total_cpus * 0.6) / num_workers)
+        print(f"Ray worker resource allocation: total_cpus={total_cpus}, num_workers={num_workers}, "
+              f"cpus_per_worker={cpus_per_worker:.3f} (60% of total)")
+    except Exception as e:
+        print(f"Failed to calculate CPU allocation, using default: {e}")
+        cpus_per_worker = 0.001
+
+    @ray.remote(num_cpus=cpus_per_worker, max_concurrency=2000)
     class _RayDockerWorker:
         def __init__(self, idx):
             if isinstance(idx, (int, float)):
@@ -224,7 +238,8 @@ def get_ray_docker_worker_cls():
             )
 
     RayDockerWorker = _RayDockerWorker
-    setattr(get_ray_docker_worker_cls, "_cls", RayDockerWorker)
+    cache_key = f"_cls_{num_workers}"
+    setattr(get_ray_docker_worker_cls, cache_key, RayDockerWorker)
     return RayDockerWorker
 
 

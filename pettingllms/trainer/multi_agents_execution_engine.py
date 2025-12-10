@@ -99,17 +99,15 @@ class MultiAgentsExecutionEngine:
         self.chat_parser_dict={}
         self.rollout_latency_dict = {}
         self.timer.checkpoint("MultiAgentsExecutionEngine initialization completed")
+        
+        num_workers = self.config.training.get("num_workers", 180)
         if self.env_name in ENV_WORKER_CLASS_MAPPING:
                 _worker_factory_or_cls = ENV_WORKER_CLASS_MAPPING[self.env_name]
                 try:
-                    # Get num_workers first to pass to worker factory for CPU calculation
-                    num_workers = self.config.training.get("num_workers", 180)
-                    # Try to call factory with num_workers parameter if it's callable
                     if callable(_worker_factory_or_cls):
                         try:
                             RayDockerWorker = _worker_factory_or_cls(num_workers=num_workers)
                         except TypeError:
-                            # Fallback if factory doesn't accept num_workers
                             RayDockerWorker = _worker_factory_or_cls()
                     else:
                         RayDockerWorker = _worker_factory_or_cls
@@ -117,11 +115,10 @@ class MultiAgentsExecutionEngine:
                     print(f"Failed to create RayDockerWorker from mapping for env '{self.env_name}': {e}")
                     RayDockerWorker = None
         else:
-            num_workers = self.config.training.get("num_workers", 180)
             RayDockerWorker = get_ray_docker_worker_cls(num_workers=num_workers)
         print("begin to create Ray docker workers")
         if RayDockerWorker is not None and hasattr(RayDockerWorker, "remote"):
-            num_workers = self.config.training.get("num_workers", 180)
+            num_workers = self.config.training.get("num_workers", 32)
             self.num_workers = num_workers
 
             # Get GPU group ID for worker pool isolation

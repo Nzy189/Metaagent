@@ -142,9 +142,9 @@ actor_rollout_ref:
     load_format: auto  
     layered_summon: False # for huge model, layered summon can save memory (prevent OOM) but make it slower
     tensor_model_parallel_size: 4
-    max_num_batched_tokens: 65536 #
+    max_num_batched_tokens: 16384 #
     max_model_len: null  
-    max_num_seqs: 32
+    max_num_seqs: 128
     log_prob_micro_batch_size: 4 # will be deprecated, use log_prob_micro_batch_size_per_gpu
     log_prob_micro_batch_size_per_gpu: null
     log_prob_use_dynamic_bsz: False
@@ -182,7 +182,7 @@ actor_rollout_ref:
     # [Experimental] agent loop based rollout configs
     agent:
       # Number of agent loop workers
-      num_workers: 512  # 增加agent worker数量
+      num_workers: 64
       
       # custom agent loop config path, which should contain list of configs to intialize AgentLoop instances.
       # https://hydra.cc/docs/advanced/instantiate_objects/overview/

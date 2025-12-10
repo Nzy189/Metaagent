@@ -17,7 +17,7 @@ env:
   name: math_env
   dataset: "polaris"
   benchmark: "AIME24"
-  max_turns: 5
+  max_turns: 4
   resolve: false
   multi_modal: false
   batched_init: true

@@ -34,8 +34,11 @@ python3 -m pettingllms.trainer.train --config-path ../config/math --config-name 
     training.train_batch_size=32\
     training.train_sample_num=8\
     training.validate_sample_num=5\
-    training.max_prompt_length=8192\
-    training.max_response_length=8192\
+    training.num_workers=80\
+    $model_0_config_path.actor_rollout_ref.rollout.max_num_batched_tokens=65536\
+    $model_0_config_path.actor_rollout_ref.rollout.max_num_seqs=64\
+    training.max_prompt_length=2048\
+    training.max_response_length=4096\
     training.val_freq=10\
     env.dataset=polaris\
     env.benchmark=AIME24\

@@ -242,21 +242,31 @@ async def _await_ray_object_ref(obj_ref, timeout_seconds: float = 10.0):
         await asyncio.sleep(0.01)
 
 
-def get_ray_docker_worker_cls():
+def get_ray_docker_worker_cls(num_workers=180):
     try:
         import ray  # type: ignore
     except Exception as e:
         print(f"Failed to import ray: {e}")
         return None
 
-    # Check if we already have a cached class
-    if hasattr(get_ray_docker_worker_cls, "_cls"):
-        return getattr(get_ray_docker_worker_cls, "_cls")
+    cache_key = f"_cls_{num_workers}"
+    if hasattr(get_ray_docker_worker_cls, cache_key):
+        return getattr(get_ray_docker_worker_cls, cache_key)
+
+    try:
+        import multiprocessing
+        total_cpus = multiprocessing.cpu_count()
+        cpus_per_worker = min(4.0, (total_cpus * 0.6) / num_workers)
+        print(f"Ray worker resource allocation: total_cpus={total_cpus}, num_workers={num_workers}, "
+              f"cpus_per_worker={cpus_per_worker:.3f} (60% of total)")
+    except Exception as e:
+        print(f"Failed to calculate CPU allocation, using default: {e}")
+        cpus_per_worker = 0.001
 
     try:
         _max_conc = 20
 
-        @ray.remote(num_cpus=0.001, max_concurrency=10000)
+        @ray.remote(num_cpus=cpus_per_worker, max_concurrency=10000)
         class _RayDockerWorker:
             def __init__(self, idx):
                 if not isinstance(idx, (int, float)):
@@ -298,7 +308,8 @@ def get_ray_docker_worker_cls():
                     }
 
         RayDockerWorker = _RayDockerWorker
-        setattr(get_ray_docker_worker_cls, "_cls", RayDockerWorker)
+        cache_key = f"_cls_{num_workers}"
+        setattr(get_ray_docker_worker_cls, cache_key, RayDockerWorker)
         return RayDockerWorker
         
     except Exception as e:

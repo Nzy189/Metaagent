@@ -134,7 +134,7 @@ actor_rollout_ref:
     tensor_model_parallel_size: 1
     max_num_batched_tokens: 65536 #
     max_model_len: 2048
-    max_num_seqs: 32
+    max_num_seqs: 128
     data_parallel_size: 1
     log_prob_micro_batch_size: 1 # will be deprecated, use log_prob_micro_batch_size_per_gpu
     log_prob_micro_batch_size_per_gpu: null
