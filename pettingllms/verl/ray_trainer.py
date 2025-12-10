@@ -795,7 +795,7 @@ class RayPPOTrainer:
             idx=uuid.uuid4()
         )
 
-    def _save_checkpoint(self):
+    def _save_checkpoint(self, save_base=True):
         # path: checkpoints/{experiment_name}/{model_name}/global_step_{global_steps}/actor
         experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
         
@@ -840,7 +840,8 @@ class RayPPOTrainer:
                                               self.global_steps,
                                               max_ckpt_to_keep=max_actor_ckpt_to_keep,
                                               lora_num=lora_num,
-                                              agent_lora_mapping=agent_lora_mapping)
+                                              agent_lora_mapping=agent_lora_mapping,
+                                              save_base=save_base)
 
         if self.use_critic:
             critic_local_path = os.path.join(local_global_step_folder, "critic")

@@ -456,6 +456,9 @@ class MultiAgentsPPOTrainer:
                     dump_path=rollout_data_dir,
                 )
 
+            # Return the potentially updated batch so caller can keep latest fields
+            return batch
+
     
 
     def _initialize_logger_safely(self):
@@ -568,13 +571,14 @@ class MultiAgentsPPOTrainer:
                     def update_single_trainer(model_name, batch, trainer):
                         try:
                             local_timing_raw = {}
-                            self._update_parameters(batch, trainer, local_timing_raw)
+                            # Keep the updated batch with advantages/returns for later metrics
+                            updated_batch = self._update_parameters(batch, trainer, local_timing_raw)
                             
-                            trainer_metrics = batch.meta_info.get('metrics', {}) if hasattr(batch, 'meta_info') else {}
-                            agent_names = batch.non_tensor_batch.get('agent_name') if hasattr(batch, 'non_tensor_batch') else None
+                            trainer_metrics = updated_batch.meta_info.get('metrics', {}) if hasattr(updated_batch, 'meta_info') else {}
+                            agent_names = updated_batch.non_tensor_batch.get('agent_name') if hasattr(updated_batch, 'non_tensor_batch') else None
                             
                             return {"status": "success", "model_name": model_name, "timing": local_timing_raw, 
-                                    "metrics": trainer_metrics, "agent_names": agent_names}
+                                    "metrics": trainer_metrics, "agent_names": agent_names, "updated_batch": updated_batch}
                         except Exception as e:
                             import traceback
                             return {"status": "error", "model_name": model_name, "error": str(e), 
@@ -603,6 +607,10 @@ class MultiAgentsPPOTrainer:
                             else:
                                 for key, value in trainer_metrics.items():
                                     all_trainer_metrics[f"model_{model_name}/{key}"] = value
+
+                            # Replace the trainer's batch with the updated version for downstream metrics
+                            if "updated_batch" in result and result["updated_batch"] is not None:
+                                batch_per_trainer[model_name] = result["updated_batch"]
                     
                     metrics.update(all_trainer_metrics)
 
@@ -739,9 +747,33 @@ class MultiAgentsPPOTrainer:
                 date_str = current_time.strftime("%Y%m%d")
                 experiment_name = self.config.training.experiment_name
 
-                for model_name, trainer in self.ppo_trainer_dict.items():
-                    checkpoint_dir = getattr(self.config.training, 'checkpoint_dir', 'checkpoint')
-                    checkpoint_dir = os.path.join(checkpoint_dir, date_str, experiment_name, model_name)
+                base_checkpoint_dir = getattr(self.config.training, "checkpoint_dir", "checkpoint")
+                save_base = self.config.specialization != "lora"
+                spec = self.config.specialization
+                save_jobs = []
+
+                if spec == "prompt":
+                    for _, trainer in self.ppo_trainer_dict.items():
+                        save_jobs.append(("shared_model", trainer))
+                elif spec == "lora":
+                    for agent_name, policy_name in self.agent_policy_mapping.items():
+                        trainer = self.ppo_trainer_dict[policy_name]
+                        save_jobs.append((agent_name, trainer))
+                elif spec == "full":
+                    num_base_models = len(self.config.base_models) if hasattr(self.config, "base_models") else 0
+                    if num_base_models == 1:
+                        for agent_name, policy_name in self.agent_policy_mapping.items():
+                            trainer = self.ppo_trainer_dict[policy_name]
+                            save_jobs.append((agent_name, trainer))
+                    else:
+                        for model_name, trainer in self.ppo_trainer_dict.items():
+                            save_jobs.append((model_name, trainer))
+                else:
+                    for model_name, trainer in self.ppo_trainer_dict.items():
+                        save_jobs.append((model_name, trainer))
+
+                for target_name, trainer in save_jobs:
+                    checkpoint_dir = os.path.join(base_checkpoint_dir, date_str, experiment_name, target_name)
 
                     # Delete old checkpoint directory if it exists to prevent OOM
                     if os.path.exists(checkpoint_dir):
@@ -754,8 +786,8 @@ class MultiAgentsPPOTrainer:
 
                     os.makedirs(checkpoint_dir, exist_ok=True)
 
-                    colorful_print(f"Saving best checkpoint for {model_name} to: {checkpoint_dir}", "cyan")
-                    trainer._save_checkpoint()
+                    colorful_print(f"Saving best checkpoint for {target_name} to: {checkpoint_dir}", "cyan")
+                    trainer._save_checkpoint(save_base=save_base)
             else:
                 colorful_print(f"Current env success rate: {env_success_rate:.4f} (best: {self.best_success_rate:.4f})", "yellow")
         else:

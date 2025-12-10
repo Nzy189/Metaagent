@@ -42,6 +42,8 @@ class CodeEnvState:
     generated_test_vs_golden_code_match_cases: List[Dict]=None
     generated_test_vs_golden_code_mismatch_cases: List[Dict]=None
     generated_test_vs_golden_code_match_ratio: float=0
+    # Final reward assigned at end of workflow (1.0 if all golden tests pass, else 0.0)
+    final_reward: float = 0.0
 
 class CodeEnv(Env):
     """
@@ -78,6 +80,8 @@ class CodeEnv(Env):
             ground_truth_test_output=ground_truth_test_output
         )
         self.backend = "ray_docker" 
+        # Convenience attribute for engine to read without drilling into state
+        self.final_reward: float = 0.0
 
 
    
@@ -100,6 +104,8 @@ class CodeEnv(Env):
         self.state.generated_test_vs_golden_code_match_cases=None
         self.state.generated_test_vs_golden_code_mismatch_cases=None
         self.state.generated_test_vs_golden_code_match_ratio=0
+        self.state.final_reward = 0.0
+        self.final_reward = 0.0
 
 
 class CodeEnvBatch:

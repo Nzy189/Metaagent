@@ -12,7 +12,8 @@ except Exception:  # fallback when verl is a src tree: verl/verl/protocol.py
     from verl import DataProto
 import torch
 import numpy as np
-from pettingllms.trainer.multiagentssys_register import AGENT_CLASS_MAPPING, ENV_CLASS_MAPPING, ENV_BATCH_CLASS_MAPPING, ENV_WORKER_CLASS_MAPPING
+from pettingllms.trainer.multiagentssys_register import ENV_CLASS_MAPPING, ENV_BATCH_CLASS_MAPPING, ENV_WORKER_CLASS_MAPPING
+from pettingllms.trainer.multiagentssys_register import AGENT_CLASSES
 from functools import partial
 import multiprocessing
 from pettingllms.utils.performance import create_timer
@@ -85,7 +86,8 @@ class MultiAgentsExecutionEngine:
         self.experiment_name = self.config.training.experiment_name
         self.env_name = env_name
         self.env_class = ENV_CLASS_MAPPING[env_name]
-        self.agent_class_list = [AGENT_CLASS_MAPPING[agent_name] for agent_name in self.turn_order]
+        self.agent_class_list = [AGENT_CLASSES[agent_name] for agent_name in self.turn_order]
+        #self.agent_class_list = [AGENT_WORKER_CLASS_MAPPING[agent_name] for agent_name in self.turn_order]
         self.agent_configs_raw = self.config.agent_policy_configs.agent_configs
         self.agent_config_dict = {}
         for agent_key, agent_config in self.agent_configs_raw.items():
@@ -1235,8 +1237,6 @@ class MultiAgentsExecutionEngine:
         task_pbar.close()
         
         concurrent_timer.checkpoint("All tasks completed")
-        with open("rollout_data.json", "w", encoding="utf-8") as f:
-            json.dump(self.rollout_latency_dict, f, ensure_ascii=False, indent=4)
         if self.mode=="validate":
             for agent_name in self.turn_order:
                 success_rate = len(self.success_rollout_idx_list_dict.get(agent_name, [])) / len(tasks)

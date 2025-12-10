@@ -1042,14 +1042,15 @@ class ActorRolloutRefWorker(Worker):
 
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
-    def save_checkpoint(self, local_path, hdfs_path=None, global_step=0, max_ckpt_to_keep=None, lora_num=1, agent_lora_mapping=None):
+    def save_checkpoint(self, local_path, hdfs_path=None, global_step=0, max_ckpt_to_keep=None, lora_num=1, agent_lora_mapping=None, save_base=True):
         # only support save and load ckpt for actor
         assert self._is_actor
 
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.actor_module_fsdp)
 
-        self.checkpoint_manager.save_checkpoint(local_path=local_path, hdfs_path=hdfs_path, global_step=global_step, max_ckpt_to_keep=max_ckpt_to_keep)
+        if save_base:
+            self.checkpoint_manager.save_checkpoint(local_path=local_path, hdfs_path=hdfs_path, global_step=global_step, max_ckpt_to_keep=max_ckpt_to_keep)
         dist.barrier()
 
         if self._is_lora and isinstance(self.actor_module, PeftModel):
@@ -1120,7 +1121,7 @@ class ActorRolloutRefWorker(Worker):
                 except Exception as e:
                     if dist.get_rank() == 0:
                         print(f"[rank-{self.rank}]: Save LoRA Adapter Error ({e})")
-        else:
+        elif save_base:
             from torch.distributed.fsdp import FullyShardedDataParallel as FSDP, StateDictType, FullStateDictConfig
             cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
             with FSDP.state_dict_type(self.actor.actor_module, StateDictType.FULL_STATE_DICT, cfg):

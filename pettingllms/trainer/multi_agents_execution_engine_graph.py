@@ -169,6 +169,38 @@ class MultiAgentsExecutionEngine:
         
         return wrap_autogen_graph(graph_func)
     
+    def get_graph_function(self):
+        """
+        Get the appropriate graph function from config.training.workflow_function.
+        
+        Uses AGENT_WORKER_FLOW_FUNCTIONS registry to look up the function by name.
+        
+        Returns:
+            graph_func: The graph function to execute
+            
+        Raises:
+            ValueError: If workflow_function not in config or not in registry
+        """
+        from pettingllms.trainer.multiagentssys_register import AGENT_WORKER_FLOW_FUNCTIONS
+        
+        # Get workflow_function name from config
+        workflow_function_name = getattr(self.config, 'workflow_function', None)
+        if workflow_function_name is None:
+            raise ValueError("workflow_function not specified in config")
+        
+        # Look up in registry
+        if workflow_function_name not in AGENT_WORKER_FLOW_FUNCTIONS:
+            raise ValueError(
+                f"workflow_function '{workflow_function_name}' not found in AGENT_WORKER_FLOW_FUNCTIONS. "
+                f"Available functions: {list(AGENT_WORKER_FLOW_FUNCTIONS.keys())}"
+            )
+        
+        graph_func = AGENT_WORKER_FLOW_FUNCTIONS[workflow_function_name]
+        if graph_func is None:
+            raise ValueError(f"Failed to load workflow_function '{workflow_function_name}' - import returned None")
+        
+        return graph_func
+    
     async def run_autogen_graph_async(self, graph_module_or_callable):
         """Run autogen graph asynchronously."""
         wrapped = self.patch_and_run_autogen_graph(graph_module_or_callable)
@@ -244,102 +276,136 @@ class MultiAgentsExecutionEngine:
             
     async def generate_single_rollout(self, rollout_idx):
         """
-        顺序执行 agentgraph workflow，每个节点对应一个 agent。
-        turn_idx/agent_idx 不再作为逻辑控制，仅用于 llm_async_generate 参数占位。
+        Execute autogen graph workflow with patched model clients for RL training.
+        
+        The workflow:
+        1. Prepare environment and model_client_dict for each agent/policy
+        2. Call autogen graph (e.g., code_graph) with patched OpenAIChatCompletionClient
+        3. The patched client intercepts generate calls and routes to llm_async_generate
+        4. Collect trajectories (DataProto) from each generation for RL training
+        5. Add rewards to trajectories based on environment outcomes
+        
+        Args:
+            rollout_idx: Index of the rollout
+            
+        Returns:
+            trajectory_per_task_dict: {policy_name: DataProto} containing trajectories with rewards
         """
+        from autogen_ext.models.openai import OpenAIChatCompletionClient
+        from pettingllms.utils.openai import reset_turn_idx, get_turn_idx, set_rollout_context, get_trajectory_store
+        
         trajectory_per_task_dict = {p: DataProto() for p in self.tokenizer_dict.keys()}
         env_idx = rollout_idx // self.sample_num
         env = self.envs[rollout_idx]
-        agent_group = self.agent_groups_list[rollout_idx]
-
-        for node_idx, agent_name in enumerate(self.turn_order):
-            current_agent = agent_group[node_idx]
-            current_agent.update_from_env(node_idx, env)
+        
+        # Set rollout context for trajectory collection
+        set_rollout_context(rollout_idx, env_idx)
+        
+        # Reset turn index and clear trajectory store for this rollout
+        reset_turn_idx()
+        
+        # Build model_client_dict: {agent_name: OpenAIChatCompletionClient}
+        # Each client is configured with the corresponding policy's server
+        model_client_dict = {}
+        for agent_name in self.turn_order:
             policy_name = self.agent_policy_mapping.get(agent_name)
-            ppo_cfg = self.ppo_trainer_config_dict[policy_name]
-
-            prompt = {"text": current_agent.current_prompt, "image": None}
-            prompt_dpr = convert_prompt_to_dpr(
-                self.tokenizer_dict[policy_name],
-                self.processor_dict.get(policy_name),
-                prompt,
-                self.max_prompt_length,
-                multi_modal=False,
-                enable_thinking=False
-            )
-            if prompt_dpr is None:
+            if policy_name is None:
+                self.multi_logger.log_env_agent_info(
+                    self.mode, env_idx, rollout_idx, 0, agent_name,
+                    f"No policy mapping found for agent {agent_name}",
+                    {"error": "missing_policy"}
+                )
                 continue
-
+                
+            ppo_cfg = self.ppo_trainer_config_dict[policy_name]
             addresses = self.server_address_dict[policy_name]
             address = random.choice(addresses) if isinstance(addresses, (list, tuple)) else addresses
-            model_path = ppo_cfg.actor_rollout_ref.model.path
-            model_name = str(model_path) if "checkpoint" in str(model_path) else "/".join(str(model_path).split("/")[-2:])
-
-            try:
-                output_dpr, response = await llm_async_generate(
-                    rollout_idx=rollout_idx,
-                    turn_idx=0,
-                    agent_idx=0,
-                    prompt_dpr=prompt_dpr,
-                    ppo_trainer_config=ppo_cfg,
-                    address=address,
-                    model_name=model_name,
-                    tokenizer=self.tokenizer_dict[policy_name],
-                    enable_thinking=False,
-                    image_data=None,
-                    application_id=str(uuid.uuid4()),
-                    env_idx=env_idx,
-                    policy_name=policy_name,
-                    timeout=self.generate_timeout,
-                    mode=self.mode,
-                    lora_id=None,
-                    agent_config=None,
-                )
-            except Exception as e:
-                self.multi_logger.log_env_agent_info(
-                    self.mode, env_idx, rollout_idx, node_idx + 1, agent_name,
-                    f"Failed to generate response: {e}",
-                    {"error": str(e), "traceback": traceback.format_exc()}
-                )
-                output_dpr, response = None, ""
-
-            response = response or ""
-            current_agent.update_from_model(response)
-
-            try:
-                env_worker_id = rollout_idx % self.num_workers
-                env_worker = self.env_workers[env_worker_id]
-                if hasattr(env, 'state'):
-                    env.state.assigned_worker_id = env_worker_id
-                    env.state.gpu_group_id = self.gpu_group_id
-                await asyncio.wait_for(current_agent.step(env, env_worker=env_worker), timeout=self.step_timeout)
-            except asyncio.TimeoutError:
-                self.multi_logger.log_env_agent_info(
-                    self.mode, env_idx, rollout_idx, node_idx + 1, agent_name,
-                    f"Environment step timed out after {self.step_timeout}s",
-                    {"error": "timeout", "timeout_seconds": self.step_timeout}
-                )
-
-            # reward & trajectory
-            if hasattr(current_agent, 'calculate_reward'):
-                current_agent.calculate_reward(env)
-            elif hasattr(current_agent, 'agent_reward'):
-                current_agent.reward_history.append(current_agent.agent_reward)
-
-            if output_dpr is not None:
-                output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
-                output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
+            
+            # Create patched OpenAI client (the patch will intercept its generate calls)
+            model_client = OpenAIChatCompletionClient(
+                model=policy_name,  # Use policy_name as model identifier
+                api_key="dummy",  # Not used due to patch
+                base_url=address,  # vLLM server address
+            )
+            model_client_dict[agent_name] = model_client
+        
+        # Get the autogen graph workflow function from registry using config.workflow_function
+        try:
+            graph_func = self.get_graph_function()
+        except ValueError as e:
+            self.multi_logger.log_env_agent_info(
+                self.mode, env_idx, rollout_idx, 0, "system",
+                f"Failed to get graph function: {e}",
+                {"error": str(e), "traceback": traceback.format_exc()}
+            )
+            return trajectory_per_task_dict
+        
+        # Execute the patched autogen graph
+        # The patch will intercept OpenAIChatCompletionClient.create() calls
+        # and route them to llm_async_generate, collecting trajectories
+        try:
+            # Wrap and run the graph
+            wrapped_graph = self.patch_and_run_autogen_graph(graph_func)
+            result_env = await wrapped_graph(env=env, model_client_dict=model_client_dict)
+            
+            # After graph execution, collect trajectories from the patch context
+            trajectory_store = get_trajectory_store()
+            
+            # Calculate final reward from environment
+            # For code env, reward is based on test pass rate
+            final_reward = 0.0
+            if hasattr(env, 'state'):
+                if hasattr(env.state, 'ground_truth_test_vs_generated_code_match_ratio'):
+                    final_reward = env.state.ground_truth_test_vs_generated_code_match_ratio
+                elif hasattr(env.state, 'generated_test_vs_generated_code_match_ratio'):
+                    final_reward = env.state.generated_test_vs_generated_code_match_ratio
+            
+            # Add rewards to collected trajectories and aggregate
+            for (r_idx, t_idx, policy_name), (output_dpr, response) in trajectory_store.items():
+                if r_idx != rollout_idx:
+                    continue  # Skip trajectories from other rollouts
+                
+                # Add reward to trajectory
+                # You can implement different reward shaping strategies here
+                # For now, use final reward for all turns
+                output_dpr.non_tensor_batch["reward"] = np.array([final_reward])
+                
+                # Handle LoRA if enabled
+                agent_name = output_dpr.non_tensor_batch.get("agent_name", [None])[0]
                 if self.lora_differ_mode and agent_name in self.agent_lora_mapping:
                     batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
-                    output_dpr.non_tensor_batch["lora_ids"] = np.array([self.agent_lora_mapping[agent_name]] * batch_size, dtype=object)
+                    output_dpr.non_tensor_batch["lora_ids"] = np.array(
+                        [self.agent_lora_mapping[agent_name]] * batch_size, 
+                        dtype=object
+                    )
+                
+                # Concatenate to trajectory dict
                 if trajectory_per_task_dict[policy_name].batch is None:
                     trajectory_per_task_dict[policy_name] = output_dpr
                 else:
-                    trajectory_per_task_dict[policy_name] = DataProto.concat([trajectory_per_task_dict[policy_name], output_dpr])
-
-            if env.done:
-                break
-
+                    trajectory_per_task_dict[policy_name] = DataProto.concat([
+                        trajectory_per_task_dict[policy_name], 
+                        output_dpr
+                    ])
+            
+            self.multi_logger.log_env_agent_info(
+                self.mode, env_idx, rollout_idx, get_turn_idx(), "system",
+                f"Graph execution completed with {get_turn_idx()} turns, final_reward={final_reward}",
+                {
+                    "success": True, 
+                    "turns": get_turn_idx(),
+                    "final_reward": final_reward,
+                    "trajectory_count": len(trajectory_store)
+                }
+            )
+            
+        except Exception as e:
+            self.multi_logger.log_env_agent_info(
+                self.mode, env_idx, rollout_idx, get_turn_idx(), "system",
+                f"Graph execution failed: {e}",
+                {"error": str(e), "traceback": traceback.format_exc()}
+            )
+        
         return trajectory_per_task_dict
             
 

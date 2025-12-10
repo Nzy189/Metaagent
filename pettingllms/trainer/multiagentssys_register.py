@@ -25,6 +25,7 @@ ENV_BATCH_CLASSES = {
     "code_env": safe_import("pettingllms.multi_agent_env.code.code_env", "CodeEnvBatch"),
     "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_test_env", "CodeTestEnvBatch"),
     "math_env": safe_import("pettingllms.multi_agent_env.math.math_env", "MathEnvBatch"),
+    #"math_env_autogen": safe_import("pettingllms.multi_agent_env.autogen_graph.math_graph.math_env", "MathEnvBatch"),
     "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math_aggretion.math_env", "MathEnvBatch"),
     "alfworld_env": safe_import("pettingllms.multi_agent_env.alfworld.alfworld_env", "AlfWorldEnvBatch"),
     "search_env": safe_import("pettingllms.multi_agent_env.search.search_env", "SearchEnvBatch"),
@@ -71,10 +72,11 @@ ENV_WORKER_CLASSES = {
 
 #AGENT_WORKER_FLOW_FUNCTIONS = {
 #    "code_graph": safe_import("pettingllms.multi_agent_env.autogen_graph.code_graph.code_graph", "code_graph"),
+#    "math_graph": safe_import("pettingllms.multi_agent_env.autogen_graph.math_graph.math_graph", "math_graph"),
 #}
 
 # Filter out None values for unavailable imports
 ENV_CLASS_MAPPING = {k: v for k, v in ENV_CLASSES.items() if v is not None}
 ENV_BATCH_CLASS_MAPPING = {k: v for k, v in ENV_BATCH_CLASSES.items() if v is not None}
-AGENT_CLASS_MAPPING = {k: v for k, v in AGENT_CLASSES.items() if v is not None}
+#AGENT_CLASS_MAPPING = {k: v for k, v in AGENT_CLASSES.items() if v is not None}
 ENV_WORKER_CLASS_MAPPING = {k: v for k, v in ENV_WORKER_CLASSES.items() if v is not None}

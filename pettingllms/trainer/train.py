@@ -7,12 +7,39 @@ import hydra
 import ray
 import os
 import json
+import subprocess
 from omegaconf import OmegaConf, DictConfig
 from verl.single_controller.ray import RayWorkerGroup
 from verl.workers.fsdp_workers import AsyncActorRolloutRefWorker
 from pettingllms.trainer.multi_agents_ppo_trainer import MultiAgentsPPOTrainer
-from pettingllms.utils.clean_up import install_cleanup_hooks, register_temp_dirs
+from pettingllms.utils.clean_up import cleanup_ray, install_cleanup_hooks, register_temp_dirs
 install_cleanup_hooks()
+
+
+def _kill_ray_processes():
+    patterns = [
+        "ray::",
+        "raylet",
+        "gcs_server",
+        "plasma_store",
+        "default_worker.py",
+        "worker.py",
+    ]
+    for pattern in patterns:
+        try:
+            subprocess.run(
+                ["pkill", "-9", "-f", pattern],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+
+
+def _cleanup_ray_runtime():
+    cleanup_ray()
+    _kill_ray_processes()
 
 
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
@@ -34,44 +61,47 @@ def main(config: DictConfig):
 
 
 def run_ppo(config):
-    if not ray.is_initialized():
-        # Create experiment-specific temporary directories using process ID
-        pid = os.getpid()
-        ray_tmp_dir = f"/tmp/verl_ray_{pid}"
-        ray_spill_dir = f"/tmp/verl_spill_{pid}"
-        os.makedirs(ray_tmp_dir, exist_ok=True)
-        os.makedirs(ray_spill_dir, exist_ok=True)
-        
-        # Register directories for cleanup
-        register_temp_dirs(ray_tmp_dir, ray_spill_dir)
-        
-        spilling_conf = {"type": "filesystem", "params": {"directory_path": [ray_spill_dir]}}
-        system_config = {"object_spilling_config": json.dumps(spilling_conf)}
+    try:
+        if not ray.is_initialized():
+            # Create experiment-specific temporary directories using process ID
+            pid = os.getpid()
+            ray_tmp_dir = f"/tmp/verl_ray_{pid}"
+            ray_spill_dir = f"/tmp/verl_spill_{pid}"
+            os.makedirs(ray_tmp_dir, exist_ok=True)
+            os.makedirs(ray_spill_dir, exist_ok=True)
+            
+            # Register directories for cleanup
+            register_temp_dirs(ray_tmp_dir, ray_spill_dir)
+            
+            spilling_conf = {"type": "filesystem", "params": {"directory_path": [ray_spill_dir]}}
+            system_config = {"object_spilling_config": json.dumps(spilling_conf)}
 
-        # Get GPU count from config
-        n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1) if hasattr(config, 'resource') else 1
-        
-        # Validate GPU availability
-        cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
-        if cuda_visible_devices:
-            available_gpu_count = len(cuda_visible_devices.split(','))
-            n_gpus_per_node = min(n_gpus_per_node, available_gpu_count)
-        
-        print(f"Initializing Ray with {n_gpus_per_node} GPUs")
-        ray.init(
-            num_gpus=n_gpus_per_node,
-            runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}},
-            _temp_dir=ray_tmp_dir,
-            _system_config=system_config
-        )
+            # Get GPU count from config
+            n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1) if hasattr(config, 'resource') else 1
+            
+            # Validate GPU availability
+            cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+            if cuda_visible_devices:
+                available_gpu_count = len(cuda_visible_devices.split(','))
+                n_gpus_per_node = min(n_gpus_per_node, available_gpu_count)
+            
+            print(f"Initializing Ray with {n_gpus_per_node} GPUs")
+            ray.init(
+                num_gpus=n_gpus_per_node,
+                runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}},
+                _temp_dir=ray_tmp_dir,
+                _system_config=system_config
+            )
 
 
-    def make_trainer_remote():
-        num_cpus = max(8, int(ray.cluster_resources()["CPU"] * 0.1)) 
-        return ray.remote(num_cpus=num_cpus)(train_multi_agents)
+        def make_trainer_remote():
+            num_cpus = max(8, int(ray.cluster_resources()["CPU"] * 0.1)) 
+            return ray.remote(num_cpus=num_cpus)(train_multi_agents)
 
-    multiagent_training_engine = make_trainer_remote()
-    ray.get(multiagent_training_engine.remote(config))
+        multiagent_training_engine = make_trainer_remote()
+        ray.get(multiagent_training_engine.remote(config))
+    finally:
+        _cleanup_ray_runtime()
 
 def train_multi_agents(config):
     from pprint import pprint

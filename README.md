@@ -1,7 +1,7 @@
 <div align="center">
 
 <div align="center">
-<img src="figs/logo.svg" alt="PettingLLMs Logo" width="400">
+<img src="figs/logo.png" alt="PettingLLMs Logo" width="400">
 </div>
 
 # PETTINGLLMS

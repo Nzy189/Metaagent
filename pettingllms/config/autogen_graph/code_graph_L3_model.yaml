@@ -5,7 +5,7 @@ defaults:
   - _self_
 
 workflow_type: "autogen_graph"
-workflow_fun
+workflow_function: "code_graph"
 specialization: "full" # prompt, lora, full
 lora_rank: 16
 lora_alpha: 32

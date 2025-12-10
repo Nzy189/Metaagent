@@ -8,6 +8,7 @@ import asyncio
 import functools
 from typing import Dict, List, Optional, Union
 import random
+import numpy as np
 
 
 # Global state
@@ -16,7 +17,12 @@ _tokenizer_dict: Dict[str, any] = {}
 _ppo_trainer_config_dict: Dict[str, any] = {}
 _agent_policy_mapping: Dict[str, str] = {}
 _current_turn_idx: int = 0
+_current_rollout_idx: int = 0
+_current_env_idx: int = 0
 _patched: bool = False
+
+# Trajectory storage: {(rollout_idx, turn_idx, policy_name): (output_dpr, response)}
+_trajectory_store: Dict[tuple, tuple] = {}
 
 
 def init_patch_context(
@@ -42,6 +48,30 @@ def init_patch_context(
     print(f"[Patch] Initialized context with policies: {list(server_address_dict.keys())}")
 
 
+def set_rollout_context(rollout_idx: int, env_idx: int):
+    """
+    Set current rollout and env indices for trajectory collection.
+    
+    Args:
+        rollout_idx: Current rollout index
+        env_idx: Current environment index
+    """
+    global _current_rollout_idx, _current_env_idx
+    _current_rollout_idx = rollout_idx
+    _current_env_idx = env_idx
+    print(f"[Patch] Set rollout context: rollout_idx={rollout_idx}, env_idx={env_idx}")
+
+
+def get_rollout_idx() -> int:
+    """Get current rollout index."""
+    return _current_rollout_idx
+
+
+def get_env_idx() -> int:
+    """Get current environment index."""
+    return _current_env_idx
+
+
 def get_turn_idx() -> int:
     """Get current turn index (node number in agent graph flow)."""
     return _current_turn_idx
@@ -56,9 +86,27 @@ def increment_turn_idx():
 
 def reset_turn_idx():
     """Reset turn index to 0 for new graph execution."""
-    global _current_turn_idx
+    global _current_turn_idx, _trajectory_store
     _current_turn_idx = 0
-    print(f"[Patch] Turn index reset to 0")
+    _trajectory_store = {}  # Clear trajectory store for new rollout
+    print(f"[Patch] Turn index reset to 0, trajectory store cleared")
+
+
+def clear_trajectory_store():
+    """Clear the trajectory store."""
+    global _trajectory_store
+    _trajectory_store = {}
+    print(f"[Patch] Trajectory store cleared")
+
+
+def get_trajectory_store() -> Dict[tuple, tuple]:
+    """
+    Get collected trajectories for current rollout.
+    
+    Returns:
+        Dict mapping (rollout_idx, turn_idx, policy_name) to (output_dpr, response)
+    """
+    return _trajectory_store.copy()
 
 
 def get_server_address(policy_name: str) -> str:
@@ -73,6 +121,7 @@ async def _patched_generate(
     messages: List[Dict[str, str]],
     policy_name: str,
     model_name: str,
+    agent_name: Optional[str] = None,
     **kwargs
 ) -> str:
     """
@@ -82,6 +131,7 @@ async def _patched_generate(
         messages: Chat messages
         policy_name: Policy name for server/tokenizer lookup
         model_name: Model name
+        agent_name: Agent name for reward attribution
         **kwargs: Additional generation parameters
         
     Returns:
@@ -94,6 +144,8 @@ async def _patched_generate(
     tokenizer = _tokenizer_dict[policy_name]
     ppo_config = _ppo_trainer_config_dict[policy_name]
     turn_idx = get_turn_idx()
+    rollout_idx = get_rollout_idx()
+    env_idx = get_env_idx()
     
     # Convert messages to prompt
     if isinstance(messages, list) and len(messages) > 0:
@@ -117,7 +169,7 @@ async def _patched_generate(
     
     # Call llm_async_generate
     output_dpr, response = await llm_async_generate(
-        rollout_idx=0,
+        rollout_idx=rollout_idx,
         turn_idx=turn_idx,
         agent_idx=0,
         prompt_dpr=prompt_dpr,
@@ -127,14 +179,27 @@ async def _patched_generate(
         tokenizer=tokenizer,
         enable_thinking=False,
         image_data=None,
-        application_id=f"autogen_graph_{turn_idx}",
-        env_idx=0,
+        application_id=f"autogen_graph_r{rollout_idx}_t{turn_idx}",
+        env_idx=env_idx,
         policy_name=policy_name,
         timeout=kwargs.get('timeout', 60.0),
-        mode='inference',
+        mode=kwargs.get('mode', 'inference'),
         lora_id=None,
         agent_config=None,
     )
+    
+    # Store trajectory with agent_name for later reward attribution
+    # Note: reward will be added later by the environment step
+    if output_dpr is not None:
+        # Add agent_name to output_dpr for trajectory collection
+        output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name or "unknown"], dtype=object)
+        output_dpr.non_tensor_batch["turn_idx"] = np.array([turn_idx], dtype=np.int32)
+        
+        # Store in trajectory store
+        global _trajectory_store
+        key = (rollout_idx, turn_idx, policy_name)
+        _trajectory_store[key] = (output_dpr, response)
+        print(f"[Patch] Stored trajectory for key={key}")
     
     # Increment turn index after generation
     increment_turn_idx()
@@ -158,13 +223,21 @@ def patch_autogen():
     async def patched_create(self, messages, **kwargs):
         # Get policy name from model or use first available
         model_name = kwargs.get('model') or self._model_id
-        policy_name = list(_server_address_dict.keys())[0]
+        policy_name = model_name  # model_name is set to policy_name in generate_single_rollout
+        
+        # Try to infer agent_name from model_name or policy mapping
+        agent_name = None
+        for a_name, p_name in _agent_policy_mapping.items():
+            if p_name == policy_name:
+                agent_name = a_name
+                break
         
         # Call patched generate
         response_text = await _patched_generate(
             messages=messages,
             policy_name=policy_name,
             model_name=model_name,
+            agent_name=agent_name,
             **kwargs
         )
         
