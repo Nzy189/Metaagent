@@ -89,6 +89,7 @@ class PlanAgent(Agent):
         if hasattr(state, 'done') and state.done:
             env_data.done = True
             self.success = True
+            env_data.success = True
         
     
     def calculate_reward(self, env_data: Env):

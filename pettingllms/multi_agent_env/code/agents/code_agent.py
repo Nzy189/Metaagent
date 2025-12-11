@@ -156,8 +156,10 @@ class CodeGenerationAgent(Agent):
             
             if passed_ratio >= 1.0 and len(ground_truth_test_input) > 0:
                 self.success = True
+                env_data.success = True
             else:
                 self.success = False
+                env_data.success = False
     def calculate_reward(self, env_data: Env):
         self.agent_reward = env_data.state.ground_truth_test_vs_generated_code_match_ratio+env_data.state.ground_truth_test_vs_generated_code_match_ratio
         self.reward_history.append(self.agent_reward)

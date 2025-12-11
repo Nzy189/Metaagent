@@ -130,6 +130,7 @@ class ToolAgent(Agent):
         
         if hasattr(state, 'done') and state.done:
             self.success = True
+           
     
     def calculate_reward(self, env_data: Env):
         self.agent_reward = self.agent_reward+env_data.state.reward

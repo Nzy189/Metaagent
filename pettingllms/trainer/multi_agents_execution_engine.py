@@ -605,7 +605,7 @@ class MultiAgentsExecutionEngine:
         if self.mode=="validate":
             for i,agent_name in enumerate(self.turn_order):
                 current_agent=self.agent_groups_list[rollout_idx][i]
-                if current_agent.success:
+                if env.success:
                     self.success_rollout_idx_list_dict[agent_name].append(rollout_idx)
                     self.success_ave_turn_dict[agent_name] += turn_idx + 1
         

@@ -786,8 +786,20 @@ class MultiAgentsPPOTrainer:
 
                     os.makedirs(checkpoint_dir, exist_ok=True)
 
+                    # Set the checkpoint_dir in trainer config to ensure it saves to the correct location
                     colorful_print(f"Saving best checkpoint for {target_name} to: {checkpoint_dir}", "cyan")
+
+                    # Temporarily override checkpoint_dir to save to the correct agent-specific directory
+                    original_checkpoint_dir = getattr(trainer.config, 'checkpoint_dir', None)
+                    trainer.config.checkpoint_dir = checkpoint_dir
+
                     trainer._save_checkpoint(save_base=save_base)
+
+                    # Restore original checkpoint_dir if it existed
+                    if original_checkpoint_dir is not None:
+                        trainer.config.checkpoint_dir = original_checkpoint_dir
+                    else:
+                        delattr(trainer.config, 'checkpoint_dir')
             else:
                 colorful_print(f"Current env success rate: {env_success_rate:.4f} (best: {self.best_success_rate:.4f})", "yellow")
         else:

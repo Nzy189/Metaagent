@@ -45,6 +45,7 @@ class Env:
         self.current_turn = 0
         self.done = False
         self.state = None
+        self.success = False
 
 
         

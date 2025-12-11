@@ -112,9 +112,11 @@ class ReasoningAgent(Agent):
             
             if is_correct:
                 self.success = True
+                env_data.success = True
                 env_data.state.reasoning_is_correct = True
             else:
                 self.success = False
+                env_data.success = False
                 env_data.state.reasoning_is_correct = False
         
         if env_data.state.code_extracted_answer is not None and env_data.state.reasoning_extracted_answer is not None:
