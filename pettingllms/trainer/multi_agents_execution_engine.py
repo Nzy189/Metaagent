@@ -292,7 +292,7 @@ class MultiAgentsExecutionEngine:
                         agent_config = self.agent_config_dict.get(agent_name, None)
                         agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
                         
-                        print(f"[Engine][PARALLEL_GEN] rollout_idx={rollout_idx} agent={agent_name} calling LLM (multimodal={agent_enable_multimodal})")
+                        print(f"[Engine][PARALLEL_GEN] rollout_idx={rollout_idx} agent={agent_name} calling LLM (multimodal={agent_enable_multimodal}, sample_num={agent_sample_num})")
                         output_dpr, response = await llm_async_generate(
                             rollout_idx=rollout_idx,
                             turn_idx=turn_idx,
@@ -311,6 +311,7 @@ class MultiAgentsExecutionEngine:
                             mode=self.mode,
                             lora_id=lora_id,
                             agent_config=agent_config,
+                            sample_num=agent_sample_num,
                         )
                     except Exception as e:
                         self.multi_logger.log_env_agent_info(
@@ -437,7 +438,7 @@ class MultiAgentsExecutionEngine:
                         agent_config = self.agent_config_dict.get(agent_name, None)
                         agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
                         
-                        print(f"[Engine][DEBUG] About to call llm_async_generate for rollout_idx={rollout_idx}, agent={agent_name} (multimodal={agent_enable_multimodal})")
+                        print(f"[Engine][DEBUG] About to call llm_async_generate for rollout_idx={rollout_idx}, agent={agent_name} (multimodal={agent_enable_multimodal}, sample_num={agent_sample_num})")
                         output_dpr, response = await llm_async_generate(
                             rollout_idx=rollout_idx,
                             turn_idx=turn_idx,
@@ -456,6 +457,7 @@ class MultiAgentsExecutionEngine:
                             mode=self.mode,
                             lora_id=lora_id,
                             agent_config=agent_config,
+                            sample_num=agent_sample_num,
                         )
                     except Exception as e:
                         self.multi_logger.log_env_agent_info(
@@ -706,7 +708,7 @@ class MultiAgentsExecutionEngine:
                     # Check if this agent supports sampling (has sample_num attribute)
                     agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
                    
-                    print(f"[Engine][DEBUG] About to call llm_async_generate in async_generate_response for rollout_idx={rollout_idx}, agent={agent_name}, turn_idx={turn_idx} (multimodal={agent_enable_multimodal})")
+                    print(f"[Engine][DEBUG] About to call llm_async_generate in async_generate_response for rollout_idx={rollout_idx}, agent={agent_name}, turn_idx={turn_idx} (multimodal={agent_enable_multimodal}, sample_num={agent_sample_num})")
                     print(f"[Engine][AWAIT_START] Calling llm_async_generate at {time.time()}")
                     output_dpr, response = await llm_async_generate(
                         rollout_idx=rollout_idx,
@@ -726,6 +728,7 @@ class MultiAgentsExecutionEngine:
                         mode=self.mode,
                         lora_id=lora_id,
                         agent_config=agent_config,
+                        sample_num=agent_sample_num,
                     )
                     print(f"[Engine][AWAIT_COMPLETE] llm_async_generate returned at {time.time()}")
                     print(f"[Engine][DEBUG] llm_async_generate returned for rollout_idx={rollout_idx}, agent={agent_name}, response={'empty' if not response else 'has content'}")
