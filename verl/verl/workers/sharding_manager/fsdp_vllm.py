@@ -114,13 +114,26 @@ class FSDPVLLMShardingManager(BaseShardingManager):
         self.base_sync_done: bool = 'dummy' not in load_format
         if is_version_ge(pkg='vllm', minver='0.7.3'):
             VLLMHijack.hijack()
+        
+        # Store multi_lora configuration for __enter__ method
+        self.multi_lora = False
+        self.lora_num = 1
 
     @GPUMemoryLogger(role="fsdp vllm sharding_manager", logger=logger)
-    def __enter__(self):
-        def __collect_lora_params()->OrderedDict:
+    def __enter__(self, multi_lora: bool = None, lora_num: int = None):
+        # Use passed parameters or fall back to instance attributes
+        if multi_lora is not None:
+            self.multi_lora = multi_lora
+        if lora_num is not None:
+            self.lora_num = lora_num
+        
+        def __collect_lora_params(adapter_name: str = None)->OrderedDict:
             """
             collect lora params or full params if base model is not ready in vllm
             work with if isinstance(self.module._fsdp_wrapped_module, PeftModel)
+            
+            Args:
+                adapter_name: The name of the adapter to collect. If None, uses the active adapter.
             """
             from peft.utils.save_and_load import get_peft_model_state_dict
 
@@ -133,7 +146,8 @@ class FSDPVLLMShardingManager(BaseShardingManager):
                 else:
                     with FSDP.summon_full_params(self.module, writeback=False):
                         if self.base_sync_done:
-                            lora_params = get_peft_model_state_dict(self.module._fsdp_wrapped_module)
+                            # Pass adapter_name to get_peft_model_state_dict to avoid 'default' KeyError
+                            lora_params = get_peft_model_state_dict(self.module._fsdp_wrapped_module, adapter_name=adapter_name)
                             lora_params = {name: param.full_tensor().detach().cpu() if hasattr(param, 'full_tensor') else param.detach().cpu() 
                                         for name, param in lora_params.items()}
                         else:
@@ -149,7 +163,8 @@ class FSDPVLLMShardingManager(BaseShardingManager):
                     torch.cuda.empty_cache()
             else:
                 if self.base_sync_done:
-                    lora_params = get_peft_model_state_dict(self.module._fsdp_wrapped_module)
+                    # Pass adapter_name to get_peft_model_state_dict to avoid 'default' KeyError
+                    lora_params = get_peft_model_state_dict(self.module._fsdp_wrapped_module, adapter_name=adapter_name)
                 else:
                     model = self.module._fsdp_wrapped_module.base_model.model
                     orig_dev = 'cpu' if 'cpu' in next(model.parameters()).device else 'cuda'
@@ -176,82 +191,135 @@ class FSDPVLLMShardingManager(BaseShardingManager):
             load_fsdp_model_to_gpu(self.module)
 
         peft_config = None
-        peft_model = isinstance(self.module._fsdp_wrapped_module, PeftModel)
+        adapter_name = None
+        lora_id = None
 
-        if peft_model:
-            # Check if multi-LoRA mode (multiple adapters beyond just "default")
-            all_adapters = list(self.module._fsdp_wrapped_module.peft_config.keys())
-            is_multi_lora = len(all_adapters) > 1 or (len(all_adapters) == 1 and 'lora_' in all_adapters[0])
-
-            if is_multi_lora:
-                # Multi-LoRA mode: sync each adapter separately to vLLM
-                params = None  # We'll handle params per-adapter
-                if vllm_version not in ("0.5.4", "0.6.3"):
-                    if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
-                        self.inference_engine.wake_up(tags=["weights"])
-                    else:
-                        self.inference_engine.wake_up()
-
-                # Sync each LoRA adapter
-                for adapter_name in all_adapters:
-                    # Switch to this adapter
-                    self.module._fsdp_wrapped_module.set_adapter(adapter_name)
-                    adapter_peft_config = self.module._fsdp_wrapped_module.peft_config.get(adapter_name)
-                    adapter_params = __collect_lora_params()
-
-                    # Add this LoRA to vLLM with adapter_name
-                    self.update_params(adapter_params, peft_config=adapter_peft_config, adapter_name=adapter_name)
-                    logger.info(f"Synced LoRA adapter '{adapter_name}' to vLLM")
-                    del adapter_params
-                    get_torch_device().empty_cache()
-
-                log_gpu_memory_usage("After sync all LoRA adapters in sharding manager", logger=logger)
+        # Store all LoRA adapters info for multi-LoRA mode
+        all_lora_adapters = []
+        
+        if isinstance(self.module._fsdp_wrapped_module, PeftModel):
+            # Get all available adapters
+            available_adapters = list(self.module._fsdp_wrapped_module.peft_config.keys())
+            
+            # Check if this is multi-LoRA mode based on configuration
+            # Priority: explicit multi_lora flag > auto-detection from adapters
+            if self.multi_lora and self.lora_num > 1:
+                is_multi_lora = True
+                logger.info(f"Multi-LoRA mode enabled via configuration: lora_num={self.lora_num}")
             else:
-                # Single LoRA mode (legacy)
-                peft_config = self.module._fsdp_wrapped_module.peft_config.get('default', None)
-                params = __collect_lora_params()
+                # Fallback to auto-detection (no 'default' adapter, only lora_1, lora_2, etc.)
+                is_multi_lora = (
+                    'default' not in available_adapters and 
+                    all(name.startswith('lora_') for name in available_adapters)
+                )
+                if is_multi_lora:
+                    logger.info(f"Multi-LoRA mode auto-detected from adapters: {available_adapters}")
+            
+            if is_multi_lora:
+                # Multi-LoRA mode: sync all LoRA adapters to vLLM
+                print(f"Multi-LoRA mode detected. Available adapters: {available_adapters}")
+                
+                # Get the current active adapter to restore later
+                original_active_adapter = self.module._fsdp_wrapped_module.active_adapter
+                print(f"The current active adapter: {original_active_adapter}")
+                # Collect parameters for all adapters
+                for adapter_name in available_adapters:
+                    if adapter_name.startswith('lora_'):
+                        lora_id = int(adapter_name.split('_')[-1])
+                        peft_config = self.module._fsdp_wrapped_module.peft_config.get(adapter_name)
+                        
+                        # Switch to this adapter to collect its parameters
+                        self.module._fsdp_wrapped_module.set_adapter(adapter_name)
+                        params = __collect_lora_params(adapter_name=adapter_name)
+                        
+                        all_lora_adapters.append({
+                            'adapter_name': adapter_name,
+                            'lora_id': lora_id,
+                            'peft_config': peft_config,
+                            'params': params
+                        })
+                        print(f"Collected LoRA adapter '{adapter_name}' (lora_id={lora_id})")
+                
+                # Restore the original active adapter
+                if original_active_adapter in available_adapters:
+                    self.module._fsdp_wrapped_module.set_adapter(original_active_adapter)
+                else:
+                    # If original was default, switch to lora_1
+                    self.module._fsdp_wrapped_module.set_adapter('lora_1')
+                
+                # For single update_params call, use the first adapter (will be updated in loop later)
+                adapter_name = all_lora_adapters[0]['adapter_name']
+                lora_id = all_lora_adapters[0]['lora_id']
+                peft_config = all_lora_adapters[0]['peft_config']
+                params = all_lora_adapters[0]['params']
+                
+            else:
+                # Single LoRA mode or default adapter exists
+                active_adapter = self.module._fsdp_wrapped_module.active_adapter
+                
+                if 'default' in available_adapters:
+                    # Use default adapter
+                    peft_config = self.module._fsdp_wrapped_module.peft_config.get('default', None)
+                    adapter_name = 'default'
+                    lora_id = None
+                elif available_adapters:
+                    # Use the first available adapter
+                    adapter_name = available_adapters[0]
+                    if adapter_name.startswith('lora_'):
+                        lora_id = int(adapter_name.split('_')[-1])
+                    else:
+                        lora_id = None
+                    peft_config = self.module._fsdp_wrapped_module.peft_config.get(adapter_name)
+                    logger.warning(f"No 'default' adapter found. Using adapter: '{adapter_name}'")
+                else:
+                    raise ValueError("No LoRA adapters found in peft_config")
+                
+                params = __collect_lora_params(adapter_name=adapter_name)
         else:
             params = self.module.state_dict()
+        log_gpu_memory_usage("After state_dict() in sharding manager memory", logger=logger)
 
-        # Only execute this block if params was set (single LoRA or non-PEFT)
-        if peft_model and not is_multi_lora or not peft_model:
-            log_gpu_memory_usage("After state_dict() in sharding manager memory", logger=logger)
+        # Copy, not share memory
+        load_format = "hf" if self.full_params else "dtensor"
 
-            # Copy, not share memory
-            load_format = "hf" if self.full_params else "dtensor"
-
-            if vllm_version in (
-                "0.5.4",
-                "0.6.3",
-            ):
-                self.inference_engine.sync_model_weights(params, load_format=load_format)
-                log_gpu_memory_usage("After sync model weights in sharding manager", logger=logger)
-                del params
+        if vllm_version in (
+            "0.5.4",
+            "0.6.3",
+        ):
+            self.inference_engine.sync_model_weights(params, load_format=load_format)
+            log_gpu_memory_usage("After sync model weights in sharding manager", logger=logger)
+            del params
+        else:
+            if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
+                self.inference_engine.wake_up(tags=["weights"])
             else:
-                if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
-                    self.inference_engine.wake_up(tags=["weights"])
-                else:
-                    self.inference_engine.wake_up()
+                self.inference_engine.wake_up()
 
-                # update model params
-                self.update_params(params, peft_config=peft_config)
-                log_gpu_memory_usage("After sync model weights in sharding manager", logger=logger)
+            # update model params
+            # In multi-LoRA mode, sync all adapters to vLLM
+            if all_lora_adapters:
+                print(f"Syncing {len(all_lora_adapters)} LoRA adapters to vLLM...")
+                for lora_info in all_lora_adapters:
+                    self.update_params(
+                        lora_info['params'], 
+                        peft_config=lora_info['peft_config'], 
+                        lora_id=lora_info['lora_id'], 
+                        adapter_name=lora_info['adapter_name']
+                    )
+                    del lora_info['params']  # Free memory after each sync
+                logger.info(f"Successfully synced all {len(all_lora_adapters)} LoRA adapters to vLLM")
+            else:
+                # Single LoRA mode: sync only the active adapter
+                self.update_params(params, peft_config=peft_config, lora_id=lora_id, adapter_name=adapter_name)
                 del params
-                if self.offload_param:
-                    offload_fsdp_model_to_cpu(self.module)
-                get_torch_device().empty_cache()
-
-                if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
-                    self.inference_engine.wake_up(tags=["kv_cache"])
-
-        # Common cleanup for multi-LoRA mode
-        if peft_model and is_multi_lora:
+            
+            log_gpu_memory_usage("After sync model weights in sharding manager", logger=logger)
             if self.offload_param:
                 offload_fsdp_model_to_cpu(self.module)
             get_torch_device().empty_cache()
-            if vllm_version not in ("0.5.4", "0.6.3"):
-                if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
-                    self.inference_engine.wake_up(tags=["kv_cache"])
+
+            if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
+                self.inference_engine.wake_up(tags=["kv_cache"])
 
         log_gpu_memory_usage("After del state_dict and empty_cache in sharding manager", logger=logger)
 
@@ -307,19 +375,19 @@ class FSDPVLLMShardingManager(BaseShardingManager):
 
         return data.chunk(chunks=self.tp_size)[self.tp_rank]
 
-    def update_params(self, updated_params, peft_config=None, adapter_name=None):
+    def update_params(self, updated_params, peft_config=None, lora_id=None, adapter_name=None):
         model = self.model_runner.model
         if peft_config:
             if self.base_sync_done:
-                # Use adapter_name to generate consistent lora_id for multi-LoRA
-                if adapter_name and 'lora_' in adapter_name:
-                    # Extract ID from adapter_name like "lora_0" -> 0
-                    lora_int_id = int(adapter_name.split('_')[-1])
+                # Use provided lora_id if available (multi-LoRA mode), otherwise generate one
+                if lora_id is not None and adapter_name:
+                    lora_int_id = lora_id
+                    lora_name = adapter_name
                 else:
-                    # Fallback to timestamp-based ID for legacy single LoRA
                     lora_int_id = int(time.time_ns() % 0x7FFFFFFF)
+                    lora_name = f"{lora_int_id}"
+                self.inference_engine.worker.remove_lora(lora_int_id)
 
-                lora_name = adapter_name if adapter_name else f"lora_{lora_int_id}"
                 lora_reqest = TensorLoRARequest(
                     lora_name=lora_name,
                     lora_int_id=lora_int_id,
@@ -327,8 +395,8 @@ class FSDPVLLMShardingManager(BaseShardingManager):
                     peft_config=asdict(peft_config),
                     lora_tensors=updated_params,
                 )
-                self.inference_engine.llm_engine.add_lora(lora_reqest)
-                logger.info(f"vLLM added LoRA adapter '{lora_name}' (ID: {lora_int_id}), loaded_params: {len(updated_params)}")
+                self.inference_engine.worker.add_lora(lora_reqest)
+                print(f"vLLM synced LoRA '{lora_name}' (id={lora_int_id}), loaded_params: {len(updated_params)}")
                 return
             else:
                 def replace_lora_wrapper(k):
@@ -345,4 +413,4 @@ class FSDPVLLMShardingManager(BaseShardingManager):
         loaded_params = model.load_weights(((name, param.to(device, non_blocking=True).full_tensor() if isinstance(param, DTensor) else param) for name, param in updated_params.items()))
 
         self.base_sync_done = True
-        logger.info(f"vLLM load weights, loaded_params: {len(loaded_params) if loaded_params else -1}")
+        print(f"vLLM load weights, loaded_params: {len(loaded_params) if loaded_params else -1}")

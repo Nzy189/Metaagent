@@ -74,6 +74,7 @@ class AsyncServerBase(ABC):
         app = fastapi.FastAPI(lifespan=lifespan)
         app.router.add_api_route("/v1/chat/completions", self.chat_completion, methods=["POST"])
         app.router.add_api_route("/v1/completions", self.completions, methods=["POST"])
+        app.router.add_api_route("/v1/models", self.show_available_models, methods=["GET"])
 
         self.port = _get_free_port()
         config = uvicorn.Config(app, host=["::", "0.0.0.0"], port=self.port, log_level="warning")
@@ -98,6 +99,14 @@ class AsyncServerBase(ABC):
         """OpenAI completions API.
 
         API reference: https://platform.openai.com/docs/api-reference/completions/create
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def show_available_models(self):
+        """List all available models including base model and loaded LoRA adapters.
+
+        API reference: https://platform.openai.com/docs/api-reference/models/list
         """
         raise NotImplementedError
 

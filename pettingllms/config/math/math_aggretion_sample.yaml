@@ -66,7 +66,7 @@ agent_policy_configs:
 multi_agent_interaction:
   num_interacting_agents: 3
   turn_order: ["sample_reasoning_agent", "sample_tool_agent", "aggregation_agent"]
-  parallel: false
+  parallel: true
 
 
 # Training configuration

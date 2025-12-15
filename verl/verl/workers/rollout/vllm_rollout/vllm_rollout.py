@@ -225,35 +225,11 @@ class vLLMRollout(BaseRollout):
 
         lora_requests = None
         if self.lora_kwargs:
-            # Check if batch contains per-sample lora_ids for multi-agent LoRA
-            if "lora_ids" in prompts.non_tensor_batch and prompts.non_tensor_batch["lora_ids"] is not None:
-                # Multi-agent LoRA mode: use per-sample lora_id
-                lora_ids_batch = prompts.non_tensor_batch["lora_ids"]
-                lora_requests = []
-                for lora_id in lora_ids_batch:
-                    # Extract integer lora_id from string format like "agent_xxx_lora_0" or direct int
-                    if isinstance(lora_id, (int, np.integer)):
-                        lora_int_id = int(lora_id)
-                    elif isinstance(lora_id, str):
-                        # Parse from formats like "agent_reasoning_generator_lora_0" -> 0
-                        if 'lora_' in lora_id:
-                            lora_int_id = int(lora_id.split('lora_')[-1])
-                        else:
-                            lora_int_id = int(lora_id)
-                    else:
-                        lora_int_id = 0
-
-                    lora_requests.append(LoRARequest(
-                        lora_name=f"lora_{lora_int_id}",
-                        lora_int_id=lora_int_id,
-                        lora_path="/simon-stub-path"
-                    ))
-            else:
-                # Legacy single LoRA mode: use first available LoRA for all samples
-                lora_int_ids = list(self.inference_engine.llm_engine.list_loras())
-                if len(lora_int_ids) > 0:
-                    lora_int_id=lora_int_ids[0]
-                    lora_requests = [LoRARequest(lora_name=f"{lora_int_id}",lora_int_id=lora_int_id,lora_path="/simon-stub-path")] * batch_size
+            # self.inference_engine.llm_engine.list_loras
+            lora_int_ids = list(self.inference_engine.llm_engine.list_loras())
+            if len(lora_int_ids) > 0:
+                lora_int_id=lora_int_ids[0]
+                lora_requests = [LoRARequest(lora_name=f"{lora_int_id}",lora_int_id=lora_int_id,lora_path="/simon-stub-path")] * batch_size
         # users can customize different sampling_params at different run
         with self.update_sampling_params(**kwargs):
             output = self.inference_engine.generate(

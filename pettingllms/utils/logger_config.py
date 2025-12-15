@@ -126,6 +126,11 @@ class MultiLoggerConfig:
         file_path = rollout_dir / f"{base_name}.log"
         file_handler = logging.FileHandler(file_path, mode='a', encoding='utf-8')
         file_handler.setLevel(logging.INFO)
+        # Enable immediate flush for time-ordered logging
+        import sys
+        if hasattr(file_handler.stream, 'reconfigure'):
+            file_handler.stream.reconfigure(line_buffering=True)
+        
 
         if base_name == "env_agent":
             formatter = logging.Formatter(
@@ -157,13 +162,17 @@ class MultiLoggerConfig:
         # Clear existing handlers
         logger.handlers.clear()
         
-        # Create file handler
+        # Create file handler with immediate flush
         file_handler = logging.FileHandler(
             self.log_dir / "summary.log", 
             mode='a', 
             encoding='utf-8'
         )
         file_handler.setLevel(logging.INFO)
+        # Enable immediate flush for time-ordered logging
+        import sys
+        if hasattr(file_handler.stream, 'reconfigure'):
+            file_handler.stream.reconfigure(line_buffering=True)
         
         # Set format
         formatter = logging.Formatter(
@@ -173,6 +182,7 @@ class MultiLoggerConfig:
         file_handler.setFormatter(formatter)
         
         logger.addHandler(file_handler)
+        logger.propagate = False
         self.loggers[logger_name] = logger
     
     def log_env_agent_info(self, mode: str, env_idx: int, rollout_idx: int, turn_idx: int, agent_name: str, 
@@ -206,6 +216,9 @@ class MultiLoggerConfig:
         }
         
         logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+        # Flush immediately to ensure time-ordered output
+        for handler in logger.handlers:
+            handler.flush()
     
     def log_model_interaction(self, mode: str, env_idx: int, rollout_idx: int, policy_name: str, 
                             prompt: str, response: str, extra_data: Optional[Dict[str, Any]] = None):
@@ -235,6 +248,9 @@ class MultiLoggerConfig:
         }
         
         logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+        # Flush immediately to ensure time-ordered output
+        for handler in logger.handlers:
+            handler.flush()
     
     def log_async_event(self, mode: str, env_idx: int, rollout_idx: int, event_type: str, 
                        message: str, extra_data: Optional[Dict[str, Any]] = None):
@@ -269,6 +285,9 @@ class MultiLoggerConfig:
         }
         
         logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+        # Flush immediately to ensure time-ordered output
+        for handler in logger.handlers:
+            handler.flush()
     
     def _check_ray_status(self) -> Dict[str, Any]:
         """
@@ -351,6 +370,9 @@ class MultiLoggerConfig:
         }
         
         logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+        # Flush immediately to ensure time-ordered output
+        for handler in logger.handlers:
+            handler.flush()
     
     def log_ray_status(self, mode: str = "train", rollout_idx: Optional[int] = None, context: str = "general"):
         """
@@ -383,6 +405,9 @@ class MultiLoggerConfig:
             logger.error(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
         else:
             logger.info(json.dumps(log_content, ensure_ascii=False, indent=2), extra=extra)
+        # Flush immediately to ensure time-ordered output
+        for handler in logger.handlers:
+            handler.flush()
     
     def log_error(self, mode: str, env_idx: Optional[int], rollout_idx: Optional[int], error_source: str, 
                          error: Exception, context_data: Optional[Dict[str, Any]] = None,

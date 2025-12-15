@@ -1,4 +1,10 @@
+"""
+Registration module for turn-based multi-agent systems.
+Imports classes from pettingllms/multi_agent_env/
+"""
+
 def safe_import(module_path, class_name):
+    """Safely import a class from a module, returning None if import fails."""
     try:
         module = __import__(module_path, fromlist=[class_name])
         return getattr(module, class_name)
@@ -6,77 +12,82 @@ def safe_import(module_path, class_name):
         return None
 
 
-# Import environment classes
+# ============================================================================
+# Environment Classes (Turn-based)
+# ============================================================================
 ENV_CLASSES = {
-   
-    # Multi-agent system environments
-    "web_env": safe_import("pettingllms.multi_agent_env.frontend.websight_env", "WebEnv"),
-    "code_env": safe_import("pettingllms.multi_agent_env.code.code_env", "CodeEnv"),
     "base_env": safe_import("pettingllms.multi_agent_env.base.env", "BaseEnv"),
+    "code_env": safe_import("pettingllms.multi_agent_env.code.code_env", "CodeEnv"),
     "math_env": safe_import("pettingllms.multi_agent_env.math.math_env", "MathEnv"),
     "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math_aggretion.math_env", "MathEnv"),
-    "alfworld_env": safe_import("pettingllms.multi_agent_env.alfworld.alfworld_env", "AlfworldEnv"),
     "search_env": safe_import("pettingllms.multi_agent_env.search.search_env", "SearchEnv"),
     "stateful_env": safe_import("pettingllms.multi_agent_env.stateful.stateful_env", "StatefulEnv"),
+    "pychecker_env": safe_import("pettingllms.multi_agent_env.pychecker_rl.pychecker_env", "PyCheckerEnv"),
 }
 
 ENV_BATCH_CLASSES = {
     "base_env": safe_import("pettingllms.multi_agent_env.base.env", "EnvBatch"),
     "code_env": safe_import("pettingllms.multi_agent_env.code.code_env", "CodeEnvBatch"),
-    "code_env_single_agent": safe_import("pettingllms.multi_agent_env.code_single_agent.code_test_env", "CodeTestEnvBatch"),
     "math_env": safe_import("pettingllms.multi_agent_env.math.math_env", "MathEnvBatch"),
-    #"math_env_autogen": safe_import("pettingllms.multi_agent_env.autogen_graph.math_graph.math_env", "MathEnvBatch"),
     "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math_aggretion.math_env", "MathEnvBatch"),
-    "alfworld_env": safe_import("pettingllms.multi_agent_env.alfworld.alfworld_env", "AlfWorldEnvBatch"),
     "search_env": safe_import("pettingllms.multi_agent_env.search.search_env", "SearchEnvBatch"),
     "stateful_env": safe_import("pettingllms.multi_agent_env.stateful.stateful_env", "StatefulEnvBatch"),
+    "pychecker_env": safe_import("pettingllms.multi_agent_env.pychecker_rl.pychecker_env", "PyCheckerEnvBatch"),
 }
 
-# Import agent classes
+# ============================================================================
+# Agent Classes (Turn-based)
+# ============================================================================
 AGENT_CLASSES = {
-    "alfworld_agent": safe_import("pettingllms.multi_agent_env.alfworld.alf_agent", "AlfWorldAgent"),
-    # Multi-agent system agents
+    # Base agent
     "base_agent": safe_import("pettingllms.multi_agent_env.base.agent", "BaseAgent"),
-    "review_agent": safe_import("pettingllms.multi_agent_env.frontend.agents.review_agent", "ReviewAgent"),
-    "frontend_code_agent": safe_import("pettingllms.multi_agent_env.frontend.agents.code_genaration_agent", "CodeGenerationAgent"),
-    "multiagent_code_agent": safe_import("pettingllms.multi_agent_env.code.agents.code_agent", "CodeGenerationAgent"),
-    "unit_test_agent": safe_import("pettingllms.multi_agent_env.code.agents.unit_test_agent", "UnitTestGenerationAgent"),
-    # Aliases aligned with config.multi_agent_interaction.turn_order values
+
+    # Code agents
     "code_generator": safe_import("pettingllms.multi_agent_env.code.agents.code_agent", "CodeGenerationAgent"),
+    "multiagent_code_agent": safe_import("pettingllms.multi_agent_env.code.agents.code_agent", "CodeGenerationAgent"),
     "test_generator": safe_import("pettingllms.multi_agent_env.code.agents.unit_test_agent", "UnitTestGenerationAgent"),
-    # Single agent versions (L0 configs)
+    "unit_test_agent": safe_import("pettingllms.multi_agent_env.code.agents.unit_test_agent", "UnitTestGenerationAgent"),
     "code_selfverify_single_agent": safe_import("pettingllms.multi_agent_env.code.agents.selfverify_single_agent", "CodeGenerationAgent"),
+
+    # Math agents
     "reasoning_generator": safe_import("pettingllms.multi_agent_env.math.agents.reasoning_agent", "ReasoningAgent"),
     "tool_generator": safe_import("pettingllms.multi_agent_env.math.agents.tool_agent", "ToolAgent"),
     "math_selfverify_single_agent": safe_import("pettingllms.multi_agent_env.math.agents.selfverify_single_agent", "ReasoningAgent"),
+
+    # Math aggregation agents
     "aggreted_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.aggreted_agent", "AggregationAgent"),
     "sample_tool_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.sample_tool_agent", "ToolAgent"),
     "sample_reasoning_agent": safe_import("pettingllms.multi_agent_env.math_aggretion.agents.sample_reasoning_agent", "ReasoningAgent"),
-    # Search agents (benchmarks: bamboogle, 2wiki, hotpotqa, musique)
+
+    # Search agents
     "search_reasoning_agent": safe_import("pettingllms.multi_agent_env.search.agents.reasoning_agent", "ReasoningAgent"),
     "web_search_agent": safe_import("pettingllms.multi_agent_env.search.agents.web_search_agent", "WebSearchAgent"),
+
     # Stateful agents
     "plan_agent": safe_import("pettingllms.multi_agent_env.stateful.agents.plan_agent", "PlanAgent"),
     "tool_call_agent": safe_import("pettingllms.multi_agent_env.stateful.agents.tool_agent", "ToolAgent"),
+
+    # PyChecker agents
     "pychecker_agent": safe_import("pettingllms.multi_agent_env.pychecker_rl.agents.pychecker_agent", "PyCheckerAgent"),
     "gen_tb_agent": safe_import("pettingllms.multi_agent_env.pychecker_rl.agents.gen_tb_agent", "GenTBAgent"),
 }
 
+# ============================================================================
+# Environment Worker Classes (Turn-based)
+# ============================================================================
 ENV_WORKER_CLASSES = {
-    "code_env": safe_import("pettingllms.multi_agent_env.code.code_worker", "get_ray_docker_worker_cls"),
+    "code_env": safe_import("pettingllms.mu.code.code_worker", "get_ray_docker_worker_cls"),
     "math_env": safe_import("pettingllms.multi_agent_env.math.math_worker", "get_ray_docker_worker_cls"),
     "math_aggretion_env": safe_import("pettingllms.multi_agent_env.math.math_worker", "get_ray_docker_worker_cls"),
     "search_env": safe_import("pettingllms.multi_agent_env.math.math_worker", "get_ray_docker_worker_cls"),
-    "stateful_env": safe_import("pettingllms.multi_agent_env.math.math_worker", "get_ray_docker_worker_cls")  
+    "stateful_env": safe_import("pettingllms.multi_agent_env.math.math_worker", "get_ray_docker_worker_cls"),
+    "pychecker_env": safe_import("pettingllms.multi_agent_env.pychecker_rl.pychecker_worker", "get_ray_docker_worker_cls"),
 }
 
-#AGENT_WORKER_FLOW_FUNCTIONS = {
-#    "code_graph": safe_import("pettingllms.multi_agent_env.autogen_graph.code_graph.code_graph", "code_graph"),
-#    "math_graph": safe_import("pettingllms.multi_agent_env.autogen_graph.math_graph.math_graph", "math_graph"),
-#}
-
-# Filter out None values for unavailable imports
+# ============================================================================
+# Filter out None values and create final mappings
+# ============================================================================
 ENV_CLASS_MAPPING = {k: v for k, v in ENV_CLASSES.items() if v is not None}
 ENV_BATCH_CLASS_MAPPING = {k: v for k, v in ENV_BATCH_CLASSES.items() if v is not None}
-#AGENT_CLASS_MAPPING = {k: v for k, v in AGENT_CLASSES.items() if v is not None}
+AGENT_CLASS_MAPPING = {k: v for k, v in AGENT_CLASSES.items() if v is not None}
 ENV_WORKER_CLASS_MAPPING = {k: v for k, v in ENV_WORKER_CLASSES.items() if v is not None}

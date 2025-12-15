@@ -114,6 +114,9 @@ actor_rollout_ref:
     ulysses_sequence_parallel_size: 1 # sp size
     entropy_from_logits_with_chunking: False
   rollout:
+    enable_lora: False
+    max_loras: 1
+    lora_rank: 0
     _target_: verl.workers.config.RolloutConfig
     name: vllm
     # chat_scheduler: null # async chat scheduler, e.g verl.schedulers.naive_chat_scheduler.NaiveChatCompletionScheduler
@@ -287,6 +290,7 @@ critic:
       # Only for FSDP1: FSDP1 configuration, prefetch the next forward-pass all-gather
       # before the current forward computation.
       forward_prefetch: False
+    
 
     # Set to positive value to enable LoRA (e.g., 32)
     lora_rank: 0

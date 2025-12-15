@@ -101,30 +101,25 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
     """
     if "is_last_step" in batch.non_tensor_batch:
         is_last_step = batch.non_tensor_batch["is_last_step"]
-        last_step_indices = np.where(is_last_step == True)[0]
+        last_step_indices = np.where(is_last_step == True)[0]  
         batch = batch.select_idxs(last_step_indices)
-
+    
     if "is_pad_step" in batch.non_tensor_batch:
         is_pad_step = batch.non_tensor_batch["is_pad_step"]
-        valid_step_indices = np.where(is_pad_step == False)[0]
+        valid_step_indices = np.where(is_pad_step == False)[0]  
         batch = batch.select_idxs(valid_step_indices)
-
-    batch_keys = set(batch.batch.keys())
-
+        
+    # Need to log only task step scores
     sequence_score = batch.batch["token_level_scores"].sum(-1)
     sequence_reward = batch.batch["token_level_rewards"].sum(-1)
+
+    advantages = batch.batch["advantages"]
+    returns = batch.batch["returns"]
 
     max_response_length = batch.batch["responses"].shape[-1]
 
     prompt_mask = batch.batch["attention_mask"][:, :-max_response_length].bool()
-    response_mask = (
-        batch.batch["response_mask"].bool()
-        if "response_mask" in batch_keys
-        else batch.batch["attention_mask"][:, -max_response_length:].bool()
-    )
-
-    advantages = batch.batch["advantages"] if "advantages" in batch_keys else batch.batch["token_level_rewards"]
-    returns = batch.batch["returns"] if "returns" in batch_keys else advantages
+    response_mask = batch.batch["attention_mask"][:, -max_response_length:].bool()
 
     max_prompt_length = prompt_mask.size(-1)
 
@@ -135,8 +130,7 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
     valid_adv = torch.masked_select(advantages, response_mask)
     valid_returns = torch.masked_select(returns, response_mask)
 
-    has_values = use_critic and "values" in batch_keys
-    if has_values:
+    if use_critic:
         values = batch.batch["values"]
         valid_values = torch.masked_select(values, response_mask)
         return_diff_var = torch.var(valid_returns - valid_values)
@@ -168,7 +162,7 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
                 # vf explained var
                 "critic/vf_explained_var": (1.0 - return_diff_var / (return_var + 1e-5)).detach().item(),
             }
-            if has_values
+            if use_critic
             else {}
         ),
         # response length

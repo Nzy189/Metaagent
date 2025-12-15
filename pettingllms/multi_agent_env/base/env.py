@@ -18,20 +18,20 @@ class Env:
     The interaction terminates after reaching the maximum number of turns.
     """
 
-    def __init__(self, env_idx: int, rollout_idx: int, max_turns: int,  config: dict | None = None):
+    def __init__(self, env_idx: int, rollout_idx: int, max_turns: int = None, config: dict | None = None):
         """
         Initialize the multi-agents environment using the dataclass EnvData.
 
         Args:
             env_idx: Environment index
-            rollout_idx: Rollout index  
-            max_turns: Maximum number of turns before terminating
+            rollout_idx: Rollout index
+            max_turns: Maximum number of turns before terminating (optional, only for turn-based systems)
             task: Dictionary containing the task information
             config: Configuration for the system
         """
         env_idx: int
         rollout_idx: int
-        max_turns: int
+        max_turns: int = max_turns
         turn: int = 0
         state: Optional[Any] = None
         is_pass: bool = False

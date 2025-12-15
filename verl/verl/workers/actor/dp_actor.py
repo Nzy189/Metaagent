@@ -337,36 +337,35 @@ class DataParallelPPOActor(BasePPOActor):
                 f"Batch contains multiple LoRA adapters: {unique_lora_ids}. "
                 f"Each batch should contain data from only one agent."
             )
-
-        current_lora_id = lora_ids[0]
-
-        # Support integer lora_id directly (e.g., 0, 1, 2)
-        if isinstance(current_lora_id, (int, np.integer)):
-            adapter_name = f"lora_{current_lora_id}"
-            return adapter_name
-
-        # Legacy support for string format like "agent_lora_0"
-        current_lora_id_str = str(current_lora_id)
-        if 'agent_' in current_lora_id_str and 'lora_' in current_lora_id_str:
-            parts = current_lora_id_str.split('_')
+        
+        current_lora_id = str(lora_ids[0])
+        # Support new format: lora_0, lora_1, lora_2, ...
+        if current_lora_id.startswith('lora_'):
+            return current_lora_id
+        # Support legacy format: agent_name_lora_0, agent_name_lora_1, ...
+        elif 'agent_' in current_lora_id and 'lora_' in current_lora_id:
+            parts = current_lora_id.split('_')
             adapter_idx = parts[-1]
             adapter_name = f"lora_{adapter_idx}"
             return adapter_name
-
-        # If just a number string, use it directly
-        if current_lora_id_str.isdigit():
-            adapter_name = f"lora_{current_lora_id_str}"
-            return adapter_name
-
         return None
 
     @GPUMemoryLogger(role="dp actor", logger=logger)
     def update_policy(self, data: DataProto):
         self.actor_module.train()
-        
-        adapter_name = self._validate_and_get_adapter(data)
-        if adapter_name and hasattr(self.actor_module, 'set_adapter'):
+
+        # Check for multi_lora mode and activate the appropriate adapter
+        multi_lora = data.meta_info.get("multi_lora", False)
+        lora_id = data.meta_info.get("lora_id", 0)
+
+        if multi_lora and hasattr(self.actor_module, 'set_adapter'):
+            # In multi_lora mode, use lora_1, lora_2, lora_3, ...
+            adapter_name = f"lora_{lora_id}"
             self.actor_module.set_adapter(adapter_name)
+        elif not multi_lora and hasattr(self.actor_module, 'set_adapter'):
+            # In single LoRA mode, use "default"
+            if "default" in self.actor_module.peft_config:
+                self.actor_module.set_adapter("default")
 
         temperature = data.meta_info["temperature"]
         multi_turn = data.meta_info.get("multi_turn", False)

@@ -14,6 +14,7 @@ import torch
 from omegaconf import OmegaConf
 from pettingllms.trainer.multi_agents_execution_engine import MultiAgentsExecutionEngine
 from verl import DataProto
+#from pettingllms.trainer.multi_agents_execution_engine_graph import MultiAgentsExecutionEngineGraph
 from verl.protocol import pad_dataproto_to_divisor
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from verl.trainer.ppo.ray_trainer import (
@@ -44,157 +45,132 @@ class MultiAgentsPPOTrainer:
         role_worker_mapping: dict[Role, WorkerType],
         resource_pool_manager: ResourcePoolManager,
         ray_worker_group_cls: RayWorkerGroup = RayWorkerGroup,
+        agent_policy_mapping: dict = None,
         processor_dict=None,
     ):
         self.config = config
-        
-        # Set default values for lora_rank and lora_alpha if not configured
-        # This prevents errors when these variables are referenced but not defined
-        if not hasattr(config.training, 'lora_rank') or config.training.lora_rank is None:
-            config.training.lora_rank = 0
-            colorful_print("lora_rank not configured, setting default value to 0 (LoRA disabled)", "yellow")
-        
-        if not hasattr(config.training, 'lora_alpha') or config.training.lora_alpha is None:
-            config.training.lora_alpha = 0
-            colorful_print("lora_alpha not configured, setting default value to 0 (LoRA disabled)", "yellow")
-        
-        self.lora_num = 1
         self.processor_dict = processor_dict or {}
-        self.lora_differ_mode = False
-        if config.specialization == "lora" and len(config.models) == 1:
-            self.lora_differ_mode = True
-        self.agent_lora_mapping = {}  # Maps agent_name to lora_id
-        self.best_success_rate = -1.0  # Track best validation success rate
-        # Initialize agent_policy_mapping from agent_policy_configs
-        self.agent_policy_mapping = {}
-        if hasattr(config, 'agent_policy_configs') and hasattr(config.agent_policy_configs, 'agent_configs'):
-            for agent_key, agent_config in config.agent_policy_configs.agent_configs.items():
-                agent_name = agent_config.name
-                policy_name = agent_config.policy_name
-                self.agent_policy_mapping[agent_name] = policy_name
-                colorful_print(f"Agent mapping: {agent_name} -> {policy_name}", "green")
-
-        # Validate and handle base_models and models configuration
-        num_base_models = len(config.base_models) if hasattr(config, 'base_models') else 0
-        num_models = len(config.models) if hasattr(config, 'models') else 0
-        num_agents = len(self.agent_policy_mapping) if self.agent_policy_mapping else 0
-
-        colorful_print(f"Configuration check: base_models={num_base_models}, models={num_models}, agents={num_agents}, specialization={config.specialization}", "cyan")
-        if num_base_models != num_models:
-                error_msg = (
-                    f"Configuration error: Number of base_models ({num_base_models}) does not match "
-                    f"number of models ({num_models}) for specialization='{config.specialization}'. "
-                    f"They must be equal unless specialization='full' with single base_model."
-                )
-                colorful_print("=" * 80, "red")
-                colorful_print("ERROR: " + error_msg, "red")
-                colorful_print("=" * 80, "red")
-                raise ValueError(error_msg)
-
-        # Check if specialization is 'full' with single base_model
-        if config.specialization == "full" and num_base_models == 1:
-            colorful_print("=" * 80, "yellow")
-            colorful_print("SPECIAL MODE: specialization='full' with single base_model detected", "yellow")
-            colorful_print(f"num_base_models: {num_base_models}", "cyan")
-            colorful_print(f"num_models: {num_models}", "cyan")
-            colorful_print(f"num_agents: {num_agents}", "cyan")
-
-            # Simply copy config.base_models and config.models to match agent_num
-            from copy import deepcopy
-
-            # Get the single base_model and model configs
-            base_model_key = list(config.base_models.keys())[0]
-            base_model_config = config.base_models[base_model_key]
-
-            original_model_key = list(config.models.keys())[0]
-            original_model_config = config.models[original_model_key]
-
-            # Replicate base_models to match num_agents
-            new_base_models_dict = {}
-            for idx in range(num_agents):
-                new_base_models_dict[f"base_model_{idx}"] = deepcopy(base_model_config)
-            config.base_models = OmegaConf.create(new_base_models_dict)
-
-            # Replicate models to match num_agents
-            new_models_dict = {}
-            for idx in range(num_agents):
-                new_models_dict[f"model_{idx}"] = deepcopy(original_model_config)
-            config.models = OmegaConf.create(new_models_dict)
-
-            colorful_print(f"Replicated configs: base_models={len(config.base_models)}, models={len(config.models)}", "green")
-            colorful_print("=" * 80, "yellow")
-
-        # Final validation: check if base_models and models counts match (if base_models exists)
-        if hasattr(config, 'base_models'):
-            num_base_models = len(config.base_models)
-            num_models = len(config.models)
-
-           
-        # Initialize ppo_trainer_dict from models configuration
+        self.tokenizer_dict = tokenizer_dict
+        self.role_worker_mapping = role_worker_mapping
+        self.resource_pool_manager = resource_pool_manager
+        self.ray_worker_group_cls = ray_worker_group_cls
+        
+        # Initialize basic attributes
+        self.best_success_rate = -1.0
+        self.env_success_rate = 0.0
+        self.llm_servers = []
         self.ppo_trainer_config_dict = {}
         self.rollout_sample_dict = {}
-        self.tokenizer_dict = tokenizer_dict
         self.ppo_trainer_dict = {}
+        self.agent_policy_mapping = agent_policy_mapping
+        self.agent_lora_mapping = {}
+        self.lora_differ_mode = False
+        self.lora_num = 1
+        # Control variable: whether to use LoRA for generation (False initially for base model)
+        self.use_lora_for_generation = False
+        if config.specialization =="lora":
+            self.lora_num = len(self.agent_policy_mapping)
+            self.lora_differ_mode = True
+            for agent_idx, agent_name in enumerate(self.agent_policy_mapping.keys()):
+                    lora_id = agent_idx+1  # Use integer ID directly ( 1, 2, ...)
+                    self.agent_lora_mapping[agent_name] = lora_id
+                  
+        
+        # Step 2: Initialize PPO trainers based on specialization
+        self._initialize_ppo_trainers()
+
+   
+
+    def _initialize_ppo_trainers(self):
+        """Initialize PPO trainers based on specialization mode"""
+        config = self.config
+        specialization = config.specialization
+        
+        
+        if specialization in ["prompt", "lora"]:
+            # Single PPO trainer for prompt/lora specialization
+            self._create_single_ppo_trainer()
+        else:
+            # Multiple PPO trainers for full/other specialization
+            self._create_multiple_ppo_trainers()
+        
+    
+
+    def _create_single_ppo_trainer(self):
+        """Create a single PPO trainer for prompt/lora specialization"""
+        config = self.config
+        model_key = list(config.models.keys())[0]
+        model_config = config.models[model_key]
+        model_name = model_config.name
+        
+        if not hasattr(model_config, 'ppo_trainer_config'):
+            raise ValueError(f"Model '{model_name}' missing ppo_trainer_config")
+        
+        ppo_config = model_config.ppo_trainer_config
+        ppo_config.actor_rollout_ref.model.lora_rank = config.get("lora_rank", 0)
+        ppo_config.actor_rollout_ref.model.lora_alpha = config.get("lora_alpha", 16)
+        if ppo_config.actor_rollout_ref.model.lora_rank > 0:
+            print("Enabling LoRA in single PPO trainer")
+            ppo_config.actor_rollout_ref.rollout.enable_lora = True
+            ppo_config.actor_rollout_ref.rollout.max_loras = self.lora_num
+            ppo_config.trainer.experiment_name = config.training.experiment_name
+            ppo_config.actor_rollout_ref.rollout.max_lora_rank = config.get("lora_rank", 0)
+        else:
+            ppo_config.actor_rollout_ref.rollout.enable_lora = False
+            ppo_config.actor_rollout_ref.rollout.max_loras = 0
+            ppo_config.actor_rollout_ref.rollout.max_lora_rank = 0
+        self.ppo_trainer_config_dict[model_name] = ppo_config
+        ppo_config.data["train_batch_size"] = config.training.train_batch_size
+        
+        ppo_trainer = RayPPOTrainer(
+            config=ppo_config,
+            tokenizer=self.tokenizer_dict[model_name],
+            role_worker_mapping=self.role_worker_mapping,
+            resource_pool_manager=self.resource_pool_manager[0],
+            ray_worker_group_cls=self.ray_worker_group_cls,
+        )
+        ppo_trainer.lora_num = self.lora_num
+        ppo_trainer.agent_lora_mapping = self.agent_lora_mapping
+        ppo_trainer.global_steps = 0
+        
+        self.ppo_trainer_dict[model_name] = ppo_trainer
+
+    def _create_multiple_ppo_trainers(self):
+        """Create multiple PPO trainers for full/other specialization modes"""
+        config = self.config
+        
         for i, (model_key, model_config) in enumerate(config.models.items()):
             model_name = model_config.name
-            print(f"model_config: {model_config}")
-            if hasattr(model_config, 'ppo_trainer_config'):
-                ppo_config = model_config.ppo_trainer_config
-                self.ppo_trainer_config_dict[model_name] = ppo_config
-                ppo_config.data["train_batch_size"]=self.config.training.train_batch_size
-                model_tokenizer = self.tokenizer_dict[model_name]
-                
-                
-                print(f'ppo_config (partial): {ppo_config}')
-                ppo_trainer = RayPPOTrainer(
-                    config=ppo_config,
-                    tokenizer=model_tokenizer,
-                    role_worker_mapping=role_worker_mapping,
-                    resource_pool_manager=resource_pool_manager[i],
-                    ray_worker_group_cls=ray_worker_group_cls,
-                    
-                )
-                ppo_trainer.global_steps = 0
-                
-                self.ppo_trainer_dict[model_name] = ppo_trainer
-                self.tokenizer_dict[model_name] = model_tokenizer
-                colorful_print(f"PPO trainer created for model: {model_name}", "green")
-    
-        colorful_print(f"the number of ppo_trainer_dict: {len(self.ppo_trainer_dict)}", "green")
-        colorful_print(f"Number of PPO trainers: {len(self.ppo_trainer_dict)}", "cyan")
-        colorful_print(f"Number of agent mappings: {len(self.agent_policy_mapping)}", "cyan")
-        
-
-        if self.lora_differ_mode:
-            colorful_print("=" * 60, "yellow")
-            colorful_print("LoRA Differ Mode ENABLED", "yellow")
-            colorful_print("Each agent will use a different LoRA adapter", "yellow")
-            single_model_config = config.models[list(config.models.keys())[0]]
-            lora_rank = getattr(single_model_config.ppo_trainer_config.actor_rollout_ref.model, 'lora_rank', 0)
-            self.lora_num= len(self.agent_policy_mapping.keys())
-            if lora_rank <= 0:
-                ValueError("WARNING: lora_differ=true but lora_rank=0. Please set lora_rank > 0 in model config.")
-                self.lora_differ_mode = False
+            
+            if not hasattr(model_config, 'ppo_trainer_config'):
+                continue
+            
+            ppo_config = model_config.ppo_trainer_config
+            self.ppo_trainer_config_dict[model_name] = ppo_config
+            ppo_config.data["train_batch_size"] = config.training.train_batch_size
+            ppo_config.actor_rollout_ref.model.lora_rank = config.get("lora_rank", 0)
+            ppo_config.actor_rollout_ref.model.lora_alpha = config.get("lora_alpha", 16)
+            ppo_config.trainer.experiment_name = config.training.experiment_name
+            
+            if ppo_config.actor_rollout_ref.model.lora_rank > 0:
+                ppo_config.actor_rollout_ref.rollout.enable_lora = True
+                ppo_config.actor_rollout_ref.rollout.max_loras = self.lora_num if hasattr(self, 'lora_num') else 1
+                ppo_config.actor_rollout_ref.rollout.max_lora_rank = config.get("lora_rank", 0)
             else:
-                # Create LoRA adapter mapping for each agent
-                # Use integer IDs for easier vLLM LoRA integration
-                for agent_idx, agent_name in enumerate(self.agent_policy_mapping.keys()):
-                    lora_id = agent_idx  # Use integer ID directly (0, 1, 2, ...)
-                    self.agent_lora_mapping[agent_name] = lora_id
-                    colorful_print(f"  Agent '{agent_name}' -> LoRA adapter 'lora_{lora_id}' (ID: {lora_id})", "cyan")
-
-                colorful_print(f"Total {len(self.agent_lora_mapping)} agent-specific LoRA adapters created", "green")
-
-                # Update all PPO trainers with LoRA configuration
-                for model_name, ppo_trainer in self.ppo_trainer_dict.items():
-                    ppo_trainer.lora_num = self.lora_num
-                    ppo_trainer.agent_lora_mapping = self.agent_lora_mapping
-                    colorful_print(f"Updated PPO trainer '{model_name}' with lora_num={self.lora_num} and agent_lora_mapping", "green")
-            colorful_print("=" * 60, "yellow")
-        else:
-            colorful_print("LoRA Differ Mode DISABLED - using standard multi-model training", "cyan")
-        
-        self.llm_servers = []
+                ppo_config.actor_rollout_ref.rollout.enable_lora = False
+                ppo_config.actor_rollout_ref.rollout.max_loras = 0
+                ppo_config.actor_rollout_ref.rollout.max_lora_rank = 0
+            
+            ppo_trainer = RayPPOTrainer(
+                config=ppo_config,
+                tokenizer=self.tokenizer_dict[model_name],
+                role_worker_mapping=self.role_worker_mapping,
+                resource_pool_manager=self.resource_pool_manager[i],
+                ray_worker_group_cls=self.ray_worker_group_cls,
+            )
+            ppo_trainer.global_steps = 0
+            
+            self.ppo_trainer_dict[model_name] = ppo_trainer
 
 
 
@@ -213,8 +189,9 @@ class MultiAgentsPPOTrainer:
             self.server_address_dict[model_name] = server_address_list
  
             # Construct an independent Router for each model
-            
         
+                # CRITICAL FIX: After initialization, verify LoRA adapters status in vLLM servers
+      
         self.agent_execution_engine = MultiAgentsExecutionEngine(
             config=self.config,
             ppo_trainer_config_dict=self.ppo_trainer_config_dict,
@@ -224,6 +201,7 @@ class MultiAgentsPPOTrainer:
             agent_policy_mapping=self.agent_policy_mapping,
             lora_differ_mode=self.lora_differ_mode,
             agent_lora_mapping=self.agent_lora_mapping,
+            use_lora_for_generation=self.use_lora_for_generation,
         )
 
     def init_workers(self):
@@ -238,25 +216,20 @@ class MultiAgentsPPOTrainer:
         
         for idx, (model_name, trainer) in enumerate(self.ppo_trainer_dict.items(), 1):
             colorful_print(f"[{idx}/{len(self.ppo_trainer_dict)}] Initializing workers for: {model_name}", "blue")
-            try:
-                # Pass agent_lora_mapping if in lora_differ_mode
-                if self.lora_differ_mode:
+            if self.lora_differ_mode:
                     trainer.init_workers(lora_num=self.lora_num, agent_lora_mapping=self.agent_lora_mapping)
                     colorful_print(f"  Initialized with {self.lora_num} LoRA adapters for multi-agent training", "cyan")
-                else:
-                    trainer.init_workers(lora_num=self.lora_num)
-                colorful_print(f"✓ [{idx}/{len(self.ppo_trainer_dict)}] Successfully initialized: {model_name}", "green")
-            except Exception as e:
-                colorful_print(f"✗ Failed to initialize {model_name}: {str(e)}", "red")
-                raise RuntimeError(f"Failed to initialize trainer {model_name}") from e
+            else:
+                trainer.init_workers(lora_num=self.lora_num)
+            colorful_print(f"✓ [{idx}/{len(self.ppo_trainer_dict)}] Successfully initialized: {model_name}", "green")
         
         colorful_print(f"All {len(self.ppo_trainer_dict)} trainers initialized successfully!", "green")
+        
+
 
     def _update_parameters(self, batch, ppo_trainer, timing_raw):
-        ppo_trainer.global_steps += 1
-        
-        
-        
+       
+
         # Initialize metrics dictionary if not exists
         if not hasattr(batch, 'meta_info'):
             batch.meta_info = {}
@@ -397,41 +370,57 @@ class MultiAgentsPPOTrainer:
             critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
             batch.meta_info["metrics"].update(critic_output_metrics)
 
-        # implement critic warmup
-        if ppo_trainer.config.trainer.critic_warmup <= ppo_trainer.global_steps:
-            # update actor
-            with simple_timer("update_actor", timing_raw):
-                batch.meta_info["multi_turn"] = ppo_trainer.config.actor_rollout_ref.rollout.multi_turn.enable
+      
+        # update actor
+        with simple_timer("update_actor", timing_raw):
+            batch.meta_info["multi_turn"] = ppo_trainer.config.actor_rollout_ref.rollout.multi_turn.enable
+            
+            if self.lora_differ_mode:
+                agent_names = batch.non_tensor_batch['agent_name']
+                unique_agents = sorted(set(agent_names))
                 
-                if self.lora_differ_mode:
-                    agent_names = batch.non_tensor_batch['agent_name']
-                    unique_agents = sorted(set(agent_names))
-                    
-                    agent_batch_dict = {}
-                    for agent_name in unique_agents:
-                        agent_mask = np.array([name == agent_name for name in agent_names])
-                        agent_indices = np.where(agent_mask)[0].tolist()
-                        # Construct sub-batch for each agent and align to dp world size if needed to avoid blocking in distributed updates
-                        sub_batch = batch.select_idxs(agent_indices)
-                        try:
-                            dp_world_size = ppo_trainer.actor_rollout_wg.world_size
-                        except Exception:
-                            dp_world_size = 1
-                        if dp_world_size > 1:
-                            sub_batch, _ = pad_dataproto_to_divisor(sub_batch, dp_world_size)
-                        agent_batch_dict[agent_name] = sub_batch
-                        colorful_print(f"Agent {agent_name}: {len(agent_indices)} samples", "cyan")
-                    
-                    all_actor_metrics = []
-                    for agent_name, agent_batch in agent_batch_dict.items():
-                        colorful_print(f"Updating LoRA for agent: {agent_name}", "green")
-                        agent_output = ppo_trainer.actor_rollout_wg.update_actor(agent_batch)
-                        all_actor_metrics.append(agent_output.meta_info["metrics"])
-                    
-                    actor_output_metrics = reduce_metrics(all_actor_metrics)
+                agent_batch_dict = {}
+                for agent_name in unique_agents:
+                    agent_mask = np.array([name == agent_name for name in agent_names])
+                    agent_indices = np.where(agent_mask)[0].tolist()
+                    # Construct sub-batch for each agent and align to dp world size if needed to avoid blocking in distributed updates
+                    sub_batch = batch.select_idxs(agent_indices)
+                    try:
+                        dp_world_size = ppo_trainer.actor_rollout_wg.world_size
+                    except Exception:
+                        dp_world_size = 1
+                    if dp_world_size > 1:
+                        sub_batch, _ = pad_dataproto_to_divisor(sub_batch, dp_world_size)
+                    agent_batch_dict[agent_name] = sub_batch
+                    colorful_print(f"Agent {agent_name}: {len(agent_indices)} samples", "cyan")
+                
+                # Collect metrics from all agents
+                all_actor_metrics_list = []
+                for agent_name, agent_batch in agent_batch_dict.items():
+                    colorful_print(f"Updating LoRA for agent: {agent_name}", "green")
+                    agent_output = ppo_trainer.actor_rollout_wg.update_actor(agent_batch)
+                    all_actor_metrics_list.append(agent_output.meta_info["metrics"])
+                
+                # Merge metrics from multiple agents
+                # Convert List[Dict[str, value]] to Dict[str, List[value]]
+                if all_actor_metrics_list:
+                    from collections import defaultdict
+                    merged_metrics = defaultdict(list)
+                    for metrics_dict in all_actor_metrics_list:
+                        for key, value in metrics_dict.items():
+                            # Ensure value is a scalar before appending
+                            if isinstance(value, (list, tuple, np.ndarray)):
+                                # If value is already a collection, take its mean
+                                merged_metrics[key].append(float(np.mean(value)))
+                            else:
+                                merged_metrics[key].append(float(value))
+                    # Now reduce the merged metrics
+                    actor_output_metrics = reduce_metrics(dict(merged_metrics))
                 else:
-                    actor_output = ppo_trainer.actor_rollout_wg.update_actor(batch)
-                    actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
+                    actor_output_metrics = {}
+            else:
+                actor_output = ppo_trainer.actor_rollout_wg.update_actor(batch)
+                actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
                 
             batch.meta_info["metrics"].update(actor_output_metrics)
 
@@ -494,7 +483,9 @@ class MultiAgentsPPOTrainer:
         self.total_training_steps = self.config.training.total_training_steps
         progress_bar = tqdm(range(self.total_training_steps), desc="Training Progress", position=0, leave=True)
         self.max_steps_duration = 0
-        for i,step in enumerate(progress_bar):
+        
+        while self.global_steps < self.total_training_steps:
+            progress_bar.update(1)
             progress_bar.set_description(f"Step {self.global_steps}")
             pprint(f"step {self.global_steps} started")
             
@@ -504,34 +495,59 @@ class MultiAgentsPPOTrainer:
                 
             metrics = {}
             timing_raw = {}
-            if i==0:
-                colorful_print(f"Starting initial validation for multi-agent system", "cyan")
+            if self.global_steps == 0:
+                colorful_print(f"Starting initial validation for multi-agent system (using base model)", "cyan")
+                # Ensure use_lora_for_generation is False for initial validation
+                self.use_lora_for_generation = False
+                self.agent_execution_engine.use_lora_for_generation = False
+                colorful_print(f"use_lora_for_generation set to False for step 0 validation", "yellow")
                 start_time = time.time()
                 # validation before training
-                val_metrics = self._validate()
+                #val_metrics = self._validate(global_steps=self.global_steps)
          
-                metrics.update(val_metrics)
+                #metrics.update(val_metrics)
                 
-                current_avg_success_rate = val_metrics.get('validation/average/success_rate', 0.0)
-                pprint(f"Initial validation metrics logged")
-                print(f"Time taken to validate: {time.time() - start_time}")
-                agent_summary = {}
-                for key, value in val_metrics.items():
-                    if "/success_rate" in key and "/agent_" in key:
-                        agent_name = key.split("/agent_")[1].split("/")[0]
-                        agent_summary[agent_name] = value
+                #current_avg_success_rate = val_metrics.get('validation/average/success_rate', 0.0)
+               
+                #agent_summary = {}
+                #for key, value in val_metrics.items():
+                #    if "/success_rate" in key and "/agent_" in key:
+                #        agent_name = key.split("/agent_")[1].split("/")[0]
+                #        agent_summary[agent_name] = value
                 
              
 
                 # Process each trainer's batch
 
             with simple_timer("step", timing_raw):
-                
+
                 with simple_timer("collect_trajectory", timing_raw):
-                    self.agent_execution_engine.init_agents_and_envs(mode="train",step_idx=i)
+                    # Step 0: Use base model for trajectory collection (LoRA not trained yet)
+                    if self.global_steps == 0 and self.lora_differ_mode:
+                        self.use_lora_for_generation = False
+                        self.agent_execution_engine.use_lora_for_generation = False
+                        colorful_print(f"Step {self.global_steps}: Using base model for trajectory collection (LoRA not trained yet)", "yellow")
+
+                    self.agent_execution_engine.init_agents_and_envs(mode="train", step_idx=self.global_steps)
+
+                    # CRITICAL: Always wake_up before use and sleep after use to maintain strict pairing
+                    # This ensures wake_up and sleep are always paired 1:1
                     for model_name,rollout_engine in self.rollout_engine_dict.items():
                         rollout_engine.wake_up()
+
+                    # Sync any pending LoRA updates to vLLM AFTER wake_up (to avoid memory conflicts)
+                    # Note: LoRA is prepared in step N's update_actor, synced at step N+1's wake_up
+                    if self.lora_differ_mode and self.global_steps >= 1:
+                        
+                        self.use_lora_for_generation = True
+                        self.agent_execution_engine.use_lora_for_generation = True
+                        
                     gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list,rollout_mode=self.config.get("rollout_mode","tree")))
+                    
+                    # Always sleep after trajectory collection to maintain strict pairing
+                    for model_name,rollout_engine in self.rollout_engine_dict.items():
+                        rollout_engine.sleep()
+                    
                     for model_name, trainer in self.ppo_trainer_dict.items():
                         dp_world_size = trainer.actor_rollout_wg.world_size
                         batch_per_trainer_temp = self._pad_dataproto_to_world_size(
@@ -547,8 +563,6 @@ class MultiAgentsPPOTrainer:
                                 batch_per_trainer[model_name], 
                                 batch_per_trainer_temp
                             ])
-                    for model_name,rollout_engine in self.rollout_engine_dict.items():
-                        rollout_engine.sleep()
                 
                 timing_raw = {}
                 with simple_timer("update_parameters", timing_raw):
@@ -569,50 +583,47 @@ class MultiAgentsPPOTrainer:
                     all_trainer_metrics = {}
                     
                     def update_single_trainer(model_name, batch, trainer):
-                        try:
-                            local_timing_raw = {}
-                            # Keep the updated batch with advantages/returns for later metrics
-                            updated_batch = self._update_parameters(batch, trainer, local_timing_raw)
-                            
-                            trainer_metrics = updated_batch.meta_info.get('metrics', {}) if hasattr(updated_batch, 'meta_info') else {}
-                            agent_names = updated_batch.non_tensor_batch.get('agent_name') if hasattr(updated_batch, 'non_tensor_batch') else None
-                            
-                            return {"status": "success", "model_name": model_name, "timing": local_timing_raw, 
-                                    "metrics": trainer_metrics, "agent_names": agent_names, "updated_batch": updated_batch}
-                        except Exception as e:
-                            import traceback
-                            return {"status": "error", "model_name": model_name, "error": str(e), 
-                                    "traceback": traceback.format_exc()}
+                        
+                        local_timing_raw = {}
+                        # Keep the updated batch with advantages/returns for later metrics
+                        updated_batch = self._update_parameters(batch, trainer, local_timing_raw)
+                        
+                        trainer_metrics = updated_batch.meta_info.get('metrics', {}) if hasattr(updated_batch, 'meta_info') else {}
+                        agent_names = updated_batch.non_tensor_batch.get('agent_name') if hasattr(updated_batch, 'non_tensor_batch') else None
+                        
+                        return {"status": "success", "model_name": model_name, "timing": local_timing_raw, 
+                                "metrics": trainer_metrics, "agent_names": agent_names, "updated_batch": updated_batch}
                     
+                
                     # Update trainers
                     for model_name, trainer in self.ppo_trainer_dict.items():
                         if model_name in gen_batch_output_per_policy:
                             result = update_single_trainer(model_name, batch_per_trainer[model_name], trainer)
                             
                             if result["status"] == "error":
-                                colorful_print(f"Training failed for {result['model_name']}: {result['error']}", "red")
-                                raise RuntimeError(f"Training failed: {result['error']}")
-                            
+                                colorful_print(f"Error updating trainer for {model_name}: {result['error']}", "red")
+                                colorful_print(f"Traceback:\n{result['traceback']}", "red")
+                                raise RuntimeError(f"Failed to update trainer for {model_name}: {result['error']}")
                             # Merge timing metrics
                             for key, value in result["timing"].items():
                                 timing_raw[key] = max(timing_raw.get(key, 0), value)
                             
                             # Merge trainer metrics by agent
                             trainer_metrics = result["metrics"]
-                            agent_names = result["agent_names"]
-                            if agent_names is not None:
-                                for agent_name in set(agent_names):
-                                    for key, value in trainer_metrics.items():
-                                        all_trainer_metrics[f"agent_{agent_name}/{key}"] = value
-                            else:
-                                for key, value in trainer_metrics.items():
-                                    all_trainer_metrics[f"model_{model_name}/{key}"] = value
+                        
 
                             # Replace the trainer's batch with the updated version for downstream metrics
                             if "updated_batch" in result and result["updated_batch"] is not None:
                                 batch_per_trainer[model_name] = result["updated_batch"]
                     
                     metrics.update(all_trainer_metrics)
+                    
+                    # After step 1 training completes, enable LoRA for future generations
+                    # Note: LoRA weights are automatically synced to vLLM during update_actor()
+                    if self.global_steps == 1 and self.lora_differ_mode and not self.use_lora_for_generation:
+                        self.use_lora_for_generation = True
+                        self.agent_execution_engine.use_lora_for_generation = True
+                        colorful_print(f"Step {self.global_steps}: LoRA training completed, weights auto-synced to vLLM, enabling LoRA for generations", "green")
 
             # TODO: collect metrics
             # Use the first trainer's batch for metrics calculation
@@ -636,18 +647,19 @@ class MultiAgentsPPOTrainer:
                 
             })
 
-            self.global_steps += 1
+            
 
-            if self.global_steps % self.config.training.val_freq == 0:
-                val_metrics = self._validate()
+            if self.global_steps % self.config.training.val_freq == 0 and self.global_steps != 0:
+                val_metrics = self._validate(global_steps=self.global_steps)
                 metrics.update(val_metrics)
                 agent_summary = {}
                 for key, value in val_metrics.items():
                     if "/success_rate" in key and "/agent_" in key:
                         agent_name = key.split("/agent_")[1].split("/")[0]
                         agent_summary[agent_name] = value
-         
-            # TODO: make a canonical logger that supports various backend
+            self.global_steps += 1
+            for ppo_trainer in self.ppo_trainer_dict.values():
+                ppo_trainer.global_steps = self.global_steps
             try:
                 logger.log(data=metrics, step=self.global_steps)
             except Exception as e:
@@ -663,18 +675,91 @@ class MultiAgentsPPOTrainer:
         
         progress_bar.close()
 
-    def _validate(self):
-        self.agent_execution_engine.init_agents_and_envs(mode="validate")
+    def _save_best_checkpoint(self, env_success_rate):
+        """
+        Save checkpoint if the current env_success_rate is better than the best recorded.
+        
+        Args:
+            env_success_rate: Current validation environment success rate
+        """
+        if_save = getattr(self.config.training, 'if_save', True)
+
+        if not if_save:
+            colorful_print(f"Checkpoint saving disabled (if_save=False). Current env success rate: {env_success_rate:.4f}", "yellow")
+            return
+
+        # Allow checkpoint saving at step 0 for testing purposes
+        # if self.global_steps == 0:
+        #     colorful_print(f"Skip saving checkpoint at step 0. Current env success rate: {env_success_rate:.4f}", "yellow")
+        #     return
+
+        # Only save if this is a new best result
+        if env_success_rate <= self.best_success_rate:
+            colorful_print(f"Current env success rate: {env_success_rate:.4f} (best: {self.best_success_rate:.4f})", "yellow")
+            return
+
+        # Update best success rate and save checkpoint
+        self.best_success_rate = env_success_rate
+        colorful_print(f"New best env success rate: {env_success_rate:.4f}, saving checkpoint...", "green")
+
+        from datetime import datetime
+        import os
+        import shutil
+
+        current_time = datetime.now()
+        date_str = current_time.strftime("%Y%m%d")
+        experiment_name = self.config.training.experiment_name
+
+        base_checkpoint_dir = "checkpoints"
+        save_base = self.config.specialization != "lora"
+        spec = self.config.specialization
+        save_jobs = []
+
+        # Determine which trainers to save based on specialization mode
+        if spec == "prompt":
+            for _, trainer in self.ppo_trainer_dict.items():
+                save_jobs.append(("shared_model", trainer))
+        elif spec == "lora":
+            for agent_name, policy_name in self.agent_policy_mapping.items():
+                trainer = self.ppo_trainer_dict[policy_name]
+                save_jobs.append((agent_name, trainer))
+        elif spec == "full":
+            num_base_models = len(self.config.base_models) if hasattr(self.config, "base_models") else 0
+            if num_base_models == 1:
+                for agent_name, policy_name in self.agent_policy_mapping.items():
+                    trainer = self.ppo_trainer_dict[policy_name]
+                    save_jobs.append((agent_name, trainer))
+            else:
+                for model_name, trainer in self.ppo_trainer_dict.items():
+                    save_jobs.append((model_name, trainer))
+        else:
+            for model_name, trainer in self.ppo_trainer_dict.items():
+                save_jobs.append((model_name, trainer))
+
+        # Save each trainer's checkpoint
+        for target_name, trainer in save_jobs:
+            trainer._save_checkpoint(save_base=save_base)
+
+
+    def _validate(self, global_steps=0):
+        self.agent_execution_engine.init_agents_and_envs(mode="validate", step_idx=global_steps)
         batch_per_trainer: Dict[str,DataProto]={}
         for model_name in self.ppo_trainer_dict.keys():
             batch_per_trainer[model_name] = DataProto.from_dict({})
-            
+        
+
+        
+        # CRITICAL: Always wake_up before use and sleep after use to maintain strict pairing
+        # This ensures wake_up and sleep are always paired 1:1
         for _, rollout_engine in self.rollout_engine_dict.items():
             rollout_engine.wake_up()
             
         gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list, rollout_mode="tree"))
+        
+        # Always sleep after validation to maintain strict pairing
         for model_name,rollout_engine in self.rollout_engine_dict.items():
             rollout_engine.sleep()
+        
         for model_name in self.ppo_trainer_dict.keys():
             if batch_per_trainer[model_name].batch is None:
                 batch_per_trainer[model_name] = gen_batch_output_per_policy[model_name]
@@ -683,8 +768,6 @@ class MultiAgentsPPOTrainer:
                     batch_per_trainer[model_name], 
                     gen_batch_output_per_policy[model_name]
                 ])
-        for model_name,rollout_engine in self.rollout_engine_dict.items():
-            rollout_engine.sleep()
         
         # Calculate success metrics from env state
         total_rollout_num = len(self.agent_execution_engine.rollout_idx_list)
@@ -694,7 +777,7 @@ class MultiAgentsPPOTrainer:
         
         # Count success from env.state
         for env in self.agent_execution_engine.envs:
-            if hasattr(env, 'state') and hasattr(env.state, 'success') and env.state.success:
+            if hasattr(env, 'success') and env.success:
                 env_state_success_count += 1
         
         env_success_rate = env_state_success_count / total_rollout_num if total_rollout_num > 0 else 0.0
@@ -729,81 +812,9 @@ class MultiAgentsPPOTrainer:
         
         validation_metrics["validation/env_state_success_rate"] = env_success_rate
         
-        # Save checkpoint if enabled and this is the best validation result
-        if_save = getattr(self.config.training, 'if_save', True)
-
-        if if_save:
-            if self.global_steps == 0:
-                colorful_print(f"Skip saving checkpoint at step 0. Current env success rate: {env_success_rate:.4f}", "yellow")
-            elif env_success_rate > self.best_success_rate:
-                self.best_success_rate = env_success_rate
-                colorful_print(f"New best env success rate: {env_success_rate:.4f}, saving checkpoint...", "green")
-
-                from datetime import datetime
-                import os
-                import shutil
-
-                current_time = datetime.now()
-                date_str = current_time.strftime("%Y%m%d")
-                experiment_name = self.config.training.experiment_name
-
-                base_checkpoint_dir = getattr(self.config.training, "checkpoint_dir", "checkpoint")
-                save_base = self.config.specialization != "lora"
-                spec = self.config.specialization
-                save_jobs = []
-
-                if spec == "prompt":
-                    for _, trainer in self.ppo_trainer_dict.items():
-                        save_jobs.append(("shared_model", trainer))
-                elif spec == "lora":
-                    for agent_name, policy_name in self.agent_policy_mapping.items():
-                        trainer = self.ppo_trainer_dict[policy_name]
-                        save_jobs.append((agent_name, trainer))
-                elif spec == "full":
-                    num_base_models = len(self.config.base_models) if hasattr(self.config, "base_models") else 0
-                    if num_base_models == 1:
-                        for agent_name, policy_name in self.agent_policy_mapping.items():
-                            trainer = self.ppo_trainer_dict[policy_name]
-                            save_jobs.append((agent_name, trainer))
-                    else:
-                        for model_name, trainer in self.ppo_trainer_dict.items():
-                            save_jobs.append((model_name, trainer))
-                else:
-                    for model_name, trainer in self.ppo_trainer_dict.items():
-                        save_jobs.append((model_name, trainer))
-
-                for target_name, trainer in save_jobs:
-                    checkpoint_dir = os.path.join(base_checkpoint_dir, date_str, experiment_name, target_name)
-
-                    # Delete old checkpoint directory if it exists to prevent OOM
-                    if os.path.exists(checkpoint_dir):
-                        try:
-                            colorful_print(f"Deleting old checkpoint directory: {checkpoint_dir}", "yellow")
-                            shutil.rmtree(checkpoint_dir)
-                            colorful_print(f"Old checkpoint deleted successfully", "green")
-                        except Exception as e:
-                            colorful_print(f"Warning: Failed to delete old checkpoint: {e}", "red")
-
-                    os.makedirs(checkpoint_dir, exist_ok=True)
-
-                    # Set the checkpoint_dir in trainer config to ensure it saves to the correct location
-                    colorful_print(f"Saving best checkpoint for {target_name} to: {checkpoint_dir}", "cyan")
-
-                    # Temporarily override checkpoint_dir to save to the correct agent-specific directory
-                    original_checkpoint_dir = getattr(trainer.config, 'checkpoint_dir', None)
-                    trainer.config.checkpoint_dir = checkpoint_dir
-
-                    trainer._save_checkpoint(save_base=save_base)
-
-                    # Restore original checkpoint_dir if it existed
-                    if original_checkpoint_dir is not None:
-                        trainer.config.checkpoint_dir = original_checkpoint_dir
-                    else:
-                        delattr(trainer.config, 'checkpoint_dir')
-            else:
-                colorful_print(f"Current env success rate: {env_success_rate:.4f} (best: {self.best_success_rate:.4f})", "yellow")
-        else:
-            colorful_print(f"Checkpoint saving disabled (if_save=False). Current env success rate: {env_success_rate:.4f}", "yellow")
+        # Save checkpoint if this is the best validation result
+        if global_steps > 0:
+            self._save_best_checkpoint(env_success_rate)
             
         return validation_metrics
     

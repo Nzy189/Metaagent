@@ -42,31 +42,29 @@ _current_loop_id = None
 _llm_request_semaphore = None
 _semaphore_lock = None
 
+_DEBUG_API_CALLS = False
+
+
+def set_debug_api_calls(enabled: bool):
+    """Enable or disable debug output for API calls"""
+    global _DEBUG_API_CALLS
+    _DEBUG_API_CALLS = enabled
+
 
 def reset_event_loop_resources():
     """Reset all event loop bound resources when a new event loop is created."""
     global _shared_session, _session_lock, _llm_request_semaphore, _semaphore_lock, _current_loop_id
     
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         loop_id = id(loop)
     except RuntimeError:
         loop_id = None
     
     # Check if we're in a new event loop
     if loop_id != _current_loop_id:
-        # Clean up old session if it exists
-        if _shared_session is not None and not _shared_session.closed:
-            try:
-                # Try to close the session, but don't fail if the loop is closed
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(_shared_session.close())
-                loop.close()
-            except:
-                pass
-        
-        # Reset all global resources
+        # Reset all global resources without trying to close the old session
+        # The old session will be garbage collected when the old loop is closed
         _shared_session = None
         _session_lock = None
         _llm_request_semaphore = None
@@ -102,7 +100,8 @@ async def get_shared_session() -> aiohttp.ClientSession:
                 connector=connector,
                 timeout=timeout
             )
-            print(f"[Session] Created shared aiohttp session with connection pool (limit=200, per_host=100)")
+            if _DEBUG_API_CALLS:
+                print(f"[Session] Created shared aiohttp session with connection pool (limit=200, per_host=100)")
     
     return _shared_session
 
@@ -118,7 +117,8 @@ async def get_llm_semaphore(max_concurrent: int = 50) -> asyncio.Semaphore:
     async with _semaphore_lock:
         if _llm_request_semaphore is None:
             _llm_request_semaphore = asyncio.Semaphore(max_concurrent)
-            print(f"[Semaphore] Created global LLM request semaphore with max_concurrent={max_concurrent}")
+            if _DEBUG_API_CALLS:
+                print(f"[Semaphore] Created global LLM request semaphore with max_concurrent={max_concurrent}")
     
     return _llm_request_semaphore
 
@@ -134,7 +134,8 @@ async def cleanup_shared_session():
         if _shared_session is not None and not _shared_session.closed:
             await _shared_session.close()
             _shared_session = None
-            print("[Session] Closed shared aiohttp session")
+            if _DEBUG_API_CALLS:
+                print("[Session] Closed shared aiohttp session")
 
 
 
@@ -158,7 +159,8 @@ async def poll_completions_openai(address: str, timeout: Optional[float] = None,
     completions_request.pop("meta_info", None)
     completions_request.pop("extra_headers", None)
     
-    print(f"[API][REQUEST_START] Sending request to {address} at {time.time()} with timeout={api_timeout.total}s")
+    if _DEBUG_API_CALLS:
+        print(f"[API][REQUEST_START] Sending request to {address} at {time.time()} with timeout={api_timeout.total}s")
     async with semaphore:
         try:
             async with session.post(
@@ -167,27 +169,32 @@ async def poll_completions_openai(address: str, timeout: Optional[float] = None,
                 headers=headers,
                 timeout=api_timeout
             ) as response:
-                print(f"[API][RESPONSE_RECEIVED] Got response from {address} with status {response.status} at {time.time()}")
+                if _DEBUG_API_CALLS:
+                    print(f"[API][RESPONSE_RECEIVED] Got response from {address} with status {response.status} at {time.time()}")
                 if response.status != 200:
                     error_text = await response.text()
                     raise Exception(f"API request failed with status {response.status}: {error_text}")
                 result = await response.json()
-                print(f"[API][JSON_PARSED] JSON parsed successfully from {address} at {time.time()}")
+                if _DEBUG_API_CALLS:
+                    print(f"[API][JSON_PARSED] JSON parsed successfully from {address} at {time.time()}")
                 return result
                 
         except asyncio.TimeoutError as e:
             error_msg = f"Request timeout to {address}"
-            print(f"[ERROR] {error_msg}")
+            if _DEBUG_API_CALLS:
+                print(f"[ERROR] {error_msg}")
             raise Exception(error_msg) from e
             
         except aiohttp.ClientError as e:
             error_msg = f"Client error when requesting {address}: {e}"
-            print(f"[ERROR] {error_msg}")
+            if _DEBUG_API_CALLS:
+                print(f"[ERROR] {error_msg}")
             raise Exception(error_msg) from e
             
         except Exception as e:
             error_msg = f"Unexpected error when requesting {address}: {e}"
-            print(f"[ERROR] {error_msg}")
+            if _DEBUG_API_CALLS:
+                print(f"[ERROR] {error_msg}")
             raise
 
 
@@ -202,10 +209,12 @@ async def submit_completions(
 ):
     last_exception = None
     
-    print(f"[Submit][START] Starting submit_completions to {address} at {time.time()} with timeout={timeout}s")
+    if _DEBUG_API_CALLS:
+        print(f"[Submit][START] Starting submit_completions to {address} at {time.time()} with timeout={timeout}s")
     for attempt in range(max_retries):
         try:
-            print(f"[Submit][ATTEMPT] Attempt {attempt + 1}/{max_retries} calling poll_completions_openai")
+            if _DEBUG_API_CALLS:
+                print(f"[Submit][ATTEMPT] Attempt {attempt + 1}/{max_retries} calling poll_completions_openai")
             result = await poll_completions_openai(
                 address=address, 
                 model=model, 
@@ -213,37 +222,38 @@ async def submit_completions(
                 timeout=timeout,
                 **kwargs
             )
-            if attempt > 0:
+            if attempt > 0 and _DEBUG_API_CALLS:
                 print(f"[Retry] Request succeeded on attempt {attempt + 1}/{max_retries}")
-            print(f"[Submit][SUCCESS] submit_completions succeeded at {time.time()}")
+            if _DEBUG_API_CALLS:
+                print(f"[Submit][SUCCESS] submit_completions succeeded at {time.time()}")
             return result
             
         except Exception as e:
             last_exception = e
-            try:
-                # Proactively reset loop-bound resources on transient loop/session errors
-                transient_msg = str(e)
-                should_reset = (
-                    isinstance(e, asyncio.TimeoutError)
-                    or (hasattr(e, '__class__') and e.__class__.__name__.startswith('Client'))
-                    or ('Event loop is closed' in transient_msg)
-                )
-                if should_reset:
+            # Proactively reset loop-bound resources on transient loop/session errors
+            transient_msg = str(e)
+            should_reset = (
+                isinstance(e, asyncio.TimeoutError)
+                or (hasattr(e, '__class__') and e.__class__.__name__.startswith('Client'))
+                or ('Event loop is closed' in transient_msg)
+            )
+            if should_reset:
+                if _DEBUG_API_CALLS:
                     print("[Submit][RESET] Detected transient loop/session error; resetting event-loop resources")
-                    reset_event_loop_resources()
-            except Exception:
-                pass
+                reset_event_loop_resources()
             
   
             if attempt == max_retries - 1:
-                print(f"[ERROR] All {max_retries} retry attempts failed for {address}")
-                print(f"[ERROR] Final error: {e}")
+                if _DEBUG_API_CALLS:
+                    print(f"[ERROR] All {max_retries} retry attempts failed for {address}")
+                    print(f"[ERROR] Final error: {e}")
                 raise e
             
 
             retry_delay = initial_retry_delay * (2 ** attempt)
-            print(f"[Retry] Attempt {attempt + 1}/{max_retries} failed: {e}")
-            print(f"[Retry] Retrying in {retry_delay:.1f}s... (address={address})")
+            if _DEBUG_API_CALLS:
+                print(f"[Retry] Attempt {attempt + 1}/{max_retries} failed: {e}")
+                print(f"[Retry] Retrying in {retry_delay:.1f}s... (address={address})")
             
             await asyncio.sleep(retry_delay)
     
@@ -269,7 +279,8 @@ def postprocess_batch(batch: DataProto, response_ids: list[list[int]], n: int,pa
     
     # Truncate prompts if they exceed max_prompt_length
     if idx.size(1) > max_prompt_length:
-        print(f"[WARNING] Truncating prompt from {idx.size(1)} to {max_prompt_length}")
+        if _DEBUG_API_CALLS:
+            print(f"[WARNING] Truncating prompt from {idx.size(1)} to {max_prompt_length}")
         # For left-padded prompts, keep the rightmost tokens (most recent context)
         idx = idx[:, -max_prompt_length:]
         attention_mask = attention_mask[:, -max_prompt_length:]
@@ -283,32 +294,38 @@ def postprocess_batch(batch: DataProto, response_ids: list[list[int]], n: int,pa
             for r in r_ids:
                 # Handle empty response
                 if r is None or len(r) == 0:
-                    print(f"[WARNING] Empty response detected, using EOS token as fallback")
+                    if _DEBUG_API_CALLS:
+                        print(f"[WARNING] Empty response detected, using EOS token as fallback")
                     response.append([eos_token_id])
                     continue
                     
                 # Truncate each response if it exceeds max_response_length
                 if len(r) > max_response_length:
-                    print(f"[WARNING] Truncating response from {len(r)} to {max_response_length}")
+                    if _DEBUG_API_CALLS:
+                        print(f"[WARNING] Truncating response from {len(r)} to {max_response_length}")
                     r = r[:max_response_length]
                 response.append(r)
         else:
             # Fallback for None or empty r_ids
-            print(f"[WARNING] None or empty r_ids detected, using EOS token as fallback")
+            if _DEBUG_API_CALLS:
+                print(f"[WARNING] None or empty r_ids detected, using EOS token as fallback")
             for _ in range(n):  # Add n empty responses for this batch
                 response.append([eos_token_id])
     
     # Ensure we have the expected number of responses
     expected_count = len(non_tensor_batch["formatted_prompts"]) * n
     if len(response) != expected_count:
-        print(f"[WARNING] Response count mismatch: expected {expected_count}, got {len(response)}")
+        if _DEBUG_API_CALLS:
+            print(f"[WARNING] Response count mismatch: expected {expected_count}, got {len(response)}")
         # Pad with empty responses if needed
         while len(response) < expected_count:
-            print(f"[WARNING] Adding fallback empty response")
+            if _DEBUG_API_CALLS:
+                print(f"[WARNING] Adding fallback empty response")
             response.append([eos_token_id])
         # Truncate if too many
         if len(response) > expected_count:
-            print(f"[WARNING] Too many responses, truncating to {expected_count}")
+            if _DEBUG_API_CALLS:
+                print(f"[WARNING] Too many responses, truncating to {expected_count}")
             response = response[:expected_count]
     
     response_tensor = pad_2d_list_to_length(response, pad_token_id, max_length=max_response_length).to(idx.device)
@@ -326,10 +343,12 @@ def postprocess_batch(batch: DataProto, response_ids: list[list[int]], n: int,pa
         if current_prompt_length + current_response_length > max_total_length:
             new_response_length = max_total_length - current_prompt_length
             if new_response_length > 0:
-                print(f"[WARNING] Total sequence too long ({current_prompt_length + current_response_length}), truncating response to {new_response_length}")
+                if _DEBUG_API_CALLS:
+                    print(f"[WARNING] Total sequence too long ({current_prompt_length + current_response_length}), truncating response to {new_response_length}")
                 response_tensor = response_tensor[:, :new_response_length]
             else:
-                print(f"[ERROR] Prompt is already too long ({current_prompt_length}), setting response to empty")
+                if _DEBUG_API_CALLS:
+                    print(f"[ERROR] Prompt is already too long ({current_prompt_length}), setting response to empty")
                 response_tensor = torch.full((batch_size, 1), pad_token_id, dtype=response_tensor.dtype, device=response_tensor.device)
         
         seq = torch.cat([idx, response_tensor], dim=-1)
@@ -343,10 +362,11 @@ def postprocess_batch(batch: DataProto, response_ids: list[list[int]], n: int,pa
         attention_mask = torch.cat((attention_mask, response_attention_mask), dim=-1)
         
     except Exception as e:
-        print(f"[ERROR postprocess_batch] Tensor concatenation failed: {e}")
-        print(f"[ERROR] Exception type: {type(e)}")
-        import traceback
-        traceback.print_exc()
+        if _DEBUG_API_CALLS:
+            print(f"[ERROR postprocess_batch] Tensor concatenation failed: {e}")
+            print(f"[ERROR] Exception type: {type(e)}")
+            import traceback
+            traceback.print_exc()
         raise
 
     output = TensorDict(
@@ -402,16 +422,11 @@ async def llm_async_generate(
     unique_request_id = f"{application_id}_{uuid.uuid4().hex[:8]}"
 
     # Debug: print input address/model info
-    try:
+    if _DEBUG_API_CALLS:
         print(f"[LLM][llm_async_generate] request_id={unique_request_id} address={address} model={model_name} mode={mode}")
-    except Exception:
-        pass
 
     # Ensure loop-bound resources (aiohttp session, semaphore) are bound to the current event loop
-    try:
-        reset_event_loop_resources()
-    except Exception:
-        pass
+    reset_event_loop_resources()
 
 
     if mode == "train":
@@ -464,10 +479,8 @@ async def llm_async_generate(
     top_k = int(top_k)
     min_p = float(min_p)
     
-    try:
+    if _DEBUG_API_CALLS:
         print(f"[LLM][llm_async_generate] enable_thinking={enable_thinking} mode={mode} temperature={temp} top_p={top_p} top_k={top_k} min_p={min_p} sample_num={sample_num}")
-    except Exception:
-        pass
 
     kwargs={
         "n": sample_num,  # Generate sample_num responses per prompt
@@ -482,67 +495,65 @@ async def llm_async_generate(
     batch_response_ids: list[list[int]] = [[] for _ in range(batch_size)]
     text_list = []  # Initialize text list for multiple samples
 
-    # Determine which model to use: LoRA adapter or base model
-    # In vllm, LoRA is selected by specifying the lora_name as the model parameter
+    # vLLM uses the 'model' parameter to specify which LoRA adapter to use
+    # If lora_id is provided, use it as the model name (e.g., "lora_0", "lora_1")
+    # Otherwise, use the base model name
     if lora_id is not None:
-        # Convert lora_id to standardized format "lora_X"
-        if isinstance(lora_id, (int, np.integer)):
-            lora_int_id = int(lora_id)
+        # Convert lora_id to LoRA adapter name format
+        if isinstance(lora_id, int):
+            actual_model = f"lora_{lora_id}"
         elif isinstance(lora_id, str):
-            # Parse from formats like "agent_reasoning_generator_lora_0" -> 0
             if 'lora_' in lora_id:
+                # Extract ID from formats like "agent_xxx_lora_0" -> "lora_0"
                 lora_int_id = int(lora_id.split('lora_')[-1])
+                actual_model = f"lora_{lora_int_id}"
             else:
-                lora_int_id = int(lora_id) if lora_id.isdigit() else 0
+                actual_model = lora_id
         else:
-            lora_int_id = 0
-
-        actual_model = f"lora_{lora_int_id}"  # Use standardized LoRA adapter name
-        try:
-            print(f"[LLM][llm_async_generate] Using LoRA adapter: {actual_model} (from lora_id={lora_id})")
-        except Exception:
-            pass
+            actual_model = model_name
+        if _DEBUG_API_CALLS:
+            print(f"[LLM][LoRA] Using LoRA adapter: {actual_model} (from lora_id={lora_id})")
     else:
-        actual_model = model_name  # Use base model name
-        try:
-            print(f"[LLM][llm_async_generate] Using base model: {model_name}")
-        except Exception:
-            pass
-
+        actual_model = model_name
+        if _DEBUG_API_CALLS:
+            print(f"[LLM][LoRA] Using base model: {actual_model}")
+    
     tasks = []
     for batch_index, formatted_prompt in enumerate(prompt_dpr.non_tensor_batch["formatted_prompts"]):
         # For Completion API, we need to convert the conversation to a prompt string
         
-        tasks.append(
-            submit_completions(
-                address=address,
-                model=actual_model,  # Pass LoRA name or base model name
-                prompt=formatted_prompt,
-                max_retries=3, 
-                initial_retry_delay=1.0,
-                timeout=timeout,  # Pass timeout to API call
-                **kwargs,
-            )
-        )
+        # Prepare request parameters
+        request_kwargs = {
+            "address": address,
+            "model": actual_model,  # Use LoRA adapter name if provided
+            "prompt": formatted_prompt,
+            "max_retries": 3,
+            "initial_retry_delay": 1.0,
+            "timeout": timeout,
+            **kwargs,
+        }
+        
+        tasks.append(submit_completions(**request_kwargs))
 
 
-    try:
+    if _DEBUG_API_CALLS:
         print(f"[LLM][batch_request] Starting {len(tasks)} requests for rollout_idx={rollout_idx}, turn_idx={turn_idx}")
-    except Exception:
-        pass
     
     # Use return_exceptions=True to handle failures gracefully
     start_time = time.time()
-    print(f"[LLM][DEBUG] About to await {len(tasks)} API calls for rollout_idx={rollout_idx}, turn_idx={turn_idx}, agent_idx={agent_idx}")
-    print(f"[LLM][AWAIT_START] Waiting for asyncio.gather() at {time.time()}")
+    if _DEBUG_API_CALLS:
+        print(f"[LLM][DEBUG] About to await {len(tasks)} API calls for rollout_idx={rollout_idx}, turn_idx={turn_idx}, agent_idx={agent_idx}")
+        print(f"[LLM][AWAIT_START] Waiting for asyncio.gather() at {time.time()}")
     completions_list = await asyncio.gather(*tasks, return_exceptions=True)
     elapsed_time = time.time() - start_time
-    print(f"[LLM][AWAIT_COMPLETE] asyncio.gather() completed at {time.time()}")
+    if _DEBUG_API_CALLS:
+        print(f"[LLM][AWAIT_COMPLETE] asyncio.gather() completed at {time.time()}")
     
     success_count = sum(1 for c in completions_list if not isinstance(c, Exception))
     error_count = len(completions_list) - success_count
     
-    print(f"[LLM][DEBUG] API calls completed in {elapsed_time:.2f}s: {success_count} success, {error_count} errors for rollout_idx={rollout_idx}")
+    if _DEBUG_API_CALLS:
+        print(f"[LLM][DEBUG] API calls completed in {elapsed_time:.2f}s: {success_count} success, {error_count} errors for rollout_idx={rollout_idx}")
     
     for batch_index, completions in enumerate(completions_list):
         comps = []
@@ -550,7 +561,8 @@ async def llm_async_generate(
         
         # Handle exceptions from API calls
         if isinstance(completions, Exception):
-            print(f"[ERROR] API call failed for batch {batch_index}: {completions}")
+            if _DEBUG_API_CALLS:
+                print(f"[ERROR] API call failed for batch {batch_index}: {completions}")
             # Return empty token list as fallback for each sample
             for _ in range(sample_num):
                 comps.append([tokenizer.eos_token_id])
@@ -561,7 +573,8 @@ async def llm_async_generate(
             
         # Handle None or invalid responses
         if completions is None:
-            print(f"[WARNING] Got None response for batch {batch_index}")
+            if _DEBUG_API_CALLS:
+                print(f"[WARNING] Got None response for batch {batch_index}")
             for _ in range(sample_num):
                 comps.append([tokenizer.eos_token_id])
                 batch_texts.append("")
@@ -573,7 +586,8 @@ async def llm_async_generate(
         try:
             choices = completions.get("choices", [])
             if not choices:
-                print(f"[WARNING] No choices in response for batch {batch_index}")
+                if _DEBUG_API_CALLS:
+                    print(f"[WARNING] No choices in response for batch {batch_index}")
                 for _ in range(sample_num):
                     comps.append([tokenizer.eos_token_id])
                     batch_texts.append("")
@@ -587,10 +601,12 @@ async def llm_async_generate(
                         comps.append(token_ids)
                     else:
                         # Fallback: if no token_ids, add EOS
-                        print(f"[WARNING] No token_ids in choice for batch {batch_index}")
+                        if _DEBUG_API_CALLS:
+                            print(f"[WARNING] No token_ids in choice for batch {batch_index}")
                         comps.append([tokenizer.eos_token_id])
         except Exception as e:
-            print(f"[ERROR] Failed to process response for batch {batch_index}: {e}")
+            if _DEBUG_API_CALLS:
+                print(f"[ERROR] Failed to process response for batch {batch_index}: {e}")
             for _ in range(sample_num):
                 comps.append([tokenizer.eos_token_id])
                 batch_texts.append("")
@@ -608,21 +624,16 @@ async def llm_async_generate(
     output_dpr.non_tensor_batch["agent_idx"] = np.array([agent_idx] * output_dpr.batch.shape[0], dtype=object)
 
     # Fallback: if text_list is empty but we have response token ids, decode to string
-    try:
-        if (not text_list or all(not t for t in text_list)) and tokenizer is not None:
-            # Decode all samples
-            if "responses" in output_dpr.batch:
-                text_list = []
-                for i in range(min(sample_num, output_dpr.batch["responses"].shape[0])):
-                    resp_ids_tensor = output_dpr.batch["responses"][i]
-                    # filter padding and eos
-                    valid_ids = [int(t) for t in resp_ids_tensor.tolist() if int(t) not in (pad_token_id, eos_token_id)]
-                    decoded = tokenizer.decode(valid_ids, skip_special_tokens=True)
-                    text_list.append(decoded or "")
-    except Exception:
-        # Keep empty text list if decoding fails
-        if not text_list:
-            text_list = [""] * sample_num
+    if (not text_list or all(not t for t in text_list)) and tokenizer is not None:
+        # Decode all samples
+        if "responses" in output_dpr.batch:
+            text_list = []
+            for i in range(min(sample_num, output_dpr.batch["responses"].shape[0])):
+                resp_ids_tensor = output_dpr.batch["responses"][i]
+                # filter padding and eos
+                valid_ids = [int(t) for t in resp_ids_tensor.tolist() if int(t) not in (pad_token_id, eos_token_id)]
+                decoded = tokenizer.decode(valid_ids, skip_special_tokens=True)
+                text_list.append(decoded or "")
 
     # Return format depends on sample_num:
     # - sample_num=1: return single string (backward compatible)
@@ -630,15 +641,16 @@ async def llm_async_generate(
     if sample_num == 1:
         response = text_list[0] if text_list else ""
         # Debug empty responses
-        if not response:
+        if not response and _DEBUG_API_CALLS:
             print(f"[WARNING] Empty response for rollout_idx={rollout_idx}, turn_idx={turn_idx}, agent_idx={agent_idx}")
     else:
         response = text_list
         # Debug empty responses
-        if not response or all(not r for r in response):
+        if (not response or all(not r for r in response)) and _DEBUG_API_CALLS:
             print(f"[WARNING] All responses empty for rollout_idx={rollout_idx}, turn_idx={turn_idx}, agent_idx={agent_idx}")
     
-    print(f"[LLM][FUNCTION_COMPLETE] llm_async_generate returning for rollout_idx={rollout_idx}, turn_idx={turn_idx}, agent_idx={agent_idx}")
+    if _DEBUG_API_CALLS:
+        print(f"[LLM][FUNCTION_COMPLETE] llm_async_generate returning for rollout_idx={rollout_idx}, turn_idx={turn_idx}, agent_idx={agent_idx}")
     return output_dpr, response
     
     
@@ -737,13 +749,15 @@ def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, mult
         
         # Truncate if prompt exceeds max_prompt_length
         if input_ids.size(1) > max_prompt_length:
-            print(f"[WARNING] convert_prompt_to_dpr: Truncating prompt from {input_ids.size(1)} to {max_prompt_length}")
+            if _DEBUG_API_CALLS:
+                print(f"[WARNING] convert_prompt_to_dpr: Truncating prompt from {input_ids.size(1)} to {max_prompt_length}")
             # Keep the rightmost tokens (most recent context) for better quality
             input_ids = input_ids[:, -max_prompt_length:]
             attention_mask = attention_mask[:, -max_prompt_length:]
             # Regenerate the prompt string from truncated tokens to ensure consistency
             prompt_with_chat_template = tokenizer.decode(input_ids[0], skip_special_tokens=False)
-            print(f"[WARNING] Regenerated prompt after truncation, new length: {len(prompt_with_chat_template)} chars")
+            if _DEBUG_API_CALLS:
+                print(f"[WARNING] Regenerated prompt after truncation, new length: {len(prompt_with_chat_template)} chars")
 
         # Multimodal (optional): depends on externally provided processor
         multi_modal_inputs = None
@@ -810,5 +824,6 @@ def convert_dpr_to_response(tokenizer, chat_parser, dpr, max_prompt_length, mult
         # Ensure we always return a string
         return response if response is not None else ""
     except Exception as e:
-        print(f"Error in convert_dpr_to_response: {e}")
+        if _DEBUG_API_CALLS:
+            print(f"Error in convert_dpr_to_response: {e}")
         return ""

@@ -2,6 +2,7 @@ import atexit
 import signal
 import sys
 import shutil
+import subprocess
 from pathlib import Path
 import ray
 
@@ -13,6 +14,28 @@ _TEMP_DIRS = []
 def register_temp_dirs(*dirs):
     """Register temporary directories to be cleaned up"""
     _TEMP_DIRS.extend(dirs)
+
+
+def kill_ray_processes():
+    """Kill all Ray-related processes"""
+    patterns = [
+        "ray::",
+        "raylet",
+        "gcs_server",
+        "plasma_store",
+        "default_worker.py",
+        "worker.py",
+    ]
+    for pattern in patterns:
+        try:
+            subprocess.run(
+                ["pkill", "-9", "-f", pattern],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
 
 
 def cleanup_ray():
@@ -33,6 +56,12 @@ def cleanup_ray():
             print(f"Removed temporary directory: {temp_dir}")
     
     print("Cleanup completed\n")
+
+
+def cleanup_ray_runtime():
+    """Complete Ray cleanup including process termination"""
+    cleanup_ray()
+    kill_ray_processes()
 
 
 def install_cleanup_hooks():

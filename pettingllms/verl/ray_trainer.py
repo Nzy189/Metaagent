@@ -794,23 +794,14 @@ class RayPPOTrainer:
             worker_group=self.actor_rollout_wg if self.hybrid_engine else self.rollout_wg,
             idx=uuid.uuid4()
         )
+        
+        
 
     def _save_checkpoint(self, save_base=True):
         # path: checkpoints/{experiment_name}/{model_name}/global_step_{global_steps}/actor
         experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
-        
-        # Support custom checkpoint_dir if provided, otherwise use default
-        if hasattr(self.config, 'checkpoint_dir') and self.config.checkpoint_dir is not None:
-            # checkpoint_dir already contains the full path: checkpoints/experiment_name/model_name
-            experiment_folder = self.config.checkpoint_dir
-        else:
-            # Fallback to default_local_dir (should be 'checkpoints')
-            checkpoint_base = getattr(self.config.trainer, 'default_local_dir', 'checkpoints')
-            # Remove any trailing experiment_name from default_local_dir if it exists
-            if checkpoint_base.endswith(experiment_name):
-                experiment_folder = checkpoint_base
-            else:
-                experiment_folder = os.path.join(checkpoint_base, experiment_name)
+        checkpoint_base = getattr(self.config, 'checkpoint_dir', 'checkpoints')
+        experiment_folder = os.path.join(checkpoint_base, experiment_name)
         
         local_global_step_folder = os.path.join(experiment_folder, f'global_step_{self.global_steps}')
         # Make dirs from this absolute path
@@ -839,9 +830,7 @@ class RayPPOTrainer:
                                               actor_remote_path,
                                               self.global_steps,
                                               max_ckpt_to_keep=max_actor_ckpt_to_keep,
-                                              lora_num=lora_num,
-                                              agent_lora_mapping=agent_lora_mapping,
-                                              save_base=save_base)
+                                              agent_lora_mapping=agent_lora_mapping)
 
         if self.use_critic:
             critic_local_path = os.path.join(local_global_step_folder, "critic")
@@ -866,8 +855,8 @@ class RayPPOTrainer:
         if self.config.trainer.default_hdfs_dir is not None:
             raise NotImplementedError("load from hdfs is not implemented yet")
         else:
-            experiment_name = getattr(self.config, 'experiment_name', 'default_experiment')
-            checkpoint_folder = os.path.join(self.config.trainer.default_local_dir, experiment_name)  # TODO: check path
+            experiment_name = getattr(self.config.trainer, 'experiment_name', 'default_experiment')
+            checkpoint_folder = os.path.join('checkpoints', experiment_name)  # TODO: check path
             if not os.path.isabs(checkpoint_folder):
                 working_dir = os.getcwd()
                 checkpoint_folder = os.path.join(working_dir, checkpoint_folder)
@@ -910,7 +899,6 @@ class RayPPOTrainer:
         
         load_actor_cls.load_checkpoint(actor_path,
                                               del_local_after_load=self.config.trainer.del_local_ckpt_after_load,
-                                              lora_num=lora_num,
                                               agent_lora_mapping=agent_lora_mapping)
 
         if not self.hybrid_engine:

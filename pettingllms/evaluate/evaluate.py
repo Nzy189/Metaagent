@@ -26,6 +26,7 @@ from vllm.engine.arg_utils import AsyncEngineArgs
 from omegaconf import OmegaConf
 from hydra import compose, initialize_config_dir
 from pettingllms.trainer.multi_agents_execution_engine import MultiAgentsExecutionEngine
+# MultiAgentsExecutionEngineGraph will be conditionally imported based on workflow_type
 import pettingllms.trainer.multi_agents_execution_engine as mae_engine
 from pettingllms.trainer import async_generate as trainer_utils
 from verl.utils import hf_tokenizer, hf_processor
@@ -72,20 +73,29 @@ from typing import Optional
 
 
 def init_agent_execution_engine(config: DictConfig, address: str):
+    """Initialize agent execution engine based on workflow_type in config."""
+    # Initialize basic dictionaries
     ppo_trainer_config_dict = {}
     tokenizer_dict = {}
     processor_dict = {}
     server_address_dict = {}
     agent_policy_mapping = {}
+    
+    # Build agent_policy_mapping
     for agent_key, agent_config in config.agent_policy_configs.agent_configs.items():
-                agent_name = agent_config.name
-                policy_name = agent_config.policy_name
-                agent_policy_mapping[agent_name] = policy_name
-               
-   
+        agent_name = agent_config.name
+        policy_name = agent_config.policy_name
+        agent_policy_mapping[agent_name] = policy_name
+    
+    # Get address mapping
     address_map = getattr(config, 'address_map', {}) if hasattr(config, 'address_map') else {}
 
+    # Initialize models
     for i, (model_key, model_config) in enumerate(config.models.items()):
+        # Skip models without name or path (they may only have ppo_trainer_config)
+        if not hasattr(model_config, 'name') or not hasattr(model_config, 'path'):
+            continue
+            
         model_name = model_config.name
         model_path = model_config.path
         
@@ -94,50 +104,41 @@ def init_agent_execution_engine(config: DictConfig, address: str):
             ppo_trainer_config_dict[model_name] = ppo_trainer_config
             local_path = copy_local_path_from_hdfs(model_path)
             
-           
             trust_remote_code = getattr(model_config, 'trust_remote_code', False)
             if hasattr(config, 'resource') and hasattr(config.resource, 'trust_remote_code'):
                 trust_remote_code = config.resource.trust_remote_code
-            # Create tokenizer for this model
+            
+            # Create tokenizer and processor
             tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
             processor = hf_processor(local_path, trust_remote_code=trust_remote_code)
             tokenizer_dict[model_name] = tokenizer
             processor_dict[model_name] = processor
-            ppo_trainer_config = model_config.ppo_trainer_config
-            ppo_trainer_config_dict[model_name] = ppo_trainer_config
+            
             policy_addr = address_map.get(model_name, address)
             server_address_dict[model_name] = [policy_addr]
-            
     
     # Detect LoRA differ mode for multi-agent LoRA evaluation
     lora_differ_mode = False
     agent_lora_mapping = {}
-    lora_num = 1
     
     if hasattr(config, 'specialization') and config.specialization == "lora" and len(config.models) == 1:
-        # Check if LoRA is enabled in model config
         single_model_config = config.models[list(config.models.keys())[0]]
         lora_rank = getattr(single_model_config.ppo_trainer_config.actor_rollout_ref.model, 'lora_rank', 0)
         
         if lora_rank > 0:
             lora_differ_mode = True
-            lora_num = len(agent_policy_mapping.keys())
-            
             print("=" * 60)
             print("LoRA Differ Mode ENABLED for Evaluation")
             print("Each agent will use a different LoRA adapter")
             
-            # Create LoRA adapter mapping for each agent
-            # Use integer IDs for easier vLLM LoRA integration
             for agent_idx, agent_name in enumerate(agent_policy_mapping.keys()):
-                lora_id = agent_idx  # Use integer ID directly (0, 1, 2, ...)
+                lora_id = agent_idx
                 agent_lora_mapping[agent_name] = lora_id
                 print(f"  Agent '{agent_name}' -> LoRA adapter 'lora_{lora_id}' (ID: {lora_id})")
             
             print(f"Total {len(agent_lora_mapping)} agent-specific LoRA adapters to load")
             print("=" * 60)
             
-            # If checkpoint path with LoRA is provided, print loading information
             if hasattr(config, 'lora_checkpoint_path') and config.lora_checkpoint_path:
                 print(f"Loading LoRA adapters from: {config.lora_checkpoint_path}")
                 for agent_name, lora_id in agent_lora_mapping.items():
@@ -145,16 +146,38 @@ def init_agent_execution_engine(config: DictConfig, address: str):
                     print(f"  {agent_name}: {lora_path}")
                 print("=" * 60)
 
-    agent_execution_engine = MultiAgentsExecutionEngine(
-        config=config, 
-        ppo_trainer_config_dict=ppo_trainer_config_dict, 
-        tokenizer_dict=tokenizer_dict, 
-        processor_dict=processor_dict, 
-        server_address_dict=server_address_dict, 
-        agent_policy_mapping=agent_policy_mapping,
-        lora_differ_mode=lora_differ_mode,
-        agent_lora_mapping=agent_lora_mapping
-    )
+    # Get workflow_type from config, default to "turn"
+    workflow_type = getattr(config, 'workflow_type', 'turn')
+    print(f"Using workflow_type: {workflow_type}")
+
+    # Select the appropriate execution engine based on workflow_type
+    if workflow_type == "graph":
+        print("Initializing MultiAgentsExecutionEngineGraph")
+        from pettingllms.trainer.multi_agents_execution_engine_graph import MultiAgentsExecutionEngineGraph
+        agent_execution_engine = MultiAgentsExecutionEngineGraph(
+            config=config,
+            ppo_trainer_config_dict=ppo_trainer_config_dict,
+            tokenizer_dict=tokenizer_dict,
+            processor_dict=processor_dict,
+            server_address_dict=server_address_dict,
+            agent_policy_mapping=agent_policy_mapping,
+            lora_differ_mode=lora_differ_mode,
+            agent_lora_mapping=agent_lora_mapping,
+        )
+    else:
+        # Default to "turn" workflow
+        print("Initializing MultiAgentsExecutionEngine (turn-based)")
+        agent_execution_engine = MultiAgentsExecutionEngine(
+            config=config,
+            ppo_trainer_config_dict=ppo_trainer_config_dict,
+            tokenizer_dict=tokenizer_dict,
+            processor_dict=processor_dict,
+            server_address_dict=server_address_dict,
+            agent_policy_mapping=agent_policy_mapping,
+            lora_differ_mode=lora_differ_mode,
+            agent_lora_mapping=agent_lora_mapping,
+        )
+    
     return agent_execution_engine
 
 def validate(config: DictConfig, address: str):
@@ -174,15 +197,15 @@ def validate(config: DictConfig, address: str):
             ])
 
     total_rollout_num = len(agent_execution_engine.rollout_idx_list)
-    success_rollout_rate_dict: Dict[str, float] = {}
-    for agent_name in agent_execution_engine.turn_order:
-        success_rollout_num = len(
-            agent_execution_engine.success_rollout_idx_list_dict.get(agent_name, [])
-        )
-        success_rollout_rate_dict[agent_name] = (
-            success_rollout_num / total_rollout_num if total_rollout_num > 0 else 0.0
-        )
-    return agent_execution_engine, agent_execution_engine.success_rollout_idx_list_dict, success_rollout_rate_dict
+    env_success_rollout_idxs = [
+        rollout_idx
+        for rollout_idx, env in zip(agent_execution_engine.rollout_idx_list, agent_execution_engine.envs)
+        if hasattr(env, "success") and env.success
+    ]
+    env_success_rate = (
+        len(env_success_rollout_idxs) / total_rollout_num if total_rollout_num > 0 else 0.0
+    )
+    return agent_execution_engine, env_success_rollout_idxs, env_success_rate
 
 
 def test(config: DictConfig, address: str):
@@ -218,16 +241,15 @@ def main(config: DictConfig):
     address = getattr(config, 'vllm_address', '127.0.0.1:8220')
     print(f"Using vLLM service address: {address}")
    
-    agent_execution_engine, success_rollout_idx_list_dict, success_rollout_rate_dict = validate(config, address)
+    agent_execution_engine, env_success_rollout_idxs, env_success_rate = validate(config, address)
     
     # Log success_rollout information to summary logger
     evaluation_summary = {
         "model_path": config.models.model_0.path,
-        "max_turns": config.env.max_turns,
         "benchmark": config.env.benchmark,
         "total_rollouts": len(agent_execution_engine.rollout_idx_list),
-        "success_rollout_idx_list_dict": success_rollout_idx_list_dict,
-        "success_rollout_rate_dict": success_rollout_rate_dict,
+        "env_success_rollout_idxs": env_success_rollout_idxs,
+        "env_success_rate": env_success_rate,
         "agent_enable_thinking": {}
     }
     
@@ -245,13 +267,13 @@ def main(config: DictConfig):
     
     print("Evaluation Summary:")
     print(f"  Model path: {evaluation_summary['model_path']}")
-    print(f"  Max turns: {evaluation_summary['max_turns']}")
     print(f"  Benchmark: {evaluation_summary['benchmark']}")
     print(f"  Total rollouts: {evaluation_summary['total_rollouts']}")
-    print("  Success rates:")
-    for agent_name, rate in success_rollout_rate_dict.items():
-        success_count = len(success_rollout_idx_list_dict.get(agent_name, []))
-        print(f"    {agent_name}: {rate:.4f} ({success_count}/{evaluation_summary['total_rollouts']})")
+    print("  Env success rate:")
+    print(
+        f"    env: {env_success_rate:.4f} "
+        f"({len(env_success_rollout_idxs)}/{evaluation_summary['total_rollouts']})"
+    )
 
 if __name__ == "__main__":
     main()

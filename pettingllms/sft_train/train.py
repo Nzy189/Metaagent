@@ -19,7 +19,7 @@ from omegaconf import OmegaConf, DictConfig
 from typing import Dict, List
 from pathlib import Path
 from pettingllms.sft_train.data_collector import SFTDataCollector
-from pettingllms.trainer.multiagentssys_register import ENV_CLASS_MAPPING, AGENT_CLASS_MAPPING, ENV_BATCH_CLASS_MAPPING
+from pettingllms.trainer.mas_turn_order_register import ENV_CLASS_MAPPING, AGENT_CLASS_MAPPING, ENV_BATCH_CLASS_MAPPING
 from verl.utils import hf_tokenizer, hf_processor
 from verl.utils.fs import copy_local_path_from_hdfs
 

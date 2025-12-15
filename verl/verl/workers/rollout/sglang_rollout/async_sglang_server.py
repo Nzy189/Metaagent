@@ -62,6 +62,41 @@ class AsyncSglangServer(AsyncServerBase):
                 return JSONResponse(output)
         raise RuntimeError("AsyncSglangServer No output from workers self._dp_rank: {self._dp_rank}, self._tp_size: {self._tp_size}, self.workers: {self.workers}")
 
+    async def completions(self, raw_request: Request):
+        """OpenAI completions API endpoint."""
+        request = await raw_request.json()
+
+        output_dp_lst = []
+        for worker in self.workers:
+            output_future = worker.execute_method.remote("completions", request)
+            output_dp_lst.append(output_future)
+        outputs = await asyncio.gather(*output_dp_lst)
+
+        for output in outputs:
+            if output is not None:
+                return JSONResponse(output)
+        raise RuntimeError(f"AsyncSglangServer No output from workers self._dp_rank: {self._dp_rank}, self._tp_size: {self._tp_size}, self.workers: {self.workers}")
+
+    async def show_available_models(self):
+        """List all available models.
+        
+        SGLang doesn't maintain a separate model list, returns base model info.
+        
+        Returns:
+            JSONResponse: Response containing list of available models
+        """
+        models = {
+            "object": "list",
+            "data": [
+                {
+                    "id": self.config.model.path.split("/")[-1],
+                    "object": "model",
+                    "owned_by": "sglang",
+                }
+            ]
+        }
+        return JSONResponse(content=models)
+
     async def wake_up(self):
         for worker in self.workers:
             worker.resume.remote()
@@ -69,3 +104,22 @@ class AsyncSglangServer(AsyncServerBase):
     async def sleep(self):
         for worker in self.workers:
             worker.offload.remote()
+
+    async def add_lora(self, lora_request):
+        """Add a LoRA adapter to the engine.
+        
+        Args:
+            lora_request: LoRARequest object
+        """
+        logger.info(f"LoRA request received: {lora_request.lora_name} (ID: {lora_request.lora_int_id})")
+        # SGLang handles LoRA adapters via request parameters
+        pass
+        
+    async def list_loras(self):
+        """List all registered LoRA adapters.
+        
+        Returns:
+            List of LoRA adapter names
+        """
+        # SGLang doesn't maintain a list of LoRA adapters
+        return []

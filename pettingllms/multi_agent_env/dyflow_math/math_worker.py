@@ -261,8 +261,7 @@ async def get_code_execution_output(
         
         if isinstance(result, str) and result.startswith("error:"):
             print(f"Warning: Ray execution returned error: {result}")
-        else:
-            print(f"Success: Ray execution completed, output length: {len(str(result))} characters")
+       
             
         return result
         

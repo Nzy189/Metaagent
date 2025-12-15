@@ -3,97 +3,39 @@
 Note that we don't combine the main with ray_trainer as ray_trainer is used by other main.
 """
 
+import sys
+import os
+import logging
+
+# Configure unbuffered output for real-time logging
+os.environ['PYTHONUNBUFFERED'] = '1'
+sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
+sys.stderr.reconfigure(line_buffering=True) if hasattr(sys.stderr, 'reconfigure') else None
+
 import hydra
 import ray
-import os
-import json
-import subprocess
 from omegaconf import OmegaConf, DictConfig
 from verl.single_controller.ray import RayWorkerGroup
 from verl.workers.fsdp_workers import AsyncActorRolloutRefWorker
 from pettingllms.trainer.multi_agents_ppo_trainer import MultiAgentsPPOTrainer
-from pettingllms.utils.clean_up import cleanup_ray, install_cleanup_hooks, register_temp_dirs
+from pettingllms.utils.clean_up import cleanup_ray_runtime, install_cleanup_hooks
+from pettingllms.utils.ray_utils import init_ray_with_temp_dirs
+
 install_cleanup_hooks()
 
 
-def _kill_ray_processes():
-    patterns = [
-        "ray::",
-        "raylet",
-        "gcs_server",
-        "plasma_store",
-        "default_worker.py",
-        "worker.py",
-    ]
-    for pattern in patterns:
-        try:
-            subprocess.run(
-                ["pkill", "-9", "-f", pattern],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-        except Exception:
-            pass
-
-
-def _cleanup_ray_runtime():
-    cleanup_ray()
-    _kill_ray_processes()
-
-
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
-def main(config: DictConfig):
-    # Set default values for lora_rank and lora_alpha if not defined
-    # This prevents InterpolationKeyError when these variables are referenced in config
-    if 'lora_rank' not in config or config.lora_rank is None:
-        OmegaConf.set_struct(config, False)
-        config.lora_rank = 0
-        OmegaConf.set_struct(config, True)
-    
-    if 'lora_alpha' not in config or config.lora_alpha is None:
-        OmegaConf.set_struct(config, False)
-        config.lora_alpha = 0
-        OmegaConf.set_struct(config, True)
-    
+def main(config: DictConfig):   
     OmegaConf.to_yaml(config)
     run_ppo(config)
 
 
 def run_ppo(config):
     try:
-        if not ray.is_initialized():
-            # Create experiment-specific temporary directories using process ID
-            pid = os.getpid()
-            ray_tmp_dir = f"/tmp/verl_ray_{pid}"
-            ray_spill_dir = f"/tmp/verl_spill_{pid}"
-            os.makedirs(ray_tmp_dir, exist_ok=True)
-            os.makedirs(ray_spill_dir, exist_ok=True)
-            
-            # Register directories for cleanup
-            register_temp_dirs(ray_tmp_dir, ray_spill_dir)
-            
-            spilling_conf = {"type": "filesystem", "params": {"directory_path": [ray_spill_dir]}}
-            system_config = {"object_spilling_config": json.dumps(spilling_conf)}
-
-            # Get GPU count from config
-            n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1) if hasattr(config, 'resource') else 1
-            
-            # Validate GPU availability
-            cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
-            if cuda_visible_devices:
-                available_gpu_count = len(cuda_visible_devices.split(','))
-                n_gpus_per_node = min(n_gpus_per_node, available_gpu_count)
-            
-            print(f"Initializing Ray with {n_gpus_per_node} GPUs")
-            ray.init(
-                num_gpus=n_gpus_per_node,
-                runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}},
-                _temp_dir=ray_tmp_dir,
-                _system_config=system_config
-            )
-
-
+        # Initialize Ray with temporary directories
+        init_ray_with_temp_dirs(config)
+        
+        # Create and execute remote trainer
         def make_trainer_remote():
             num_cpus = max(8, int(ray.cluster_resources()["CPU"] * 0.1)) 
             return ray.remote(num_cpus=num_cpus)(train_multi_agents)
@@ -101,7 +43,7 @@ def run_ppo(config):
         multiagent_training_engine = make_trainer_remote()
         ray.get(multiagent_training_engine.remote(config))
     finally:
-        _cleanup_ray_runtime()
+        cleanup_ray_runtime()
 
 def train_multi_agents(config):
     from pprint import pprint
@@ -109,25 +51,71 @@ def train_multi_agents(config):
     from verl.utils.fs import copy_local_path_from_hdfs
     from verl.utils import hf_tokenizer, hf_processor
     from pettingllms.verl.ray_trainer import ResourcePoolManager, Role
+    from copy import deepcopy
+    # Build agent_policy_mapping for validation
+    agent_policy_mapping = {}
+    for agent_key, agent_config in config.agent_policy_configs.agent_configs.items():
+        agent_policy_mapping[agent_config.name] = agent_config.policy_name
+        print(f"Agent mapping: {agent_config.name} -> {agent_config.policy_name}")
+    num_base_models = len(config.base_models) if hasattr(config, 'base_models') else 0
+    num_models = len(config.models) if hasattr(config, 'models') else 0
+    num_agents = len(agent_policy_mapping)
+    specialization = config.specialization
+    # Validation 1: Check base_models and models count match (except for special case)
+    if num_base_models != num_models:
+        error_msg = (
+            f"Configuration error: Number of base_models ({num_base_models}) does not match "
+        )
+        print("="*80)
+        print(f"ERROR: {error_msg}")
+        print("="*80)
+        raise ValueError(error_msg)
     
-    # Set default values for lora_rank and lora_alpha if not defined
-    # This prevents InterpolationKeyError when resolving the config
-    if 'lora_rank' not in config or config.lora_rank is None:
-        OmegaConf.set_struct(config, False)  # Allow adding new keys
-        config.lora_rank = 0
-        print("lora_rank not configured, setting default value to 0 (LoRA disabled)")
-        OmegaConf.set_struct(config, True)  # Re-enable struct mode
+    # Validation 2: Check specialization mode requirements
+    if specialization == "prompt" or specialization == "lora":
+        if num_models != 1:
+            raise ValueError(
+                f"For specialization={specialization}', expected exactly 1 model, but got {num_models}"
+            )
+    if specialization == "lora":
+        # Validate LoRA configuration
+        if config.lora_rank <= 0:
+            raise ValueError(
+                f"For specialization='lora', lora_rank must be > 0, but got {config.lora_rank}"
+            )
     
-    if 'lora_alpha' not in config or config.lora_alpha is None:
-        OmegaConf.set_struct(config, False)  # Allow adding new keys
-        config.lora_alpha = 0
-        print("lora_alpha not configured, setting default value to 0 (LoRA disabled)")
-        OmegaConf.set_struct(config, True)  # Re-enable struct mode
+    # Handle 'full' specialization with single base_model - replicate configs
+    if specialization == "full" and num_base_models == 1:
+        print("="*80)
+        print("SPECIAL MODE: specialization='full' with single base_model detected")
+        print(f"Replicating configurations to match {num_agents} agents...")
+        
+        base_model_config = config.base_models[list(config.base_models.keys())[0]]
+        original_model_config = config.models[list(config.models.keys())[0]]
+        
+        # Replicate base_models
+        new_base_models_dict = {
+            f"base_model_{i}": deepcopy(base_model_config) 
+            for i in range(num_agents)
+        }
+        
+        # Replicate models
+        new_models_dict = {
+            f"model_{i}": deepcopy(original_model_config) 
+            for i in range(num_agents)
+        }
+        
+        OmegaConf.set_struct(config, False)
+        config.base_models = OmegaConf.create(new_base_models_dict)
+        config.models = OmegaConf.create(new_models_dict)
+        OmegaConf.set_struct(config, True)
+
+
     
     n_gpus_per_node = getattr(config.resource, 'n_gpus_per_node', 1)
     nnodes = getattr(config.resource, 'nnodes', 1)
-    
-    pprint(OmegaConf.to_container(config, resolve=True))
+    OmegaConf.to_container(config, resolve=True)
+    #pprint(OmegaConf.to_container(config, resolve=True))
     OmegaConf.resolve(config)
     
     multi_modal = getattr(config, 'multi_modal', False)
@@ -137,29 +125,28 @@ def train_multi_agents(config):
     ppo_trainer_config_dict = {}
     model_num = 0
     
-    if hasattr(config, 'models') and config.models is not None:
-        print("Multi-model training mode detected")
+
         
-        for model_key, model_config in config.models.items():
-            model_num += 1
-            model_path = model_config.path
-            model_name = model_config.name
-            
-            print(f"Processing model: {model_name} at path: {model_path}")
-            
-            local_path = copy_local_path_from_hdfs(model_path)
-            
-            trust_remote_code = getattr(model_config, 'trust_remote_code', False)
-            if hasattr(config, 'resource') and hasattr(config.resource, 'trust_remote_code'):
-                trust_remote_code = config.resource.trust_remote_code
-            
-            tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
-            processor = hf_processor(local_path, trust_remote_code=trust_remote_code)
-            tokenizer_dict[model_name] = tokenizer
-            if multi_modal:
-                processor_dict[model_name] = processor
-            ppo_trainer_config_dict[model_name] = model_config.ppo_trainer_config
-    
+    for model_key, model_config in config.models.items():
+        model_num += 1
+        model_path = model_config.path
+        model_name = model_config.name
+        
+        print(f"Processing model: {model_name} at path: {model_path}")
+        
+        local_path = copy_local_path_from_hdfs(model_path)
+        
+        trust_remote_code = getattr(model_config, 'trust_remote_code', False)
+        if hasattr(config, 'resource') and hasattr(config.resource, 'trust_remote_code'):
+            trust_remote_code = config.resource.trust_remote_code
+        
+        tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
+        processor = hf_processor(local_path, trust_remote_code=trust_remote_code)
+        tokenizer_dict[model_name] = tokenizer
+        if multi_modal:
+            processor_dict[model_name] = processor
+        ppo_trainer_config_dict[model_name] = model_config.ppo_trainer_config
+
     n_gpus_per_model = n_gpus_per_node // model_num
     print(f"n_gpus_per_model: {n_gpus_per_model}")
     
@@ -177,7 +164,7 @@ def train_multi_agents(config):
             Role.RefPolicy: global_pool_id,
         }
         
-        print(f"Creating resource pool for {model_key}: {resource_pool_spec}")
+        #print(f"Creating resource pool for {model_key}: {resource_pool_spec}")
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
         resource_pool_manager.create_resource_pool()
         managers.append(resource_pool_manager)
@@ -189,10 +176,12 @@ def train_multi_agents(config):
         role_worker_mapping=role_worker_mapping,
         resource_pool_manager=managers,
         ray_worker_group_cls=RayWorkerGroup,
+        agent_policy_mapping=agent_policy_mapping,
     )
-    
     trainer.init_workers()
+    
     trainer.init_multi_agent_sys_execution_engine()
+    
     trainer.fit()
 
 

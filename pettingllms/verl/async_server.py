@@ -386,6 +386,22 @@ class AsyncLLMServerManager:
     def sleep(self):
         """Sleep all vllm instances."""
         ray.get([server.sleep.remote() for server in self.async_llm_servers])
+    
+    def sync_lora_adapters(self, lora_requests_list):
+        """Sync LoRA adapters to all async vLLM servers.
+        
+        Args:
+            lora_requests_list: List of LoRARequest or TensorLoRARequest objects to add
+        """
+        print(f"[AsyncLLMServerManager] Syncing {len(lora_requests_list)} LoRA adapters to {len(self.async_llm_servers)} servers...")
+        for lora_request in lora_requests_list:
+            ray.get([server.add_lora.remote(lora_request) for server in self.async_llm_servers])
+            print(f"[AsyncLLMServerManager] Synced LoRA adapter: {lora_request.lora_name} (ID: {lora_request.lora_int_id})")
+    
+    def list_loras(self):
+        """List all LoRA adapters in the first server."""
+        return ray.get(self.async_llm_servers[0].list_loras.remote())
+        
 
     def submit_chat_completions(
         self,

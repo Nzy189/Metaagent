@@ -121,7 +121,9 @@ actor_rollout_ref:
     ulysses_sequence_parallel_size: 1 # sp size
     entropy_from_logits_with_chunking: False
   rollout:
-
+    enable_lora: False
+    max_loras: 1
+    max_lora_rank: 0
     name: vllm
     _target_: verl.workers.config.RolloutConfig
     mode: async # sync: LLM, async: AsyncLLM

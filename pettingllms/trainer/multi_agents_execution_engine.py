@@ -12,8 +12,8 @@ except Exception:  # fallback when verl is a src tree: verl/verl/protocol.py
     from verl import DataProto
 import torch
 import numpy as np
-from pettingllms.trainer.multiagentssys_register import ENV_CLASS_MAPPING, ENV_BATCH_CLASS_MAPPING, ENV_WORKER_CLASS_MAPPING
-from pettingllms.trainer.multiagentssys_register import AGENT_CLASSES
+from pettingllms.trainer.multiagentssys_register import     ENV_CLASS_MAPPING,ENV_BATCH_CLASS_MAPPING,ENV_WORKER_CLASS_MAPPING,AGENT_CLASS_MAPPING
+AGENT_CLASSES = AGENT_CLASS_MAPPING  # Backward compatibility
 from functools import partial
 import multiprocessing
 from pettingllms.utils.performance import create_timer
@@ -25,7 +25,13 @@ from pettingllms.multi_agent_env.code.code_worker import get_ray_docker_worker_c
 
 logger = logging.getLogger(__name__)
 
+_DEBUG_ENGINE = False
 
+
+def set_debug_engine(enabled: bool):
+    """Enable or disable debug output for execution engine"""
+    global _DEBUG_ENGINE
+    _DEBUG_ENGINE = enabled
 
 
 class MultiAgentsExecutionEngine:
@@ -54,6 +60,7 @@ class MultiAgentsExecutionEngine:
         max_workers=1000,
         lora_differ_mode=False,
         agent_lora_mapping=None,
+        use_lora_for_generation=False,
     ):
         
         # Initialize timer for this engine
@@ -69,6 +76,8 @@ class MultiAgentsExecutionEngine:
         self.max_workers = max_workers
         self.lora_differ_mode = lora_differ_mode
         self.agent_lora_mapping = agent_lora_mapping or {}
+        # Control whether to use LoRA adapters for generation
+        self.use_lora_for_generation = use_lora_for_generation
         # Read parameters from config with fallback to defaults
         self.timer.checkpoint("Loading config parameters")
         self._load_config_parameters()
@@ -235,279 +244,158 @@ class MultiAgentsExecutionEngine:
                 {"turn_idx": turn_idx + 1}
             )
             
-            agent_outputs = []
-            
-            if self.parallel:
-                print(f"[Engine][PARALLEL_MODE] rollout_idx={rollout_idx} turn={turn_idx} - Parallel LLM requests for all agents")
+            # Define common generation function
+            async def generate_agent_response(agent_idx, agent_name):
+                current_agent = agent_group[agent_idx]
+                current_agent.update_from_env(turn_idx, env)
+                prompt = current_agent.current_prompt
+                policy_name = self.agent_policy_mapping.get(agent_name)
+                agent_enable_thinking = self.agent_enable_thinking.get(agent_name, False)
+                agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
+
+                # Extract image data if multimodal is enabled
+                image_data = None
+                if agent_enable_multimodal and hasattr(current_agent, 'get_image_data'):
+                    image_data = current_agent.get_image_data()
+                elif agent_enable_multimodal and hasattr(env, 'get_image_data'):
+                    image_data = env.get_image_data()
+
+                format_prompt = convert_prompt_to_dpr(
+                    self.tokenizer_dict[policy_name],
+                    self.processor_dict.get(policy_name),
+                    prompt,
+                    self.max_prompt_length,
+                    multi_modal=agent_enable_multimodal,
+                    enable_thinking=agent_enable_thinking
+                )
                 
-                async def generate_agent_response(agent_idx, agent_name):
-                    current_agent = agent_group[agent_idx]
-                    current_agent.update_from_env(turn_idx, env)
-                    prompt = current_agent.current_prompt
-                    policy_name = self.agent_policy_mapping.get(agent_name)
-                    agent_enable_thinking = self.agent_enable_thinking.get(agent_name, False)
-                    agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
-
-                    # Extract image data if multimodal is enabled
-                    image_data = None
-                    if agent_enable_multimodal and hasattr(current_agent, 'get_image_data'):
-                        image_data = current_agent.get_image_data()
-                    elif agent_enable_multimodal and hasattr(env, 'get_image_data'):
-                        image_data = env.get_image_data()
-
-                    format_prompt = convert_prompt_to_dpr(
-                        self.tokenizer_dict[policy_name],
-                        self.processor_dict.get(policy_name),
-                        prompt,
-                        self.max_prompt_length,
-                        multi_modal=agent_enable_multimodal,
-                        enable_thinking=agent_enable_thinking
-                    )
-                    
-                    if format_prompt is None:
-                        return None
-                    
-                    ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
-                    model_path = ppo_trainer_config.actor_rollout_ref.model.path
-                    # Match vLLM's model registration logic
-                    if "checkpoint" in str(model_path):
-                        model_name = str(model_path)
+                if format_prompt is None:
+                    return None
+                
+                ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
+                model_path = ppo_trainer_config.actor_rollout_ref.model.path
+                # Match vLLM's model registration logic
+                if "checkpoint" in str(model_path):
+                    model_name = str(model_path)
+                else:
+                    model_name = "/".join(str(model_path).split("/")[-2:])
+                
+                output_dpr = None
+                response = None
+                
+                try:
+                    _addresses = self.server_address_dict.get(policy_name)
+                    if isinstance(_addresses, (list, tuple)):
+                        _address = random.choice(_addresses) if len(_addresses) > 0 else _addresses[0]
                     else:
-                        model_name = "/".join(str(model_path).split("/")[-2:])
+                        _address = _addresses
                     
+                    lora_id = None
+                    # Only use LoRA if use_lora_for_generation is True (LoRA has been trained)
+                    if self.lora_differ_mode and self.use_lora_for_generation and agent_name in self.agent_lora_mapping:
+                        lora_id = self.agent_lora_mapping[agent_name]
+                    
+                    agent_config = self.agent_config_dict.get(agent_name, None)
+                    agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
+                    
+                    if _DEBUG_ENGINE:
+                        mode_str = "PARALLEL" if self.parallel else "SEQUENTIAL"
+                        lora_status = f"LoRA={lora_id}" if lora_id is not None else "base_model"
+                        print(f"[Engine][{mode_str}_GEN] rollout_idx={rollout_idx} agent={agent_name} calling LLM ({lora_status}, multimodal={agent_enable_multimodal}, sample_num={agent_sample_num})")
+                    
+                    output_dpr, response = await llm_async_generate(
+                        rollout_idx=rollout_idx,
+                        turn_idx=turn_idx,
+                        agent_idx=agent_idx,
+                        prompt_dpr=format_prompt,
+                        ppo_trainer_config=ppo_trainer_config,
+                        address=_address,
+                        model_name=model_name,
+                        tokenizer=self.tokenizer_dict[policy_name],
+                        enable_thinking=agent_enable_thinking,
+                        image_data=image_data,
+                        application_id=str(uuid.uuid4()),
+                        env_idx=rollout_idx // self.sample_num,
+                        policy_name=policy_name,
+                        timeout=self.generate_timeout,
+                        mode=self.mode,
+                        lora_id=lora_id,
+                        agent_config=agent_config,
+                        sample_num=agent_sample_num,
+                    )
+                except Exception as e:
+                    self.multi_logger.log_env_agent_info(
+                        self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
+                        f"Failed to generate response: {e}",
+                        {"error": str(e), "traceback": traceback.format_exc()}
+                    )
                     output_dpr = None
-                    response = None
-                    
-                    try:
-                        _addresses = self.server_address_dict.get(policy_name)
-                        if isinstance(_addresses, (list, tuple)):
-                            _address = random.choice(_addresses) if len(_addresses) > 0 else _addresses[0]
-                        else:
-                            _address = _addresses
-                        
-                        lora_id = None
-                        if self.lora_differ_mode and agent_name in self.agent_lora_mapping:
-                            lora_id = self.agent_lora_mapping[agent_name]
-                        
-                        agent_config = self.agent_config_dict.get(agent_name, None)
-                        agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
-                        
-                        print(f"[Engine][PARALLEL_GEN] rollout_idx={rollout_idx} agent={agent_name} calling LLM (multimodal={agent_enable_multimodal}, sample_num={agent_sample_num})")
-                        output_dpr, response = await llm_async_generate(
-                            rollout_idx=rollout_idx,
-                            turn_idx=turn_idx,
-                            agent_idx=agent_idx,
-                            prompt_dpr=format_prompt,
-                            ppo_trainer_config=ppo_trainer_config,
-                            address=_address,
-                            model_name=model_name,
-                            tokenizer=self.tokenizer_dict[policy_name],
-                            enable_thinking=agent_enable_thinking,
-                            image_data=image_data,
-                            application_id=str(uuid.uuid4()),
-                            env_idx=rollout_idx // self.sample_num,
-                            policy_name=policy_name,
-                            timeout=self.generate_timeout,
-                            mode=self.mode,
-                            lora_id=lora_id,
-                            agent_config=agent_config,
-                            sample_num=agent_sample_num,
-                        )
-                    except Exception as e:
-                        self.multi_logger.log_env_agent_info(
-                            self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
-                            f"Failed to generate response: {e}",
-                            {"error": str(e), "traceback": traceback.format_exc()}
-                        )
-                        output_dpr = None
-                        response = ""
-                    
-                    if response is None:
-                        response = ""
-                    
-                    return {
-                        'agent_idx': agent_idx,
-                        'agent_name': agent_name,
-                        'current_agent': current_agent,
-                        'output_dpr': output_dpr,
-                        'response': response,
-                        'prompt': prompt,
-                        'policy_name': policy_name
-                    }
+                    response = ""
                 
+                if response is None:
+                    response = ""
+                
+                return {
+                    'agent_idx': agent_idx,
+                    'agent_name': agent_name,
+                    'current_agent': current_agent,
+                    'output_dpr': output_dpr,
+                    'response': response,
+                    'prompt': prompt,
+                    'policy_name': policy_name
+                }
+            
+            agent_outputs = []
+            if self.parallel:
+                if _DEBUG_ENGINE:
+                    print(f"[Engine][PARALLEL_MODE] rollout_idx={rollout_idx} turn={turn_idx} - Parallel LLM requests for all agents")
                 generation_tasks = [
                     generate_agent_response(agent_idx, agent_name)
                     for agent_idx, agent_name in enumerate(self.turn_order)
                 ]
                 agent_outputs = await asyncio.gather(*generation_tasks)
                 agent_outputs = [out for out in agent_outputs if out is not None]
-                
-                for agent_output in agent_outputs:
-                    agent_idx = agent_output['agent_idx']
-                    agent_name = agent_output['agent_name']
-                    current_agent = agent_output['current_agent']
-                    response = agent_output['response']
-                    
-                    current_agent.update_from_model(response)
-
-                    try:
-                        # Deterministic worker assignment based on rollout_idx
-                        # This ensures consistent worker-task mapping for file path isolation
-                        env_worker_id = rollout_idx % self.num_workers
-                        env_worker = self.env_workers[env_worker_id]
-
-                        # Store worker_id and GPU group in env_data for task folder path generation
-                        if hasattr(self.envs[rollout_idx], 'state'):
-                            self.envs[rollout_idx].state.assigned_worker_id = env_worker_id
-                            self.envs[rollout_idx].state.gpu_group_id = self.gpu_group_id
-
-                        await asyncio.wait_for(
-                            current_agent.step(self.envs[rollout_idx], env_worker=env_worker),
-                            timeout=self.step_timeout
-                        )
-                    except asyncio.TimeoutError:
-                        self.multi_logger.log_env_agent_info(
-                            self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
-                            f"Environment step timed out after {self.step_timeout}s",
-                            {"error": "timeout", "timeout_seconds": self.step_timeout}
-                        )
-                    
-                    # Capture env state immediately after this agent's step
-                    env_state_snapshot = env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else None
-                    
-                    agent_output['env_state_snapshot'] = env_state_snapshot
             else:
-                print(f"[Engine][SEQUENTIAL_MODE] rollout_idx={rollout_idx} turn={turn_idx} - Sequential agent execution")
-                
+                if _DEBUG_ENGINE:
+                    print(f"[Engine][SEQUENTIAL_MODE] rollout_idx={rollout_idx} turn={turn_idx} - Sequential agent execution")
                 for agent_idx, agent_name in enumerate(self.turn_order):
-                    current_agent = agent_group[agent_idx]
-                    current_agent.update_from_env(turn_idx, env)
-                    prompt = current_agent.current_prompt
-                    policy_name = self.agent_policy_mapping.get(agent_name)
-                    agent_enable_thinking = self.agent_enable_thinking.get(agent_name, False)
-                    agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
+                    output = await generate_agent_response(agent_idx, agent_name)
+                    if output is not None:
+                        agent_outputs.append(output)
+            
+            # Agent steps (same for both modes)
+            for agent_output in agent_outputs:
+                agent_idx = agent_output['agent_idx']
+                agent_name = agent_output['agent_name']
+                current_agent = agent_output['current_agent']
+                response = agent_output['response']
+                
+                current_agent.update_from_model(response)
 
-                    # Extract image data if multimodal is enabled
-                    image_data = None
-                    if agent_enable_multimodal and hasattr(current_agent, 'get_image_data'):
-                        image_data = current_agent.get_image_data()
-                    elif agent_enable_multimodal and hasattr(env, 'get_image_data'):
-                        image_data = env.get_image_data()
+                try:
+                    # Deterministic worker assignment based on rollout_idx
+                    env_worker_id = rollout_idx % self.num_workers
+                    env_worker = self.env_workers[env_worker_id]
 
-                    format_prompt = convert_prompt_to_dpr(
-                        self.tokenizer_dict[policy_name],
-                        self.processor_dict.get(policy_name),
-                        prompt,
-                        self.max_prompt_length,
-                        multi_modal=agent_enable_multimodal,
-                        enable_thinking=agent_enable_thinking
+                    # Store worker_id and GPU group in env_data for task folder path generation
+                    if hasattr(self.envs[rollout_idx], 'state'):
+                        self.envs[rollout_idx].state.assigned_worker_id = env_worker_id
+                        self.envs[rollout_idx].state.gpu_group_id = self.gpu_group_id
+
+                    await asyncio.wait_for(
+                        current_agent.step(self.envs[rollout_idx], env_worker=env_worker),
+                        timeout=self.step_timeout
                     )
-                    
-                    if format_prompt is None:
-                        return None
-                    
-                    ppo_trainer_config = self.ppo_trainer_config_dict.get(policy_name, None)
-                    model_path = ppo_trainer_config.actor_rollout_ref.model.path
-                    # Match vLLM's model registration logic
-                    if "checkpoint" in str(model_path):
-                        model_name = str(model_path)
-                    else:
-                        model_name = "/".join(str(model_path).split("/")[-2:])
-                    print(f"[Engine][MODEL_NAME] rollout_idx={rollout_idx} agent={agent_name} model_path={model_path} model_name={model_name}")
-                    
-                    output_dpr = None
-                    response = None
-                    
-                    try:
-                        _addresses = self.server_address_dict.get(policy_name)
-                        if isinstance(_addresses, (list, tuple)):
-                            _address = random.choice(_addresses) if len(_addresses) > 0 else _addresses[0]
-                        else:
-                            _address = _addresses
-                        
-                        lora_id = None
-                        if self.lora_differ_mode and agent_name in self.agent_lora_mapping:
-                            lora_id = self.agent_lora_mapping[agent_name]
-                        
-                        try:
-                            lora_info = f" lora_id={lora_id}" if lora_id else ""
-                            print(f"[Engine][generate_single_rollout] env_idx={env_idx} rollout_idx={rollout_idx} turn={turn_idx} agent={agent_name} policy={policy_name} chosen_address={_address}{lora_info}")
-                        except Exception:
-                            pass
-                        
-                        agent_config = self.agent_config_dict.get(agent_name, None)
-                        agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
-                        
-                        print(f"[Engine][DEBUG] About to call llm_async_generate for rollout_idx={rollout_idx}, agent={agent_name} (multimodal={agent_enable_multimodal}, sample_num={agent_sample_num})")
-                        output_dpr, response = await llm_async_generate(
-                            rollout_idx=rollout_idx,
-                            turn_idx=turn_idx,
-                            agent_idx=agent_idx,
-                            prompt_dpr=format_prompt,
-                            ppo_trainer_config=ppo_trainer_config,
-                            address=_address,
-                            model_name=model_name,
-                            tokenizer=self.tokenizer_dict[policy_name],
-                            enable_thinking=agent_enable_thinking,
-                            image_data=image_data,
-                            application_id=str(uuid.uuid4()),
-                            env_idx=rollout_idx // self.sample_num,
-                            policy_name=policy_name,
-                            timeout=self.generate_timeout,
-                            mode=self.mode,
-                            lora_id=lora_id,
-                            agent_config=agent_config,
-                            sample_num=agent_sample_num,
-                        )
-                    except Exception as e:
-                        self.multi_logger.log_env_agent_info(
-                            self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
-                            f"Failed to generate response: {e}",
-                            {"error": str(e), "traceback": traceback.format_exc()}
-                        )
-                        output_dpr = None
-                        response = ""
-                    
-                    if response is None:
-                        response = ""
-                    
-                    current_agent.update_from_model(response)
-
-                    try:
-                        # Deterministic worker assignment based on rollout_idx
-                        # This ensures consistent worker-task mapping for file path isolation
-                        env_worker_id = rollout_idx % self.num_workers
-                        env_worker = self.env_workers[env_worker_id]
-
-                        # Store worker_id and GPU group in env_data for task folder path generation
-                        if hasattr(self.envs[rollout_idx], 'state'):
-                            self.envs[rollout_idx].state.assigned_worker_id = env_worker_id
-                            self.envs[rollout_idx].state.gpu_group_id = self.gpu_group_id
-
-                        await asyncio.wait_for(
-                            current_agent.step(self.envs[rollout_idx], env_worker=env_worker),
-                            timeout=self.step_timeout
-                        )
-                    except asyncio.TimeoutError:
-                        self.multi_logger.log_env_agent_info(
-                            self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
-                            f"Environment step timed out after {self.step_timeout}s",
-                            {"error": "timeout", "timeout_seconds": self.step_timeout}
-                        )
-                    
-                    # Capture env state immediately after this agent's step
-                    env_state_snapshot = env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else None
-
-                    agent_outputs.append({
-                        'agent_idx': agent_idx,
-                        'agent_name': agent_name,
-                        'current_agent': current_agent,
-                        'output_dpr': output_dpr,
-                        'response': response,
-                        'prompt': prompt,
-                        'policy_name': policy_name,
-                        'env_state_snapshot': env_state_snapshot
-                    })
+                except asyncio.TimeoutError:
+                    self.multi_logger.log_env_agent_info(
+                        self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
+                        f"Environment step timed out after {self.step_timeout}s",
+                        {"error": "timeout", "timeout_seconds": self.step_timeout}
+                    )
+                
+                # Capture env state immediately after this agent's step
+                env_state_snapshot = env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else None
+                agent_output['env_state_snapshot'] = env_state_snapshot
             
             # After all agents have completed their step in this turn, calculate rewards
             for agent_output in agent_outputs:
@@ -532,7 +420,8 @@ class MultiAgentsExecutionEngine:
                     output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
                     output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
                     
-                    if self.lora_differ_mode and agent_name in self.agent_lora_mapping:
+                    # Record lora_ids only when LoRA is actually used for generation
+                    if self.lora_differ_mode:
                         batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
                         lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
                         output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
@@ -547,8 +436,8 @@ class MultiAgentsExecutionEngine:
                                 output_dpr
                             ])
                         except Exception as e:
-                           
-                            print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
+                            if _DEBUG_ENGINE:
+                                print(f"The length of concatenated trajectory_per_task_dict[policy_name]: {len(trajectory_per_task_dict[policy_name])}")
                 
                 # Use captured state snapshot for this specific agent
                 env_state_compact = agent_output.get('env_state_snapshot') or (env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else env.state)
@@ -685,7 +574,8 @@ class MultiAgentsExecutionEngine:
                     server_name = str(model_path)
                 else:
                     server_name = "/".join(str(model_path).split("/")[-2:])
-                print(f"[Engine][MODEL_NAME] env_idx={env_idx} rollout_idx={rollout_idx} turn={turn_idx} agent={agent_name} model_path={model_path} server_name={server_name}")
+                if _DEBUG_ENGINE:
+                    print(f"[Engine][MODEL_NAME] env_idx={env_idx} rollout_idx={rollout_idx} turn={turn_idx} agent={agent_name} model_path={model_path} server_name={server_name}")
                 
                 output_dpr = None
                 response = None
@@ -699,7 +589,8 @@ class MultiAgentsExecutionEngine:
                         raise ValueError(f"No server address configured for policy '{policy_name}'")
                     
                     lora_id = None
-                    if self.lora_differ_mode and agent_name in self.agent_lora_mapping:
+                    # Only use LoRA if use_lora_for_generation is True (LoRA has been trained)
+                    if self.lora_differ_mode and self.use_lora_for_generation and agent_name in self.agent_lora_mapping:
                         lora_id = self.agent_lora_mapping[agent_name]
                    
                     # Get agent config for temperature settings
@@ -708,8 +599,10 @@ class MultiAgentsExecutionEngine:
                     # Check if this agent supports sampling (has sample_num attribute)
                     agent_sample_num = getattr(agent_config, 'sample_num', 1) if agent_config else 1
                    
-                    print(f"[Engine][DEBUG] About to call llm_async_generate in async_generate_response for rollout_idx={rollout_idx}, agent={agent_name}, turn_idx={turn_idx} (multimodal={agent_enable_multimodal}, sample_num={agent_sample_num})")
-                    print(f"[Engine][AWAIT_START] Calling llm_async_generate at {time.time()}")
+                    if _DEBUG_ENGINE:
+                        lora_status = f"LoRA={lora_id}" if lora_id is not None else "base_model"
+                        print(f"[Engine][DEBUG] About to call llm_async_generate in async_generate_response for rollout_idx={rollout_idx}, agent={agent_name}, turn_idx={turn_idx} ({lora_status}, multimodal={agent_enable_multimodal}, sample_num={agent_sample_num})")
+                        print(f"[Engine][AWAIT_START] Calling llm_async_generate at {time.time()}")
                     output_dpr, response = await llm_async_generate(
                         rollout_idx=rollout_idx,
                         turn_idx=turn_idx,
@@ -730,10 +623,10 @@ class MultiAgentsExecutionEngine:
                         agent_config=agent_config,
                         sample_num=agent_sample_num,
                     )
-                    print(f"[Engine][AWAIT_COMPLETE] llm_async_generate returned at {time.time()}")
-                    print(f"[Engine][DEBUG] llm_async_generate returned for rollout_idx={rollout_idx}, agent={agent_name}, response={'empty' if not response else 'has content'}")
+                 
                 except Exception as e:
-                    print(f"[Engine][ERROR] Exception in llm_async_generate for rollout_idx={rollout_idx}, agent={agent_name}: {e}")
+                    if _DEBUG_ENGINE:
+                        print(f"[Engine][ERROR] Exception in llm_async_generate for rollout_idx={rollout_idx}, agent={agent_name}: {e}")
                     output_dpr = None
                     response = None
                     # log error to help diagnose empty responses
@@ -760,375 +653,173 @@ class MultiAgentsExecutionEngine:
             
               
           
-            if self.parallel:
-                print(f"[Engine][PARALLEL_MODE] env_idx={env_idx} turn={turn_idx} - Parallel LLM for all agents, sequential steps")
-                
-                async def generate_with_timeout(idx, agent_idx, agent_name):
+            async def generate_with_timeout(idx, agent_idx, agent_name):
+                try:
+                    result = await asyncio.wait_for(
+                        async_generate_response(idx, agent_idx, agent_name),
+                        timeout=self.generate_timeout
+                    )
+                    return result
+                except asyncio.TimeoutError:
+                    rollout_idx = rollout_idx_list[idx]
+                    policy_name = self.agent_policy_mapping.get(agent_name)
                     try:
-                        result = await asyncio.wait_for(
-                            async_generate_response(idx, agent_idx, agent_name),
-                            timeout=self.generate_timeout
-                        )
-                        return result
-                    except asyncio.TimeoutError:
-                        rollout_idx = rollout_idx_list[idx]
-                        policy_name = self.agent_policy_mapping.get(agent_name)
-                        try:
-                            current_agent = agent_groups[idx][agent_idx]
-                            current_agent.update_from_env(turn_idx, envs_list[idx])
-                            prompt = current_agent.current_prompt
-                        except Exception:
-                            prompt = None
-                        
+                        current_agent = agent_groups[idx][agent_idx]
+                        current_agent.update_from_env(turn_idx, envs_list[idx])
+                        prompt = current_agent.current_prompt
+                    except Exception:
+                        prompt = None
+                    
+                    if _DEBUG_ENGINE:
                         print(f"[TIMEOUT] Generate response timeout for rollout {rollout_idx} agent {agent_name}")
-                        return {
-                            'idx': idx,
-                            'agent_idx': agent_idx,
-                            'agent_name': agent_name,
-                            'rollout_idx': rollout_idx,
-                            'output_dpr': None,
-                            'response': None,
-                            'prompt': prompt,
-                            'policy_name': policy_name,
-                            'env_state_snapshot': None,
-                        }
-                    except Exception as e:
-                        rollout_idx = rollout_idx_list[idx]
-                        policy_name = self.agent_policy_mapping.get(agent_name)
-                        try:
-                            current_agent = agent_groups[idx][agent_idx]
-                            current_agent.update_from_env(turn_idx, envs_list[idx])
-                            prompt = current_agent.current_prompt
-                        except Exception:
-                            prompt = None
-                        
+                    return {
+                        'idx': idx,
+                        'agent_idx': agent_idx,
+                        'agent_name': agent_name,
+                        'rollout_idx': rollout_idx,
+                        'output_dpr': None,
+                        'response': None,
+                        'prompt': prompt,
+                        'policy_name': policy_name,
+                        'env_state_snapshot': None,
+                    }
+                except Exception as e:
+                    rollout_idx = rollout_idx_list[idx]
+                    policy_name = self.agent_policy_mapping.get(agent_name)
+                    try:
+                        current_agent = agent_groups[idx][agent_idx]
+                        current_agent.update_from_env(turn_idx, envs_list[idx])
+                        prompt = current_agent.current_prompt
+                    except Exception:
+                        prompt = None
+                    
+                    if _DEBUG_ENGINE:
                         print(f"[ERROR] Generate response failed for rollout {rollout_idx} agent {agent_name}: {e}")
-                        return {
-                            'idx': idx,
-                            'agent_idx': agent_idx,
-                            'agent_name': agent_name,
-                            'rollout_idx': rollout_idx,
-                            'output_dpr': None,
-                            'response': None,
-                            'prompt': prompt,
-                            'policy_name': policy_name,
-                            'env_state_snapshot': None,
-                        }
+                    return {
+                        'idx': idx,
+                        'agent_idx': agent_idx,
+                        'agent_name': agent_name,
+                        'rollout_idx': rollout_idx,
+                        'output_dpr': None,
+                        'response': None,
+                        'prompt': prompt,
+                        'policy_name': policy_name,
+                        'env_state_snapshot': None,
+                    }
+            
+            if self.parallel:
+               
+           
+                all_tasks = []
+                for agent_idx, agent_name in enumerate(self.turn_order):
+                    for idx in range(len(rollout_idx_list)):
+                        all_tasks.append(generate_with_timeout(idx, agent_idx, agent_name))
+                
+                # Execute all tasks concurrently and gather results
+                all_results_flat = await asyncio.gather(*all_tasks, return_exceptions=False)
+                all_agents_results = []
+                result_idx = 0
+                for agent_idx, agent_name in enumerate(self.turn_order):
+                    response_results = all_results_flat[result_idx:result_idx + len(rollout_idx_list)]
+                    result_idx += len(rollout_idx_list)
+                    all_agents_results.append((agent_idx, agent_name, response_results))
+            else:
+                # Sequential mode: agents run sequentially, but each agent's rollouts run in parallel
+
                 
                 all_agents_results = []
                 for agent_idx, agent_name in enumerate(self.turn_order):
                     tasks = [generate_with_timeout(idx, agent_idx, agent_name) for idx in range(len(rollout_idx_list))]
                     response_results = await asyncio.gather(*tasks, return_exceptions=False)
                     all_agents_results.append((agent_idx, agent_name, response_results))
-                
-                for agent_idx, agent_name, response_results in all_agents_results:
-                    for idx in range(len(rollout_idx_list)):
-                        result = response_results[idx]
-                        rollout_idx = result['rollout_idx']
-                        response = result['response']
-                        
-                        current_agent = agent_groups[idx][agent_idx]
-                        if response is None:
-                            response = ""
-                        current_agent.update_from_model(response)
-
-                        # Deterministic worker assignment based on rollout_idx
-                        # This ensures consistent worker-task mapping for file path isolation
-                        env_worker_id = rollout_idx % self.num_workers
-                        env_worker = self.env_workers[env_worker_id]
-
-                        # Store worker_id and GPU group in env_data for task folder path generation
-                        if hasattr(self.envs[rollout_idx_list[idx]], 'state'):
-                            self.envs[rollout_idx_list[idx]].state.assigned_worker_id = env_worker_id
-                            self.envs[rollout_idx_list[idx]].state.gpu_group_id = self.gpu_group_id
-
-                        try:
-                            await asyncio.wait_for(
-                                current_agent.step(self.envs[rollout_idx_list[idx]], env_worker=env_worker),
-                                timeout=self.step_timeout
-                            )
-                        except asyncio.TimeoutError:
-                            pass
-                        
-                        # Capture env state immediately after this agent's step
-                        env_state_snapshot = envs_list[idx].state.to_dict_compact(agent_name=agent_name) if hasattr(envs_list[idx].state, 'to_dict_compact') else None
-                        response_results[idx]['env_state_snapshot'] = env_state_snapshot
-                
-                # After all agents have completed their step in this turn, calculate rewards
-                for agent_idx, agent_name, response_results in all_agents_results:
-                    for idx in range(len(rollout_idx_list)):
-                        current_agent = agent_groups[idx][agent_idx]
-                        env = envs_list[idx]
-                        
-                        if hasattr(current_agent, 'calculate_reward'):
-                            current_agent.calculate_reward(env)
-                        else:
-                            if hasattr(current_agent, 'agent_reward'):
-                                if not hasattr(current_agent, 'reward_history'):
-                                    current_agent.reward_history = []
-                                current_agent.reward_history.append(current_agent.agent_reward)
+            
+            # Process results for all agents (same logic for both parallel and sequential modes)
+            for agent_idx, agent_name, response_results in all_agents_results:
+                for idx in range(len(rollout_idx_list)):
+                    result = response_results[idx]
+                    rollout_idx = result['rollout_idx']
+                    response = result['response']
                     
-                    for idx in range(len(rollout_idx_list)):
-                        result = response_results[idx]
-                        rollout_idx = result['rollout_idx']
-                        output_dpr = result['output_dpr']
-                        response = result['response']
-                        prompt = result['prompt']
-                        policy_name = result['policy_name']
-                        
-                        current_agent = agent_groups[idx][agent_idx]
-                        env = envs_list[idx]
-                
-                        if agent_name == self.turn_order[-1]:
-                            # Use captured state snapshot for this specific agent
-                            env_state_compact = result.get('env_state_snapshot') or (env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else env.state)
+                    current_agent = agent_groups[idx][agent_idx]
+                    if response is None:
+                        response = ""
+                    current_agent.update_from_model(response)
+                    env_worker_id = rollout_idx % self.num_workers
+                    env_worker = self.env_workers[env_worker_id]
+                    if hasattr(self.envs[rollout_idx_list[idx]], 'state'):
+                        self.envs[rollout_idx_list[idx]].state.assigned_worker_id = env_worker_id
+                        self.envs[rollout_idx_list[idx]].state.gpu_group_id = self.gpu_group_id
 
-                            # Include image data in logging if multimodal is enabled
-                            agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
-                            image_info = None
-                            if agent_enable_multimodal:
-                                if hasattr(current_agent, 'get_image_data'):
-                                    img_data = current_agent.get_image_data()
-                                    if img_data is not None:
-                                        image_info = {"has_image": True, "type": type(img_data).__name__}
-                                elif hasattr(env, 'get_image_data'):
-                                    img_data = env.get_image_data()
-                                    if img_data is not None:
-                                        image_info = {"has_image": True, "type": type(img_data).__name__}
-
-                            self.multi_logger.log_env_agent_info(
-                                self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
-                                "Trajectory information updated",
-                                {
-                                    "agent_prompt": {"text": prompt if prompt is not None else "", "image": image_info},
-                                    "agent_response": response,
-                                    "env_state": env_state_compact,
-                                }
-                            )
-
-                        if output_dpr is not None:
-                            output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
-                            output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
-                            
-                            if self.lora_differ_mode and agent_name in self.agent_lora_mapping:
-                                batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
-                                lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
-                                output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
-                            
-                            if trajectory_per_task_dict[policy_name].batch is None:
-                                trajectory_per_task_dict[policy_name] = output_dpr
-                            else:
-                                trajectory_per_task_dict[policy_name] = DataProto.concat([
-                                    trajectory_per_task_dict[policy_name], 
-                                    output_dpr
-                                ])
-                    
-                    rollout_score_idx = []
-                    for idx in range(len(rollout_idx_list)):
-                        current_agent = agent_groups[idx][agent_idx]
-                        agent_reward = current_agent.agent_reward if current_agent.agent_reward is not None else 0
-                        rollout_score_idx.append(agent_reward)
-                    
                     try:
-                        if if_greedy:
-                            best_i = int(np.argmax(np.asarray(rollout_score_idx)))
-                        else:
-                            best_i = 0
-                    except Exception:
-                        best_i = 0
-                    
-                    selected_env = envs_list[best_i]
-                    selected_agent_group = agent_groups[best_i]
-                    
-                    task_done = selected_env.done
-                    
-                    envs_list = [copy.deepcopy(selected_env) for _ in envs_list]
-                    agent_groups = [copy.deepcopy(selected_agent_group) for _ in agent_groups]
-                    
-                    if task_done:
-                        break
-            else:
-                print(f"[Engine][SEQUENTIAL_MODE] env_idx={env_idx} turn={turn_idx} - Sequential agent execution")
-                
-                for agent_idx, agent_name in enumerate(self.turn_order):
-                    async def generate_with_timeout(idx, agent_idx, agent_name):
-                        try:
-                            result = await asyncio.wait_for(
-                                async_generate_response(idx, agent_idx, agent_name),
-                                timeout=self.generate_timeout
-                            )
-                            return result
-                        except asyncio.TimeoutError:
-                            rollout_idx = rollout_idx_list[idx]
-                            policy_name = self.agent_policy_mapping.get(agent_name)
-                            try:
-                                current_agent = agent_groups[idx][agent_idx]
-                                current_agent.update_from_env(turn_idx, envs_list[idx])
-                                prompt = current_agent.current_prompt
-                            except Exception:
-                                prompt = None
-                            
-                            print(f"[TIMEOUT] Generate response timeout for rollout {rollout_idx} agent {agent_name}")
-                            return {
-                                'idx': idx,
-                                'agent_idx': agent_idx,
-                                'agent_name': agent_name,
-                                'rollout_idx': rollout_idx,
-                                'output_dpr': None,
-                                'response': None,
-                                'prompt': prompt,
-                                'policy_name': policy_name,
-                                'env_state_snapshot': None,
-                            }
-                        except Exception as e:
-                            rollout_idx = rollout_idx_list[idx]
-                            policy_name = self.agent_policy_mapping.get(agent_name)
-                            try:
-                                current_agent = agent_groups[idx][agent_idx]
-                                current_agent.update_from_env(turn_idx, envs_list[idx])
-                                prompt = current_agent.current_prompt
-                            except Exception:
-                                prompt = None
-                            
-                            print(f"[ERROR] Generate response failed for rollout {rollout_idx} agent {agent_name}: {e}")
-                            return {
-                                'idx': idx,
-                                'agent_idx': agent_idx,
-                                'agent_name': agent_name,
-                                'rollout_idx': rollout_idx,
-                                'output_dpr': None,
-                                'response': None,
-                                'prompt': prompt,
-                                'policy_name': policy_name,
-                                'env_state_snapshot': None,
-                            }
-                    
-                    tasks = [generate_with_timeout(idx, agent_idx, agent_name) for idx in range(len(rollout_idx_list))]
-                    response_results = await asyncio.gather(*tasks, return_exceptions=False)
-                    
-                    for idx in range(len(rollout_idx_list)):
-                        result = response_results[idx]
-                        rollout_idx = result['rollout_idx']
-                        response = result['response']
-                        
-                        current_agent = agent_groups[idx][agent_idx]
-                        if response is None:
-                            response = ""
-                        current_agent.update_from_model(response)
-
-                        # Deterministic worker assignment based on rollout_idx
-                        # This ensures consistent worker-task mapping for file path isolation
-                        env_worker_id = rollout_idx % self.num_workers
-                        env_worker = self.env_workers[env_worker_id]
-
-                        # Store worker_id and GPU group in env_data for task folder path generation
-                        if hasattr(self.envs[rollout_idx_list[idx]], 'state'):
-                            self.envs[rollout_idx_list[idx]].state.assigned_worker_id = env_worker_id
-                            self.envs[rollout_idx_list[idx]].state.gpu_group_id = self.gpu_group_id
-
-                        try:
-                            await asyncio.wait_for(
-                                current_agent.step(self.envs[rollout_idx_list[idx]], env_worker=env_worker),
-                                timeout=self.step_timeout
-                            )
-                        except asyncio.TimeoutError:
-                            pass
-                        
-                        # Capture env state immediately after this agent's step
-                        env_state_snapshot = envs_list[idx].state.to_dict_compact(agent_name=agent_name) if hasattr(envs_list[idx].state, 'to_dict_compact') else None
-                        response_results[idx]['env_state_snapshot'] = env_state_snapshot
-                
-                # After all agents have completed their step in this turn, calculate rewards
-                for agent_idx, agent_name in enumerate(self.turn_order):   
-                    for idx in range(len(rollout_idx_list)):
-                        current_agent = agent_groups[idx][agent_idx]
-                        env = envs_list[idx]
-                        
-                        if hasattr(current_agent, 'calculate_reward'):
-                            current_agent.calculate_reward(env)
-                        else:
-                            if hasattr(current_agent, 'agent_reward'):
-                                if not hasattr(current_agent, 'reward_history'):
-                                    current_agent.reward_history = []
-                                current_agent.reward_history.append(current_agent.agent_reward)
-                    
-                    for idx in range(len(rollout_idx_list)):
-                        result = response_results[idx]
-                        rollout_idx = result['rollout_idx']
-                        output_dpr = result['output_dpr']
-                        response = result['response']
-                        prompt = result['prompt']
-                        policy_name = result['policy_name']
-                        
-                        current_agent = agent_groups[idx][agent_idx]
-                        env = envs_list[idx]
-                        # Use captured state snapshot for this specific agent
-                        env_state_compact = result.get('env_state_snapshot') or (env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else env.state)
-
-                        # Include image data in logging if multimodal is enabled
-                        agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
-                        image_info = None
-                        if agent_enable_multimodal:
-                            if hasattr(current_agent, 'get_image_data'):
-                                img_data = current_agent.get_image_data()
-                                if img_data is not None:
-                                    image_info = {"has_image": True, "type": type(img_data).__name__}
-                            elif hasattr(env, 'get_image_data'):
-                                img_data = env.get_image_data()
-                                if img_data is not None:
-                                    image_info = {"has_image": True, "type": type(img_data).__name__}
-
-                        self.multi_logger.log_env_agent_info(
-                            self.mode, env_idx, rollout_idx, turn_idx + 1, agent_name,
-                            "Trajectory information updated",
-                            {
-                                "agent_prompt": {"text": prompt if prompt is not None else "", "image": image_info},
-                                "agent_response": response,
-                                "env_state": env_state_compact,
-                            }
+                        await asyncio.wait_for(
+                            current_agent.step(self.envs[rollout_idx_list[idx]], env_worker=env_worker),
+                            timeout=self.step_timeout
                         )
-
-                        if output_dpr is not None:
-                            output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
-                            output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
-                            
-                            if self.lora_differ_mode and agent_name in self.agent_lora_mapping:
-                                batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
-                                lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
-                                output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
-                            
-                            if trajectory_per_task_dict[policy_name].batch is None:
-                                trajectory_per_task_dict[policy_name] = output_dpr
-                            else:
-                                trajectory_per_task_dict[policy_name] = DataProto.concat([
-                                    trajectory_per_task_dict[policy_name], 
-                                    output_dpr
-                                ])
+                    except asyncio.TimeoutError:
+                        pass
                     
-                    rollout_score_idx = []
-                    for idx in range(len(rollout_idx_list)):
-                        current_agent = agent_groups[idx][agent_idx]
-                        agent_reward = current_agent.agent_reward if current_agent.agent_reward is not None else 0
-                        rollout_score_idx.append(agent_reward)
+                    # Capture env state immediately after this agent's step
+                    env_state_snapshot = envs_list[idx].state.to_dict_compact(agent_name=agent_name) if hasattr(envs_list[idx].state, 'to_dict_compact') else None
+                    response_results[idx]['env_state_snapshot'] = env_state_snapshot
+            
+            # After all agents have completed their step in this turn, calculate rewards
+            for agent_idx, agent_name, response_results in all_agents_results:
+                for idx in range(len(rollout_idx_list)):
+                    current_agent = agent_groups[idx][agent_idx]
+                    env = envs_list[idx]
+                    current_agent.calculate_reward(env)
+                for idx in range(len(rollout_idx_list)):
+                    result = response_results[idx]
+                    rollout_idx = result['rollout_idx']
+                    output_dpr = result['output_dpr']
+                    response = result['response']
+                    prompt = result['prompt']
+                    policy_name = result['policy_name']
                     
-                    try:
-                        if if_greedy:
-                            best_i = int(np.argmax(np.asarray(rollout_score_idx)))
+                    current_agent = agent_groups[idx][agent_idx]
+                    env = envs_list[idx]
+                    if output_dpr is not None:
+                        output_dpr.non_tensor_batch["reward"] = np.array([current_agent.agent_reward])
+                        output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
+                        
+                        # Record lora_ids only when LoRA is actually used for generation
+                        if self.lora_differ_mode:
+                            batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
+                            lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
+                            output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
+                        
+                        if trajectory_per_task_dict[policy_name].batch is None:
+                            trajectory_per_task_dict[policy_name] = output_dpr
                         else:
-                            best_i = 0
-                    except Exception:
+                            trajectory_per_task_dict[policy_name] = DataProto.concat([
+                                trajectory_per_task_dict[policy_name], 
+                                output_dpr
+                            ])
+                
+                rollout_score_idx = []
+                for idx in range(len(rollout_idx_list)):
+                    current_agent = agent_groups[idx][agent_idx]
+                    agent_reward = current_agent.agent_reward if current_agent.agent_reward is not None else 0
+                    rollout_score_idx.append(agent_reward)
+                
+                try:
+                    if if_greedy:
+                        best_i = int(np.argmax(np.asarray(rollout_score_idx)))
+                    else:
                         best_i = 0
-                    
-                    selected_env = envs_list[best_i]
-                    selected_agent_group = agent_groups[best_i]
-                    
-                    task_done = selected_env.done
-                    
-                    envs_list = [copy.deepcopy(selected_env) for _ in envs_list]
-                    agent_groups = [copy.deepcopy(selected_agent_group) for _ in agent_groups]
-                    
-                    if task_done:
-                        break
+                except Exception:
+                    best_i = 0
+                
+                selected_env = envs_list[best_i]
+                selected_agent_group = agent_groups[best_i]
+                
+                task_done = selected_env.done
+                
+                envs_list = [copy.deepcopy(selected_env) for _ in envs_list]
+                agent_groups = [copy.deepcopy(selected_agent_group) for _ in agent_groups]
+                
+                if task_done:
+                    break
             
             if task_done:
                 break
@@ -1263,7 +954,11 @@ class MultiAgentsExecutionEngine:
         # Log Ray status after concurrent execution
         self.multi_logger.log_ray_status(mode=self.mode, context="after_concurrent_batch")
         
+        import sys
+        sys.stdout.flush()
         concurrent_timer.end("Concurrent rollouts completed successfully")
+
+        sys.stdout.flush()
         return aggregated_results
 
 

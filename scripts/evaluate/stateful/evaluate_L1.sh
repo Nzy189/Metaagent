@@ -61,6 +61,9 @@ MAX_LEN=32768
 MAX_WAIT=180  # Maximum wait time in seconds
 CHECK_INTERVAL=2  # Check interval in seconds
 
+# Shutdown behavior
+VLLM_SHUTDOWN=true  # If true, vLLM will be shut down when script exits; if false, vLLM will remain running
+
 # Multi-GPU configuration
 # If TP_SIZE > 1, each model will use TP_SIZE consecutive GPUs
 # Example: TP_SIZE=2, GPU_START_ID=0 -> model0 uses GPU 0,1; model1 uses GPU 2,3
@@ -98,22 +101,28 @@ CLEANUP_DONE=0
 
 cleanup() {
     if [ $CLEANUP_DONE -eq 1 ]; then
-        echo "Cleanup already in progress, force exiting..."
         exit 1
     fi
     CLEANUP_DONE=1
     
-    echo "Cleaning up..."
-    for pid in "${VLLM_PIDS[@]}" "${PROXY_PIDS[@]}"; do 
+    # Always cleanup proxy processes
+    for pid in "${PROXY_PIDS[@]}"; do 
         kill $pid 2>/dev/null || true
     done
-    sleep 1
     for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-        timeout 2 lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
         timeout 2 lsof -ti:$((BASE_PROXY_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
     done
     
-    echo "Cleanup completed"
+    # Only cleanup vLLM if VLLM_SHUTDOWN is true
+    if [ "$VLLM_SHUTDOWN" = true ]; then
+        echo "Shutting down vLLM..."
+        for pid in "${VLLM_PIDS[@]}"; do 
+            kill $pid 2>/dev/null || true
+        done
+        for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
+            timeout 2 lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+        done
+    fi
 }
 trap cleanup EXIT INT TERM
 

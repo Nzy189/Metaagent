@@ -32,6 +32,7 @@ multi_agent_interaction:
   
   # Whether agents can see other agents' actions
   shared_observation: true
+  parallel: true
 
 # Shared model configurations
 models:

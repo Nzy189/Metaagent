@@ -55,6 +55,7 @@ multi_agent_interaction:
   
   # Number of agents that interact per episode
   num_interacting_agents: 1
+  parallel: true
       
 
 

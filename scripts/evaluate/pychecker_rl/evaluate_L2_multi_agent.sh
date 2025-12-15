@@ -71,25 +71,32 @@ echo
 
 declare -a VLLM_PIDS PROXY_PIDS
 CLEANUP_DONE=0
+VLLM_SHUTDOWN=true  # If true, vLLM will be shut down when script exits; if false, vLLM will remain running
 
 cleanup() {
     if [ $CLEANUP_DONE -eq 1 ]; then
-        echo "Cleanup already in progress, force exiting..."
         exit 1
     fi
     CLEANUP_DONE=1
     
-    echo "Cleaning up..."
-    for pid in "${VLLM_PIDS[@]}" "${PROXY_PIDS[@]}"; do 
+    # Always cleanup proxy processes
+    for pid in "${PROXY_PIDS[@]}"; do 
         kill $pid 2>/dev/null || true
     done
-    sleep 1
     for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-        timeout 2 lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
         timeout 2 lsof -ti:$((BASE_PROXY_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
     done
     
-    echo "Cleanup completed"
+    # Only cleanup vLLM if VLLM_SHUTDOWN is true
+    if [ "$VLLM_SHUTDOWN" = true ]; then
+        echo "Shutting down vLLM..."
+        for pid in "${VLLM_PIDS[@]}"; do 
+            kill $pid 2>/dev/null || true
+        done
+        for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
+            timeout 2 lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+        done
+    fi
 }
 trap cleanup EXIT INT TERM
 

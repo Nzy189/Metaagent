@@ -140,6 +140,7 @@ class AsyncvLLMServer(AsyncServerBase):
         self.vllm_dp_rank = vllm_dp_rank
         self.wg_prefix = wg_prefix
         self.engine: AsyncLLM = None
+        self._last_lora_sync_count = 0  # Track number of LoRAs synced
 
     async def init_engine(self):
         """Init vLLM AsyncLLM engine."""
@@ -167,6 +168,16 @@ class AsyncvLLMServer(AsyncServerBase):
                 kwargs[k] = config.get(k)
         print(f"override_generation_config: {kwargs}")
 
+        # Build LoRA kwargs if enabled
+        # Note: vLLM v1 doesn't use 'enable_lora', LoRA is enabled if max_loras > 0
+        lora_kwargs = {}
+        if config.get("enable_lora", True) or config.get("max_loras", 0) > 0:
+            lora_kwargs = {
+                "enable_lora": True,
+                "max_loras": config.get("max_loras", 1),
+                "max_lora_rank": config.get("max_lora_rank", 64),
+            }
+        
         engine_args = AsyncEngineArgs(
             model=local_path,
             enable_sleep_mode=True,
@@ -189,6 +200,7 @@ class AsyncvLLMServer(AsyncServerBase):
             seed=self.vllm_dp_rank,
             max_num_seqs=256,
             hf_overrides={"max_position_embeddings": max_model_len},
+            **lora_kwargs,
         )
 
         # init async llm engine
@@ -197,10 +209,51 @@ class AsyncvLLMServer(AsyncServerBase):
         vllm_config.instance_id = f"{namespace}:{self.wg_prefix}:{self.vllm_dp_size}:{self.vllm_dp_rank}"
         self.engine = AsyncLLM.from_vllm_config(vllm_config)
 
+        # Pre-allocate LoRA adapter capacity if LoRA is enabled
+        # This reserves memory capacity in vLLM's LoRA manager for dynamic loading
+        if lora_kwargs:
+            num_loras = lora_kwargs.get("max_loras", 1)
+            max_lora_rank = lora_kwargs.get('max_lora_rank', 64)
+            logger.info(f"LoRA enabled with max_loras={num_loras}, max_lora_rank={max_lora_rank}")
+            logger.info(f"vLLM v1 engine pre-allocated memory capacity for {num_loras} LoRA adapters")
+            logger.info(f"LoRA adapters will be dynamically loaded via add_lora() before training")
+            logger.info(f"Expected LoRA naming convention: lora_1, lora_2, ..., lora_{num_loras}")
+            
+            # Store LoRA configuration for later use
+            self.num_loras = num_loras
+            self.max_lora_rank = max_lora_rank
+            self.lora_enabled = True
+            
+            # Track loaded LoRA adapters
+            self.loaded_lora_ids = set()
+        else:
+            self.num_loras = 0
+            self.max_lora_rank = 0
+            self.lora_enabled = False
+            self.loaded_lora_ids = set()
+            logger.info("LoRA is not enabled for this engine")
+
         # build serving chat
         model_config = self.engine.model_config
         BASE_MODEL_PATHS = [BaseModelPath(name=model_name, model_path=model_path)]
-        models = OpenAIServingModels(self.engine, model_config, BASE_MODEL_PATHS)
+        self.openai_serving_models = OpenAIServingModels(self.engine, model_config, BASE_MODEL_PATHS)
+
+        # Pre-register LoRA adapters in OpenAI API layer
+        # This allows API requests with model="lora_1", "lora_2", etc. to pass validation
+        # The actual LoRA weights are loaded in the Worker layer via worker.add_lora()
+        if self.lora_enabled and self.num_loras > 0:
+            from vllm.lora.request import LoRARequest
+            for lora_id in range(1, self.num_loras + 1):
+                lora_name = f"lora_{lora_id}"
+                lora_request = LoRARequest(
+                    lora_name=lora_name,
+                    lora_int_id=lora_id,
+                    lora_path=f"/placeholder/lora_{lora_id}"  # Placeholder path, not used
+                )
+                self.openai_serving_models.lora_requests[lora_name] = lora_request
+                self.loaded_lora_ids.add(lora_id)
+            print(f"[AsyncvLLMServer] Pre-registered {self.num_loras} LoRA adapters in OpenAI API layer: {list(self.openai_serving_models.lora_requests.keys())}")
+
         if config.chat_template:
             with open(config.chat_template, "r", encoding="utf-8") as f:
                 chat_template_str = f.read()
@@ -210,7 +263,7 @@ class AsyncvLLMServer(AsyncServerBase):
         self.openai_serving_chat = OpenAIServingChat(
             self.engine,
             model_config,
-            models,
+            self.openai_serving_models,
             "assistant",
             request_logger=RequestLogger(max_log_len=4096) if not config.disable_logging else None,
             chat_template=chat_template_str,
@@ -221,12 +274,21 @@ class AsyncvLLMServer(AsyncServerBase):
         self.openai_serving_completion = OpenAIServingCompletion(
             self.engine,
             model_config,
-            models,
+            self.openai_serving_models,
             request_logger=RequestLogger(max_log_len=4096) if not config.disable_logging else None,
             return_tokens_as_token_ids=True,
         )
 
         print(f"Async vLLM Server running at {await self.get_server_address()}")
+
+    async def show_available_models(self):
+        """List all available models including base model and loaded LoRA adapters.
+
+        Returns:
+            JSONResponse: Response containing list of all available models
+        """
+        models = await self.openai_serving_models.show_available_models()
+        return JSONResponse(content=models.model_dump())
 
     async def chat_completion(self, raw_request: Request):
         """OpenAI-compatible HTTP endpoint.
@@ -255,7 +317,7 @@ class AsyncvLLMServer(AsyncServerBase):
         generator = await self.openai_serving_completion.create_completion(request, raw_request)
 
         if isinstance(generator, ErrorResponse):
-            return JSONResponse(content=generator.model_dump(), status_code=generator.code)
+            return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
         if request.stream:
             return StreamingResponse(content=generator, media_type="text/event-stream")
         else:
@@ -295,3 +357,5 @@ class AsyncvLLMServer(AsyncServerBase):
         # TODO: https://github.com/vllm-project/vllm/issues/17103
         await self.engine.reset_prefix_cache()
         await self.engine.sleep()
+
+   
