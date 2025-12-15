@@ -3,7 +3,7 @@
 <div align="center">
 <img src="figs/logo.png" alt="PettingLLMs Logo" width="400">
 <a href="figs/wechat.jpg">
-  <img src="https://img.shields.io/badge/Wechat-AgentFlow-07C160.svg?logo=wechat" alt="Wechat AgentFlow">
+  <img src="https://img.shields.io/badge/Wechat-PettingLLMs-07C160.svg?logo=wechat" alt="Wechat PettingLLMs">
 </a>
 </div>
 
