@@ -19,7 +19,7 @@
   <a href="https://pettingllms-docs.readthedocs.io/en/latest/">📖 Documentation</a> •
   <a href="https://pettingllms-docs.readthedocs.io/en/latest/About_us/">👥 About Us</a>•
   <a href="figs/wechat.jpg">
-  <img src="https://img.shields.io/badge/Wechat-PettingLLMs-07C160.svg?logo=wechat" alt="Wechat PettingLLMs">
+  <img src="https://img.shields.io/badge/Wechat-PettingLLMs-07C160.svg?logo=wechat" alt="Wechat "> PettingLLMs
 </a>
   
 </p>
