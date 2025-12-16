@@ -142,7 +142,8 @@ class FSDPVLLMShardingManager(BaseShardingManager):
                 if self.layered_summon:
                     if not self.base_sync_done:
                         raise ValueError("To use layered_summon, you must make sure base-model is preloaded in vllm, e.g. let rollout.load_format=safetensors")
-                    lora_params = layered_summon_lora_params(self.module)
+                    # Pass adapter_name to extract the correct adapter's parameters
+                    lora_params = layered_summon_lora_params(self.module, adapter_name=adapter_name if adapter_name else "default")
                 else:
                     with FSDP.summon_full_params(self.module, writeback=False):
                         if self.base_sync_done:

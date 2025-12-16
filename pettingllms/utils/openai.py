@@ -5,6 +5,7 @@ Patch autogen and langchain LLM engines to use llm_async_generate from async_gen
 """
 
 import asyncio
+import contextvars
 import functools
 from typing import Dict, List, Optional, Union, Callable
 import random
@@ -180,13 +181,13 @@ _agent_policy_mapping: Dict[str, str] = {}
 _agent_address_mapping: Dict[str, str] = {}  # Maps agent_name -> vLLM address
 _agent_lora_mapping: Dict[str, str] = {}  # Maps agent_name -> lora_id
 _agent_config_dict: Dict[str, any] = {}  # Maps agent_name -> agent_config
-_current_hop_idx: int = 0  # Renamed from turn_idx to hop_idx
-_current_rollout_idx: int = 0
-_current_env_idx: int = 0
 _patched: bool = False
 
-# Trajectory storage: {(rollout_idx, hop_idx, policy_name): (output_dpr, response)}
-_trajectory_store: Dict[tuple, tuple] = {}
+# Per-flow state (isolated per asyncio task)
+_hop_idx_var: contextvars.ContextVar[int] = contextvars.ContextVar("hop_idx", default=0)
+_rollout_idx_var: contextvars.ContextVar[int] = contextvars.ContextVar("rollout_idx", default=0)
+_env_idx_var: contextvars.ContextVar[int] = contextvars.ContextVar("env_idx", default=0)
+_trajectory_store_var: contextvars.ContextVar[Optional[Dict[tuple, tuple]]] = contextvars.ContextVar("trajectory_store", default=None)
 
 
 def init_patch_context(
@@ -230,39 +231,61 @@ def init_patch_context(
 
 def get_rollout_idx() -> int:
     """Get current rollout index."""
-    return _current_rollout_idx
+    return _rollout_idx_var.get()
 
 
 def get_env_idx() -> int:
     """Get current environment index."""
-    return _current_env_idx
+    return _env_idx_var.get()
 
 
 def get_hop_idx() -> int:
     """Get current hop index (incremented each time an LLM request is made)."""
-    return _current_hop_idx
+    return _hop_idx_var.get()
 
 
 def increment_hop_idx():
     """Increment hop index when an LLM request is made."""
-    global _current_hop_idx
-    _current_hop_idx += 1
-    print(f"[Patch] Hop index incremented to {_current_hop_idx}")
+    current_idx = _hop_idx_var.get()
+    next_idx = current_idx + 1
+    _hop_idx_var.set(next_idx)
+    rollout_idx = get_rollout_idx()
+    print(f"[Patch] Hop index incremented from {current_idx} to {next_idx} for rollout={rollout_idx}")
 
 
 def reset_hop_idx():
     """Reset hop index to 0 for new graph execution."""
-    global _current_hop_idx, _trajectory_store
-    _current_hop_idx = 0
-    _trajectory_store = {}  # Clear trajectory store for new rollout
-    print(f"[Patch] Hop index reset to 0, trajectory store cleared")
+    rollout_idx = get_rollout_idx()
+    env_idx = get_env_idx()
+    _hop_idx_var.set(0)
+    _trajectory_store_var.set({})  # Clear trajectory store for new rollout
+    print(f"[Patch] Hop index reset to 0 for rollout={rollout_idx}, env={env_idx}, trajectory store cleared")
 
 
 def clear_trajectory_store():
     """Clear the trajectory store."""
-    global _trajectory_store
-    _trajectory_store = {}
+    _trajectory_store_var.set({})
     print(f"[Patch] Trajectory store cleared")
+
+
+def start_new_flow_context(rollout_idx: int, env_idx: int):
+    """
+    Initialize per-flow context (rollout/env) and reset hop/trajectory state for this task.
+    Each rollout tracks its own hop count independently.
+    """
+    _rollout_idx_var.set(rollout_idx)
+    _env_idx_var.set(env_idx)
+    _hop_idx_var.set(0)
+    _trajectory_store_var.set({})
+    print(f"[Patch] New flow context started: rollout={rollout_idx}, env={env_idx}, hop=0")
+
+
+def _get_trajectory_store_ref() -> Dict[tuple, tuple]:
+    store = _trajectory_store_var.get()
+    if store is None:
+        store = {}
+        _trajectory_store_var.set(store)
+    return store
 
 
 def get_trajectory_store() -> Dict[tuple, tuple]:
@@ -272,7 +295,7 @@ def get_trajectory_store() -> Dict[tuple, tuple]:
     Returns:
         Dict mapping (rollout_idx, hop_idx, policy_name) to (output_dpr, response)
     """
-    return _trajectory_store.copy()
+    return _get_trajectory_store_ref().copy()
 
 
 def get_server_address(policy_name: str) -> str:
@@ -330,12 +353,15 @@ async def _patched_generate(
     processor = _processor_dict.get(policy_name)
     ppo_config = _ppo_trainer_config_dict[policy_name]
 
-    # Get hop/turn/rollout/env indices
+    # Get current hop index and increment it BEFORE generation
+    # This ensures each LLM call gets a unique hop_idx for this rollout
     hop_idx = get_hop_idx()
+    increment_hop_idx()
+
     rollout_idx = get_rollout_idx()
     env_idx = get_env_idx()
 
-    print(f"[Patch] Starting LLM request: rollout={rollout_idx}, hop={hop_idx}, agent={agent_name}")
+    print(f"[Patch] Starting LLM request: rollout={rollout_idx}, env={env_idx}, hop={hop_idx}, agent={agent_name}")
 
     # Convert messages to prompt
     if isinstance(messages, list) and len(messages) > 0:
@@ -423,13 +449,10 @@ async def _patched_generate(
         output_dpr.non_tensor_batch["hop_idx"] = np.array([hop_idx], dtype=np.int32)
 
         # Store in trajectory store
-        global _trajectory_store
+        _trajectory_store = _get_trajectory_store_ref()
         key = (rollout_idx, hop_idx, policy_name)
         _trajectory_store[key] = (output_dpr, response)
-        print(f"[Patch] Stored trajectory for key={key}, hop_idx={hop_idx}, prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}")
-
-    # Increment hop index after generation (this represents completing one hop)
-    increment_hop_idx()
+        print(f"[Patch] Stored trajectory for key={key}, rollout={rollout_idx}, env={env_idx}, hop={hop_idx}, agent={agent_name}, prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}")
 
     return response, prompt_tokens, completion_tokens
 
@@ -716,10 +739,14 @@ def wrap_autogen_graph(graph_callable):
     """
     @functools.wraps(graph_callable)
     async def wrapped_graph(*args, **kwargs):
+        # Reset hop counter for this rollout
         reset_hop_idx()
-        print(f"[Patch] Starting autogen graph execution")
+        rollout_idx = get_rollout_idx()
+        env_idx = get_env_idx()
+        print(f"[Patch] Starting autogen graph execution for rollout={rollout_idx}, env={env_idx}")
         result = await graph_callable(*args, **kwargs)
-        print(f"[Patch] Graph completed after {get_hop_idx()} hops (LLM requests)")
+        final_hops = get_hop_idx()
+        print(f"[Patch] Graph completed after {final_hops} hops (LLM requests) for rollout={rollout_idx}, env={env_idx}")
         return result
 
     return wrapped_graph
