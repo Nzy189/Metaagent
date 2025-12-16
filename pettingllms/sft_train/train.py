@@ -218,33 +218,29 @@ class SFTDataGenerator:
         Returns:
             Generated response text
         """
-        if self.use_api and self.api_client:
+        if self.use_api and self.api_client is not None:
             try:
                 # Prepare messages for API
                 messages = []
 
-                # Add system prompt if available in agent config
-                if hasattr(agent_config, 'system_prompt'):
-                    system_prompt = agent_config.system_prompt
-                    if system_prompt:
-                        messages.append({"role": "system", "content": system_prompt})
+                
 
                 # Add user prompt
                 messages.append({"role": "user", "content": prompt})
 
-                # Generate response using API
+                # Generate response using API client
+                # Model name is already configured in the API client, no need to pass it
                 response = await self.api_client.generate(messages)
 
                 logger.debug(f"API response received (length: {len(response)})")
                 return response
 
             except Exception as e:
-                logger.error(f"Error getting API response: {e}")
+                logger.error(f"LLM API inference failed: {e}")
                 return ""
         else:
-            # Placeholder for local model inference
-            # This should call the same LLM API used in training
-            logger.warning("Local model inference not implemented, returning empty string")
+            
+            logger.warning("use_api=False or API client not initialized; returning empty response")
             return ""
 
     async def collect_data(self, num_episodes: int):
