@@ -52,6 +52,12 @@ class SFTDataGenerator:
         self.processor_dict = {}
         self._load_models()
 
+        # Initialize API client if API mode is enabled
+        self.use_api = getattr(config.training, 'use_api', False)
+        self.api_client = None
+        if self.use_api:
+            self._init_api_client()
+
         # Initialize data collector
         collect_mode = getattr(config.training, 'collect_mode', 'env')
         self.data_collector = SFTDataCollector(
@@ -65,6 +71,9 @@ class SFTDataGenerator:
             logger.info("  - Will collect data only when env.success is True")
         else:
             logger.info("  - Will collect data when individual agent.success is True")
+
+        if self.use_api:
+            logger.info(f"API mode enabled: {self.config.training.api_type}")
 
     def _load_models(self):
         """Load tokenizers and processors for each model"""
@@ -84,6 +93,35 @@ class SFTDataGenerator:
                 self.tokenizer_dict[model_name] = tokenizer
                 if getattr(self.config, 'multi_modal', False):
                     self.processor_dict[model_name] = processor
+
+    def _init_api_client(self):
+        """Initialize API client for external LLM APIs"""
+        from pettingllms.utils.api_client import create_api_client
+
+        api_type = getattr(self.config.training, 'api_type', 'openai')
+        api_model = getattr(self.config.training, 'api_model', None)
+        api_base_url = getattr(self.config.training, 'api_base_url', None)
+        api_temperature = getattr(self.config.training, 'api_temperature', 0.7)
+        api_max_tokens = getattr(self.config.training, 'api_max_tokens', 2048)
+        api_timeout = getattr(self.config.training, 'api_timeout', 60.0)
+
+        logger.info(f"Initializing API client: {api_type}")
+        logger.info(f"  Model: {api_model}")
+        logger.info(f"  Temperature: {api_temperature}")
+        logger.info(f"  Max tokens: {api_max_tokens}")
+        if api_base_url:
+            logger.info(f"  Base URL: {api_base_url}")
+
+        self.api_client = create_api_client(
+            api_type=api_type,
+            model=api_model,
+            base_url=api_base_url if api_base_url else None,
+            temperature=api_temperature,
+            max_tokens=api_max_tokens,
+            timeout=api_timeout
+        )
+
+        logger.info(f"API client initialized successfully")
 
     async def generate_rollout(self, env_idx: int, rollout_idx: int):
         """
@@ -134,9 +172,8 @@ class SFTDataGenerator:
                 else:
                     prompt_text = str(prompt)
 
-                # Get LLM response (placeholder - in real scenario, call LLM API)
-                # For SFT collection, you would integrate with your LLM inference here
-                response = self._get_llm_response(prompt_text, agent_config)
+                # Get LLM response (using API client if enabled)
+                response = await self._get_llm_response(prompt_text, agent_config)
 
                 # Update agent from model response
                 agent.update_from_model(response)
@@ -168,16 +205,47 @@ class SFTDataGenerator:
 
         return env.success
 
-    def _get_llm_response(self, prompt: str, agent_config) -> str:
+    async def _get_llm_response(self, prompt: str, agent_config) -> str:
         """
         Get LLM response for the given prompt
 
-        In real implementation, this would call your LLM API
-        For now, returns empty string as placeholder
+        Uses API client if API mode is enabled, otherwise returns empty string
+
+        Args:
+            prompt: User prompt text
+            agent_config: Agent configuration
+
+        Returns:
+            Generated response text
         """
-        # TODO: Integrate with LLM inference
-        # This should call the same LLM API used in training
-        return ""
+        if self.use_api and self.api_client:
+            try:
+                # Prepare messages for API
+                messages = []
+
+                # Add system prompt if available in agent config
+                if hasattr(agent_config, 'system_prompt'):
+                    system_prompt = agent_config.system_prompt
+                    if system_prompt:
+                        messages.append({"role": "system", "content": system_prompt})
+
+                # Add user prompt
+                messages.append({"role": "user", "content": prompt})
+
+                # Generate response using API
+                response = await self.api_client.generate(messages)
+
+                logger.debug(f"API response received (length: {len(response)})")
+                return response
+
+            except Exception as e:
+                logger.error(f"Error getting API response: {e}")
+                return ""
+        else:
+            # Placeholder for local model inference
+            # This should call the same LLM API used in training
+            logger.warning("Local model inference not implemented, returning empty string")
+            return ""
 
     async def collect_data(self, num_episodes: int):
         """

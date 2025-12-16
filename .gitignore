@@ -191,7 +191,7 @@ cython_debug/
 
 # DS_Store
 .DS_Store
-
+scripts/evaluate/**_exp
 scripts/train/**_exp
 data/.cache/
 **/cache/

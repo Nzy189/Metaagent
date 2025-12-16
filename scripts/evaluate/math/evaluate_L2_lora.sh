@@ -1,21 +1,3 @@
-#!/bin/bash
-# evaluate.sh - vLLM Launch and Evaluation Script
-# 
-# Usage: bash scripts/evaluate/math/evaluate_L1.sh
-#
-# Multi-GPU Examples:
-#   Single GPU per model (default):
-#     TP_SIZE=1, GPU_START_ID=0, 2 models → uses GPU 0, 1
-#   
-#   Two GPUs per model (Tensor Parallel):
-#     TP_SIZE=2, GPU_START_ID=0, 2 models → uses GPU 0-1, 2-3
-#   
-#   Four GPUs per model:
-#     TP_SIZE=4, GPU_START_ID=0, 1 model → uses GPU 0-3
-#   
-#   Start from GPU 2:
-#     TP_SIZE=1, GPU_START_ID=2, 2 models → uses GPU 2, 3
-#
 set -e
 
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
@@ -34,19 +16,21 @@ export LD_LIBRARY_PATH=$CUDA_HOME/targets/x86_64-linux/lib:$CUDA_HOME/lib64:$LD_
 # ============================================
 # Configuration - Edit these parameters
 # ============================================
-MODEL_PATHS=(
-    "your model path"
-)
+# Base model path (required)
+BASE_MODEL_PATH="your base model path"
 
-# LoRA Configuration
-# Set to empty string if not using LoRA, or provide the path to checkpoint
-# Example: "checkpoint/20241013/math_eval_single_policy/shared_model/global_step_40/actor"
-LORA_CHECKPOINT_PATH=""
-# If LORA_CHECKPOINT_PATH is set and contains multiple LoRA adapters,
-# each agent will automatically load its corresponding LoRA adapter:
-#   - agent_reasoning_generator_lora_0
-#   - agent_tool_generator_lora_1
-#   etc.
+# LoRA adapter paths (required for LoRA evaluation)
+# Each agent will load its corresponding LoRA adapter
+# The number of LoRA paths must match the number of agents in the config
+LORA_PATHS=(
+    "path/to/lora_adapter_0"
+    "path/to/lora_adapter_1"
+)
+# Example:
+# LORA_PATHS=(
+#     "checkpoint/math_L2_lora/shared_model/global_step_100/lora_adapter_0"
+#     "checkpoint/math_L2_lora/shared_model/global_step_100/lora_adapter_1"
+# )
 
 # Assuming execution from repository root
 REPO_ROOT="$(pwd)"
@@ -78,23 +62,29 @@ CHECK_INTERVAL=2  # Check interval in seconds
 # Example: TP_SIZE=2, GPU_START_ID=0 -> model0 uses GPU 0,1; model1 uses GPU 2,3
 # ============================================
 
-echo "Starting with ${#MODEL_PATHS[@]} models"
+echo "Starting LoRA Evaluation"
+echo "=========================================="
+echo "Base Model: ${BASE_MODEL_PATH}"
+echo "Number of LoRA adapters: ${#LORA_PATHS[@]}"
+for ((i=0; i<${#LORA_PATHS[@]}; i++)); do
+    echo "  LoRA $i: ${LORA_PATHS[$i]}"
+done
 echo "=========================================="
 echo "Multi-GPU Configuration:"
 echo "  TP_SIZE: ${TP_SIZE}"
 echo "  GPU_START_ID: ${GPU_START_ID}"
-echo "  Total GPUs required: $((${#MODEL_PATHS[@]} * TP_SIZE))"
+echo "  Total GPUs required: ${TP_SIZE} (single base model with LoRA)"
 echo "=========================================="
 
 # Check GPU availability
 if command -v nvidia-smi &> /dev/null; then
     AVAILABLE_GPUS=$(nvidia-smi --list-gpus | wc -l)
-    REQUIRED_GPUS=$((GPU_START_ID + ${#MODEL_PATHS[@]} * TP_SIZE))
+    REQUIRED_GPUS=$((GPU_START_ID + TP_SIZE))
     echo "Available GPUs: ${AVAILABLE_GPUS}"
     echo "Required GPUs: ${REQUIRED_GPUS}"
     if [ $REQUIRED_GPUS -gt $AVAILABLE_GPUS ]; then
         echo "ERROR: Not enough GPUs available!"
-        echo "  Required: ${REQUIRED_GPUS} (GPU_START_ID=${GPU_START_ID} + ${#MODEL_PATHS[@]} models × ${TP_SIZE} GPUs/model)"
+        echo "  Required: ${REQUIRED_GPUS} (GPU_START_ID=${GPU_START_ID} + ${TP_SIZE} GPUs for base model)"
         echo "  Available: ${AVAILABLE_GPUS}"
         exit 1
     fi
@@ -114,17 +104,15 @@ cleanup() {
         exit 1
     fi
     CLEANUP_DONE=1
-    
+
     echo "Cleaning up..."
-    for pid in "${VLLM_PIDS[@]}" "${PROXY_PIDS[@]}"; do 
+    for pid in "${VLLM_PIDS[@]}" "${PROXY_PIDS[@]}"; do
         kill $pid 2>/dev/null || true
     done
     sleep 1
-    for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-        timeout 2 lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-        timeout 2 lsof -ti:$((BASE_PROXY_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-    done
-    
+    timeout 2 lsof -ti:$BASE_VLLM_PORT 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+    timeout 2 lsof -ti:$BASE_PROXY_PORT 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+
     echo "Cleanup completed"
 }
 trap cleanup EXIT INT TERM
@@ -153,154 +141,164 @@ wait_for_endpoint() {
 
 # Kill existing processes
 echo "Cleaning existing processes..."
-for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-    timeout 2 lsof -ti:$((BASE_VLLM_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-    timeout 2 lsof -ti:$((BASE_PROXY_PORT + i)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-done
+timeout 2 lsof -ti:$((BASE_VLLM_PORT)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+timeout 2 lsof -ti:$((BASE_PROXY_PORT)) 2>/dev/null | xargs -r kill -9 2>/dev/null || true
 sleep 1
 
-# Launch vLLM services
-echo "Launching vLLM services..."
+# Launch vLLM service with LoRA support
+echo "Launching vLLM service with LoRA adapters..."
 echo "Configuration: TP_SIZE=${TP_SIZE}, GPU_START_ID=${GPU_START_ID}"
-echo "Total GPUs required: $((${#MODEL_PATHS[@]} * TP_SIZE))"
 echo
 
-for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-    MODEL_PATH="${MODEL_PATHS[$i]}"
-    # Generate model name: if contains "checkpoint", use full path; otherwise use last 2 segments
-    if [[ "$MODEL_PATH" == *"checkpoint"* ]]; then
-        SERVED_MODEL_NAME="$MODEL_PATH"
+# Generate model name for base model
+if [[ "$BASE_MODEL_PATH" == *"checkpoint"* ]]; then
+    SERVED_MODEL_NAME="$BASE_MODEL_PATH"
+else
+    SERVED_MODEL_NAME="$(echo "$BASE_MODEL_PATH" | rev | cut -d'/' -f1-2 | rev)"
+fi
+
+# Build CUDA_VISIBLE_DEVICES string
+if [ $TP_SIZE -eq 1 ]; then
+    GPU_IDS="$GPU_START_ID"
+else
+    GPU_IDS="$GPU_START_ID"
+    for ((g=1; g<$TP_SIZE; g++)); do
+        GPU_IDS="$GPU_IDS,$((GPU_START_ID + g))"
+    done
+fi
+
+# Build LoRA modules arguments (vLLM expects one --lora-modules per adapter)
+LORA_MODULES_ARG=""          # for logging only
+LORA_MODULES_ARGS=()         # actual CLI args
+for ((i=0; i<${#LORA_PATHS[@]}; i++)); do
+    name="lora_${i}"
+    path="${LORA_PATHS[$i]}"
+    if [ -z "$LORA_MODULES_ARG" ]; then
+        LORA_MODULES_ARG="${name}=${path}"
     else
-        SERVED_MODEL_NAME="$(echo "$MODEL_PATH" | rev | cut -d'/' -f1-2 | rev)"
+        LORA_MODULES_ARG="${LORA_MODULES_ARG},${name}=${path}"
     fi
-    
-    # Calculate GPU IDs for this model
-    FIRST_GPU=$((GPU_START_ID + i * TP_SIZE))
-    LAST_GPU=$((FIRST_GPU + TP_SIZE - 1))
-    
-    # Build CUDA_VISIBLE_DEVICES string
-    if [ $TP_SIZE -eq 1 ]; then
-        GPU_IDS="$FIRST_GPU"
+    LORA_MODULES_ARGS+=(--lora-modules "${name}=${path}")
+done
+
+echo "Starting base model with LoRA adapters: ${BASE_MODEL_PATH}"
+echo "  Served model name: ${SERVED_MODEL_NAME}"
+echo "  GPUs: $GPU_IDS (TP_SIZE=${TP_SIZE})"
+echo "  LoRA modules: ${LORA_MODULES_ARG}"
+echo "  Log file: /tmp/vllm_lora.log"
+
+CUDA_VISIBLE_DEVICES=$GPU_IDS python -m vllm.entrypoints.openai.api_server \
+    --model "${BASE_MODEL_PATH}" \
+    --served-model-name "${SERVED_MODEL_NAME}" \
+    --host $HOST \
+    --port $BASE_VLLM_PORT \
+    --gpu-memory-utilization $GPU_MEM \
+    --tensor-parallel-size $TP_SIZE \
+    --max-model-len $MAX_LEN \
+    --enable-lora \
+    "${LORA_MODULES_ARGS[@]}" \
+    --max-lora-rank 64 > /tmp/vllm_lora.log 2>&1 &
+
+VLLM_PIDS[0]=$!
+echo "  PID: ${VLLM_PIDS[0]}, Port: $BASE_VLLM_PORT"
+
+# Wait a moment for vLLM to start and output initial logs
+sleep 5
+
+# Check if process is still running and show initial logs
+if ! kill -0 ${VLLM_PIDS[0]} 2>/dev/null; then
+    echo "  ✗ ERROR: vLLM process died immediately!"
+    echo "  ====== Full log output ======"
+    cat /tmp/vllm_lora.log
+    echo "  ============================"
+    exit 1
+else
+    # Show first 20 lines of log to see initialization
+    if [ -f /tmp/vllm_lora.log ]; then
+        echo "  ====== Initial vLLM output (first 20 lines) ======"
+        head -n 20 /tmp/vllm_lora.log
+        echo "  =================================================="
+    fi
+fi
+echo
+
+# Wait for vLLM service to be ready
+echo
+echo "Waiting for vLLM service to initialize..."
+# Check if process is still running
+if ! kill -0 ${VLLM_PIDS[0]} 2>/dev/null; then
+    echo "Error: vLLM process died"
+    echo "====== Full vLLM log ======"
+    cat /tmp/vllm_lora.log
+    echo "=========================="
+    exit 1
+fi
+
+# Wait for HTTP endpoint
+if ! wait_for_endpoint "$HOST" "$BASE_VLLM_PORT" "vLLM with LoRA" "$MAX_WAIT"; then
+    echo "Error: vLLM failed to start"
+    echo "====== Last 50 lines of vLLM log ======"
+    tail -n 50 /tmp/vllm_lora.log
+    echo "======================================="
+    echo ""
+    echo "To view full log: cat /tmp/vllm_lora.log"
+    exit 1
+fi
+
+echo "✓ vLLM service ready with ${#LORA_PATHS[@]} LoRA adapters"
+echo
+
+# Launch proxy service
+echo "Launching proxy service..."
+echo "Starting proxy"
+VLLM_BACKEND_ADDRESS="${HOST}:${BASE_VLLM_PORT}" \
+PROXY_PORT=${BASE_PROXY_PORT} \
+python pettingllms/evaluate/vllm_id_token_proxy.py > /tmp/proxy_lora.log 2>&1 &
+PROXY_PIDS[0]=$!
+echo "  PID: ${PROXY_PIDS[0]}, Port: ${BASE_PROXY_PORT}"
+
+# Wait for proxy service to be ready
+echo
+echo "Waiting for proxy service to initialize..."
+# Check if process is still running
+if ! kill -0 ${PROXY_PIDS[0]} 2>/dev/null; then
+    echo "Error: proxy process died"
+    echo "Last 20 lines of log:"
+    tail -n 20 /tmp/proxy_lora.log
+    exit 1
+fi
+
+# Wait for HTTP endpoint
+if ! wait_for_endpoint "$HOST" "$BASE_PROXY_PORT" "proxy" "60"; then
+    echo "Error: proxy failed to start"
+    echo "Last 20 lines of log:"
+    tail -n 20 /tmp/proxy_lora.log
+    exit 1
+fi
+
+echo "✓ Proxy service ready"
+echo
+
+# Build LoRA paths argument for evaluation
+LORA_PATHS_ARG=""
+for ((i=0; i<${#LORA_PATHS[@]}; i++)); do
+    if [ -z "$LORA_PATHS_ARG" ]; then
+        LORA_PATHS_ARG="${LORA_PATHS[$i]}"
     else
-        GPU_IDS="$FIRST_GPU"
-        for ((g=1; g<$TP_SIZE; g++)); do
-            GPU_IDS="$GPU_IDS,$((FIRST_GPU + g))"
-        done
+        LORA_PATHS_ARG="${LORA_PATHS_ARG},${LORA_PATHS[$i]}"
     fi
-    
-    echo "Starting model$((i+1)): ${MODEL_PATH}"
-    echo "  Served model name: ${SERVED_MODEL_NAME}"
-    echo "  GPUs: $GPU_IDS (TP_SIZE=${TP_SIZE})"
-    echo "  Log file: /tmp/vllm_model${i}.log"
-    CUDA_VISIBLE_DEVICES=$GPU_IDS python -m vllm.entrypoints.openai.api_server \
-        --model "${MODEL_PATH}" \
-        --served-model-name "${SERVED_MODEL_NAME}" \
-        --host $HOST \
-        --port $((BASE_VLLM_PORT + i)) \
-        --gpu-memory-utilization $GPU_MEM \
-        --tensor-parallel-size $TP_SIZE \
-        --max-model-len $MAX_LEN > /tmp/vllm_model${i}.log 2>&1 &
-    VLLM_PIDS[$i]=$!
-    echo "  PID: ${VLLM_PIDS[$i]}, Port: $((BASE_VLLM_PORT + i))"
-    
-    # Wait a moment for vLLM to start and output initial logs
-    sleep 3
-    
-    # Check if process is still running and show initial logs
-    if ! kill -0 ${VLLM_PIDS[$i]} 2>/dev/null; then
-        echo "  ✗ ERROR: vLLM process died immediately!"
-        echo "  ====== Full log output ======"
-        cat /tmp/vllm_model${i}.log
-        echo "  ============================"
-        exit 1
-    else
-        # Show first 15 lines of log to see initialization
-        if [ -f /tmp/vllm_model${i}.log ]; then
-            echo "  ====== Initial vLLM output (first 15 lines) ======"
-            head -n 15 /tmp/vllm_model${i}.log
-            echo "  =================================================="
-        fi
-    fi
-    echo
-done
-
-# Wait for all vLLM services to be ready
-echo
-echo "Waiting for vLLM services to initialize..."
-for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-    # Check if process is still running
-    if ! kill -0 ${VLLM_PIDS[$i]} 2>/dev/null; then
-        echo "Error: model$((i+1)) vLLM process died"
-        echo "====== Full vLLM log ======"
-        cat /tmp/vllm_model${i}.log
-        echo "=========================="
-        exit 1
-    fi
-    
-    # Wait for HTTP endpoint
-    if ! wait_for_endpoint "$HOST" "$((BASE_VLLM_PORT + i))" "model$((i+1)) vLLM" "$MAX_WAIT"; then
-        echo "Error: model$((i+1)) vLLM failed to start"
-        echo "====== Last 50 lines of vLLM log ======"
-        tail -n 50 /tmp/vllm_model${i}.log
-        echo "======================================="
-        echo ""
-        echo "To view full log: cat /tmp/vllm_model${i}.log"
-        exit 1
-    fi
-done
-
-echo "✓ All vLLM services ready"
-echo
-
-# Launch proxy services
-echo "Launching proxy services..."
-for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-    echo "Starting proxy for model$((i+1))"
-    VLLM_BACKEND_ADDRESS="${HOST}:$((BASE_VLLM_PORT + i))" \
-    PROXY_PORT=$((BASE_PROXY_PORT + i)) \
-    python pettingllms/evaluate/vllm_id_token_proxy.py > /tmp/proxy_model${i}.log 2>&1 &
-    PROXY_PIDS[$i]=$!
-    echo "  PID: ${PROXY_PIDS[$i]}, Port: $((BASE_PROXY_PORT + i))"
-done
-
-# Wait for all proxy services to be ready
-echo
-echo "Waiting for proxy services to initialize..."
-for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-    # Check if process is still running
-    if ! kill -0 ${PROXY_PIDS[$i]} 2>/dev/null; then
-        echo "Error: model$((i+1)) proxy process died"
-        echo "Last 20 lines of log:"
-        tail -n 20 /tmp/proxy_model${i}.log
-        exit 1
-    fi
-    
-    # Wait for HTTP endpoint
-    if ! wait_for_endpoint "$HOST" "$((BASE_PROXY_PORT + i))" "model$((i+1)) proxy" "60"; then
-        echo "Error: model$((i+1)) proxy failed to start"
-        echo "Last 20 lines of log:"
-        tail -n 20 /tmp/proxy_model${i}.log
-        exit 1
-    fi
-done
-
-echo "✓ All proxy services ready"
-echo
-
-# Build model args for evaluation
-MODEL_ARGS=""
-for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-    MODEL_ARGS="$MODEL_ARGS models.model_${i}.path=\"${MODEL_PATHS[$i]}\""
 done
 
 # Display service summary
 echo "======================================"
 echo "All services running successfully!"
 echo "======================================"
-for ((i=0; i<${#MODEL_PATHS[@]}; i++)); do
-    echo "Model $((i+1)):"
-    echo "  vLLM:  http://$HOST:$((BASE_VLLM_PORT + i))"
-    echo "  Proxy: http://$HOST:$((BASE_PROXY_PORT + i))"
+echo "Base Model:"
+echo "  vLLM:  http://$HOST:$BASE_VLLM_PORT"
+echo "  Proxy: http://$HOST:$BASE_PROXY_PORT"
+echo "LoRA Adapters: ${#LORA_PATHS[@]}"
+for ((i=0; i<${#LORA_PATHS[@]}; i++)); do
+    echo "  lora_${i}: ${LORA_PATHS[$i]}"
 done
 echo "======================================"
 echo
@@ -311,40 +309,22 @@ echo "GPU Configuration for evaluation:"
 echo "  resource.n_gpus_per_node: $TP_SIZE"
 echo "  tensor_model_parallel_size: $TP_SIZE"
 echo "======================================"
-
-# Display LoRA configuration if set
-if [ -n "$LORA_CHECKPOINT_PATH" ]; then
-    echo "LoRA Configuration:"
-    echo "  Checkpoint path: $LORA_CHECKPOINT_PATH"
-    if [ -d "$LORA_CHECKPOINT_PATH" ]; then
-        echo "  Available LoRA adapters:"
-        ls -d "$LORA_CHECKPOINT_PATH"/lora_adapter_* 2>/dev/null | while read -r adapter_path; do
-            adapter_name=$(basename "$adapter_path")
-            echo "    - $adapter_name"
-        done
-    else
-        echo "  ⚠ WARNING: Checkpoint path does not exist!"
-    fi
-    echo "======================================"
-fi
+echo "LoRA Configuration:"
+echo "  Number of LoRA adapters: ${#LORA_PATHS[@]}"
+echo "  LoRA paths: $LORA_PATHS_ARG"
+echo "======================================"
 
 VLLM_ADDRESS="${HOST}:${BASE_PROXY_PORT}"
-
-# Build LoRA arguments if checkpoint path is provided
-LORA_ARGS=""
-if [ -n "$LORA_CHECKPOINT_PATH" ]; then
-    LORA_ARGS="+lora_checkpoint_path=\"$LORA_CHECKPOINT_PATH\""
-fi
 
 python3 -m pettingllms.evaluate.evaluate \
     --config-path "$CONFIG_PATH" \
     --config-name "$CONFIG_NAME" \
-    base_models.policy_0.path="${MODEL_PATHS[0]}" \
+    base_models.policy_0.path="${BASE_MODEL_PATH}" \
     +parallel=true \
     +vllm_address="$VLLM_ADDRESS" \
+    +lora_paths="$LORA_PATHS_ARG" \
     env.max_turns=$MAX_TURNS \
-    $MODEL_ARGS \
-    $LORA_ARGS \
+    models.model_0.path="${BASE_MODEL_PATH}" \
     training.max_prompt_length=$MAX_PROMPT_LENGTH \
     training.max_response_length=$MAX_RESPONSE_LENGTH \
     env.benchmark="$BENCHMARK" \

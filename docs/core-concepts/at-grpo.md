@@ -207,7 +207,7 @@ Each agent receives role-specific local rewards for specialization.
 ### Combined Reward
 
 ```python
-final_reward = alpha * global_reward + (1 - alpha) * local_reward
+final_reward = alpha * global_reward + local_reward
 ```
 
 The mixing coefficient `alpha` balances coordination vs. specialization.

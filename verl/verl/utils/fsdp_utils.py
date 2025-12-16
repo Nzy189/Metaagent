@@ -459,7 +459,7 @@ def fsdp2_clip_grad_norm_(parameters, max_norm, norm_type=2.0, error_if_nonfinit
     _clip_grads_with_norm_(parameters, max_norm, total_norm, foreach)
     return total_norm
 
-def layered_summon_lora_params(fsdp_module)->OrderedDict:
+def layered_summon_lora_params(fsdp_module, adapter_name="default")->OrderedDict:
     from peft.utils.save_and_load import get_peft_model_state_dict
 
     def __prefix_submodules(module, prefix):
@@ -480,7 +480,7 @@ def layered_summon_lora_params(fsdp_module)->OrderedDict:
                 continue
             if fsdp_version(submodule) > 0:
                 with FSDP.summon_full_params(submodule, writeback=False):
-                    sub_lora_params = get_peft_model_state_dict(fsdp_module._fsdp_wrapped_module, state_dict=submodule.state_dict())
+                    sub_lora_params = get_peft_model_state_dict(fsdp_module._fsdp_wrapped_module, state_dict=submodule.state_dict(), adapter_name=adapter_name)
                     sub_lora_params = {f"{prefix}.{name}": param.full_tensor().detach().cpu() if hasattr(param, 'full_tensor') else param.detach().cpu()
                         for name, param in sub_lora_params.items()}
                     lora_params.update(sub_lora_params)

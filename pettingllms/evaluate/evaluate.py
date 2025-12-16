@@ -120,35 +120,60 @@ def init_agent_execution_engine(config: DictConfig, address: str):
     # Detect LoRA differ mode for multi-agent LoRA evaluation
     lora_differ_mode = False
     agent_lora_mapping = {}
-    
-    if hasattr(config, 'specialization') and config.specialization == "lora" and len(config.models) == 1:
-        single_model_config = config.models[list(config.models.keys())[0]]
-        lora_rank = getattr(single_model_config.ppo_trainer_config.actor_rollout_ref.model, 'lora_rank', 0)
-        
-        if lora_rank > 0:
+
+    if hasattr(config, 'specialization') and config.specialization == "lora":
+        print("=" * 60)
+        print("LoRA Specialization Detected")
+        print("=" * 60)
+
+        # Check if lora_paths is provided (from command line)
+        if hasattr(config, 'lora_paths') and config.lora_paths:
+            # Parse lora_paths (comma-separated string)
+            lora_paths_list = config.lora_paths.split(',')
+            num_agents = len(agent_policy_mapping)
+
+            # Validate that number of LoRA paths matches number of agents
+            if len(lora_paths_list) != num_agents:
+                raise ValueError(
+                    f"Number of LoRA paths ({len(lora_paths_list)}) does not match "
+                    f"number of agents ({num_agents}). "
+                    f"LoRA paths: {lora_paths_list}, "
+                    f"Agents: {list(agent_policy_mapping.keys())}"
+                )
+
             lora_differ_mode = True
-            print("=" * 60)
             print("LoRA Differ Mode ENABLED for Evaluation")
             print("Each agent will use a different LoRA adapter")
-            
-            for agent_idx, agent_name in enumerate(agent_policy_mapping.keys()):
-                lora_id = agent_idx
-                agent_lora_mapping[agent_name] = lora_id
-                print(f"  Agent '{agent_name}' -> LoRA adapter 'lora_{lora_id}' (ID: {lora_id})")
-            
-            print(f"Total {len(agent_lora_mapping)} agent-specific LoRA adapters to load")
-            print("=" * 60)
-            
-            if hasattr(config, 'lora_checkpoint_path') and config.lora_checkpoint_path:
-                print(f"Loading LoRA adapters from: {config.lora_checkpoint_path}")
-                for agent_name, lora_id in agent_lora_mapping.items():
-                    lora_path = os.path.join(config.lora_checkpoint_path, f"lora_adapter_{lora_id}")
-                    print(f"  {agent_name}: {lora_path}")
-                print("=" * 60)
+            print(f"Number of agents: {num_agents}")
+            print(f"Number of LoRA adapters: {len(lora_paths_list)}")
 
+            # Map agents to LoRA adapters based on agent_configs order (agent_0, agent_1, ...)
+            # This ensures consistent mapping regardless of dictionary iteration order
+            agent_config_items = sorted(
+                config.agent_policy_configs.agent_configs.items(),
+                key=lambda x: int(x[0].split('_')[1])  # Sort by agent number: agent_0, agent_1, ...
+            )
+            print(f"Agent config order: {[item[0] for item in agent_config_items]}")
+
+            for agent_idx, (agent_key, agent_config) in enumerate(agent_config_items):
+                agent_name = agent_config.name
+                lora_id = agent_idx+1
+                agent_lora_mapping[agent_name] = lora_id
+                print(f"  Agent '{agent_name}' (from {agent_key}) -> LoRA adapter 'lora_{lora_id}' (ID: {lora_id})")
+
+            print(f"Total {len(agent_lora_mapping)} agent-specific LoRA adapters")
+            print("=" * 60)
+        else:
+            raise ValueError(
+                "LoRA speciaslization is set, but no lora_paths provided in config. "
+                "Please provide --config.lora_paths with comma-separated LoRA adapter paths."
+            )
     # Get workflow_type from config, default to "turn"
     workflow_type = getattr(config, 'workflow_type', 'turn')
     print(f"Using workflow_type: {workflow_type}")
+
+    # In evaluation mode with LoRA, we want to use the LoRA adapters for generation
+    use_lora_for_generation = lora_differ_mode
 
     # Select the appropriate execution engine based on workflow_type
     if workflow_type == "graph":
@@ -163,6 +188,7 @@ def init_agent_execution_engine(config: DictConfig, address: str):
             agent_policy_mapping=agent_policy_mapping,
             lora_differ_mode=lora_differ_mode,
             agent_lora_mapping=agent_lora_mapping,
+            use_lora_for_generation=use_lora_for_generation,
         )
     else:
         # Default to "turn" workflow
@@ -176,8 +202,9 @@ def init_agent_execution_engine(config: DictConfig, address: str):
             agent_policy_mapping=agent_policy_mapping,
             lora_differ_mode=lora_differ_mode,
             agent_lora_mapping=agent_lora_mapping,
+            use_lora_for_generation=use_lora_for_generation,
         )
-    
+
     return agent_execution_engine
 
 def validate(config: DictConfig, address: str):
@@ -207,33 +234,6 @@ def validate(config: DictConfig, address: str):
     )
     return agent_execution_engine, env_success_rollout_idxs, env_success_rate
 
-
-def test(config: DictConfig, address: str):
-    prompt = "Hello, who are you?"
-    model_path = config.models.model_0.path
-    local_path = copy_local_path_from_hdfs(model_path)
-    tokenizer = hf_tokenizer(local_path, trust_remote_code=False)
-    prompt_dpr = convert_prompt_to_dpr(
-        tokenizer=tokenizer,
-        processor=None,
-        prompts={"text": prompt, "image": None},
-        max_prompt_length=config.data.max_prompt_length,
-        multi_modal=False,
-    )
-    print("prompt_dpr")
-    print(prompt_dpr)
-    response = asyncio.run(llm_async_generate(
-        rollout_idx=0,
-        turn_idx=0,
-        agent_idx=0,
-        enable_thinking=False,
-        prompt_dpr=prompt_dpr,
-        address=address,
-        model_name=model_path,
-        tokenizer=tokenizer,
-        ppo_trainer_config=config.models.model_0.ppo_trainer_config,
-    ))
-    print(response)
 
 
 @hydra.main(config_path="../config/math", config_name="math_L1_prompt", version_base=None)
