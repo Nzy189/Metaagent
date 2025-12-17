@@ -268,7 +268,7 @@ def clear_trajectory_store():
     print(f"[Patch] Trajectory store cleared")
 
 
-def start_new_flow_context(rollout_idx: int, env_idx: int):
+def start_flow_context(rollout_idx: int, env_idx: int):
     """
     Initialize per-flow context (rollout/env) and reset hop/trajectory state for this task.
     Each rollout tracks its own hop count independently.
@@ -278,6 +278,7 @@ def start_new_flow_context(rollout_idx: int, env_idx: int):
     _hop_idx_var.set(0)
     _trajectory_store_var.set({})
     print(f"[Patch] New flow context started: rollout={rollout_idx}, env={env_idx}, hop=0")
+
 
 
 def _get_trajectory_store_ref() -> Dict[tuple, tuple]:
@@ -306,11 +307,46 @@ def get_server_address(policy_name: str) -> str:
     return addresses
 
 
+def _auto_init_from_env():
+    """Auto-initialize patch context from environment variables."""
+    import os
+    global _server_address_dict, _tokenizer_dict, _ppo_trainer_config_dict, _agent_policy_mapping, _agent_address_mapping
+    
+    api_base = os.getenv("API_BASE", "http://localhost:8000")
+    chat_model = os.getenv("CHAT_MODEL", "gpt-4")
+    
+    from transformers import AutoTokenizer
+    
+    class DummyTokenizer:
+        def __init__(self, model_name):
+            self._tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=True)
+        def __getattr__(self, name):
+            return getattr(self._tokenizer, name)
+    
+    class DummyConfig:
+        def __init__(self, model_path):
+            self.actor_rollout_ref = type('obj', (object,), {
+                'model': type('obj', (object,), {'path': model_path})()
+            })()
+            self.data = type('obj', (object,), {'max_prompt_length': 4096})()
+    
+    tokenizer = DummyTokenizer(chat_model)
+    ppo_config = DummyConfig(chat_model)
+    
+    _server_address_dict = {"default_policy": api_base}
+    _tokenizer_dict = {"default_policy": tokenizer}
+    _ppo_trainer_config_dict = {"default_policy": ppo_config}
+    _agent_policy_mapping = {}
+    _agent_address_mapping = {}
+    
+    print(f"[Patch] Auto-initialized from env: API_BASE={api_base}, CHAT_MODEL={chat_model}")
+
+
 async def _patched_generate(
     messages: List[Dict[str, str]],
     agent_name: Optional[str] = None,
     **kwargs
-) -> tuple[str, int, int]:
+) -> tuple[str, int, int, Optional[List[int]]]:
     """
     Core patched generate function that calls llm_async_generate.
     Each call to this function represents one "hop" in the agent graph.
@@ -324,7 +360,7 @@ async def _patched_generate(
         **kwargs: Additional generation parameters
 
     Returns:
-        Tuple of (response_text, prompt_tokens, completion_tokens)
+        Tuple of (response_text, prompt_tokens, completion_tokens, token_ids)
     """
     from pettingllms.trainer.async_generate import llm_async_generate, convert_prompt_to_dpr
 
@@ -415,9 +451,10 @@ async def _patched_generate(
         agent_config=agent_config,
     )
 
-    # Calculate token counts from output_dpr
+    # Calculate token counts and extract token IDs from output_dpr
     prompt_tokens = 0
     completion_tokens = 0
+    token_ids = None
 
     if output_dpr is not None and hasattr(output_dpr, 'batch'):
         # Extract prompt and response lengths
@@ -432,14 +469,17 @@ async def _patched_generate(
                 prompt_tokens = int(prompt_ids.shape[-1]) if len(prompt_ids.shape) > 0 else 0
 
         if 'responses' in batch_keys:
-            # Count non-padding tokens in responses
+            # Count non-padding tokens in responses and extract token IDs
             response_ids = output_dpr.batch['responses']
             if hasattr(response_ids, 'shape'):
                 # Count actual tokens (excluding padding)
                 if len(response_ids.shape) > 1:
                     completion_tokens = int(response_ids.shape[-1])
+                    # Extract token IDs (first sample if batch)
+                    token_ids = response_ids[0].tolist() if response_ids.shape[0] > 0 else []
                 elif len(response_ids.shape) > 0:
                     completion_tokens = int(response_ids.shape[0])
+                    token_ids = response_ids.tolist()
 
     # Store trajectory with agent_name for later reward attribution
     # Note: reward will be added later by the environment step
@@ -454,7 +494,7 @@ async def _patched_generate(
         _trajectory_store[key] = (output_dpr, response)
         print(f"[Patch] Stored trajectory for key={key}, rollout={rollout_idx}, env={env_idx}, hop={hop_idx}, agent={agent_name}, prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}")
 
-    return response, prompt_tokens, completion_tokens
+    return response, prompt_tokens, completion_tokens, token_ids
 
 
 def patch_autogen():
@@ -508,13 +548,17 @@ def patch_ag2():
     try:
         from ag2.models.openai import OpenAIChatCompletionClient
     except ImportError:
-        print("[Patch] ag2 not available, skipping ag2 patch")
+        print("[Patch] ag2 not installed, skipping ag2 patch")
         return
     
     original_create = OpenAIChatCompletionClient.create
     
     @functools.wraps(original_create)
     async def patched_create(self, messages, **kwargs):
+        # Auto-initialize if not already initialized
+        if not _agent_policy_mapping:
+            _auto_init_from_env()
+
         # Get model name and infer agent_name from policy mapping
         model_name = kwargs.get('model') or self._model_id
 
@@ -524,12 +568,30 @@ def patch_ag2():
                 agent_name = a_name
                 break
 
+        if agent_name is None:
+            agent_name = "default_agent"
+            if agent_name not in _agent_policy_mapping:
+                _agent_policy_mapping[agent_name] = model_name
+            if agent_name not in _agent_address_mapping and _server_address_dict:
+                _agent_address_mapping[agent_name] = list(_server_address_dict.values())[0]
+
         # Call patched generate with only messages and agent_name
-        response_text, prompt_tokens, completion_tokens = await _patched_generate(
+        response_text, prompt_tokens, completion_tokens, token_ids = await _patched_generate(
             messages=messages,
             agent_name=agent_name,
             **kwargs
         )
+
+        # Store token_ids in global tracker if available
+        if token_ids is not None:
+            try:
+                from pettingllms.multi_agent_env.dyevolve.ag2_tracer import get_global_tracker
+                tracker = get_global_tracker()
+                if tracker and agent_name:
+                    tracker.add_token_ids(agent_name, token_ids)
+                    print(f"[Patch] Stored {len(token_ids)} token_ids for agent={agent_name}")
+            except Exception as e:
+                print(f"[Patch] Warning: Failed to store token_ids in tracker: {e}")
 
         # Return in ag2 format (same as autogen)
         from ag2.models import CreateResult, RequestUsage
@@ -750,3 +812,30 @@ def wrap_autogen_graph(graph_callable):
         return result
 
     return wrapped_graph
+
+
+def auto_patch_ag2_from_env():
+    """
+    Auto-patch AG2 using configuration from environment variables.
+    
+    Environment variables:
+        API_BASE: vLLM server address (default: http://localhost:8000)
+        CHAT_MODEL: Model name (default: gpt-4)
+        ROLLOUT_IDX: Rollout index (default: 0)
+        ENV_IDX: Environment index (default: 0)
+    
+    This function should be called at the start of the generated MAS code.
+    """
+    import os
+    
+    _auto_init_from_env()
+    
+    patch_ag2()
+    
+    rollout_idx = int(os.getenv("ROLLOUT_IDX", "0"))
+    env_idx = int(os.getenv("ENV_IDX", "0"))
+    start_flow_context(rollout_idx=rollout_idx, env_idx=env_idx)
+    
+    print(f"[Patch] Auto-patched AG2 from environment (rollout={rollout_idx}, env={env_idx})")
+    
+    return True

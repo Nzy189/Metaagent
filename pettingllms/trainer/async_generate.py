@@ -213,8 +213,6 @@ async def submit_completions(
         print(f"[Submit][START] Starting submit_completions to {address} at {time.time()} with timeout={timeout}s")
     for attempt in range(max_retries):
         try:
-            if _DEBUG_API_CALLS:
-                print(f"[Submit][ATTEMPT] Attempt {attempt + 1}/{max_retries} calling poll_completions_openai")
             result = await poll_completions_openai(
                 address=address, 
                 model=model, 
@@ -224,8 +222,6 @@ async def submit_completions(
             )
             if attempt > 0 and _DEBUG_API_CALLS:
                 print(f"[Retry] Request succeeded on attempt {attempt + 1}/{max_retries}")
-            if _DEBUG_API_CALLS:
-                print(f"[Submit][SUCCESS] submit_completions succeeded at {time.time()}")
             return result
             
         except Exception as e:

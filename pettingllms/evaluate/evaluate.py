@@ -190,6 +190,20 @@ def init_agent_execution_engine(config: DictConfig, address: str):
             agent_lora_mapping=agent_lora_mapping,
             use_lora_for_generation=use_lora_for_generation,
         )
+    if workflow_type == "autoevol":
+        print("Initializing MultiAgentsExecutionEngineAutoEvol")
+        from pettingllms.trainer.multi_agents_execution_engine_autoevol import MultiAgentsExecutionEngineAutoEvol
+        agent_execution_engine = MultiAgentsExecutionEngineAutoEvol(
+            config=config,
+            ppo_trainer_config_dict=ppo_trainer_config_dict,
+            tokenizer_dict=tokenizer_dict,
+            processor_dict=processor_dict,
+            server_address_dict=server_address_dict,
+            agent_policy_mapping=agent_policy_mapping,
+            lora_differ_mode=lora_differ_mode,
+            agent_lora_mapping=agent_lora_mapping,
+            use_lora_for_generation=use_lora_for_generation,
+        )
     else:
         # Default to "turn" workflow
         print("Initializing MultiAgentsExecutionEngine (turn-based)")
