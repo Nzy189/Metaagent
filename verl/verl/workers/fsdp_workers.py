@@ -1084,10 +1084,36 @@ class ActorRolloutRefWorker(Worker):
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.actor_module_fsdp)
 
-        self.checkpoint_manager.save_checkpoint(local_path=local_path, hdfs_path=hdfs_path, global_step=global_step, max_ckpt_to_keep=max_ckpt_to_keep)
-        dist.barrier()
+        # DEBUG: Print important flags
+        if dist.get_rank() == 0:
+            print(f"[rank-{self.rank}]: ===== CHECKPOINT SAVE DEBUG =====")
+            print(f"[rank-{self.rank}]: _is_lora={self._is_lora}")
+            print(f"[rank-{self.rank}]: isinstance(PeftModel)={isinstance(self.actor_module, PeftModel)}")
+            print(f"[rank-{self.rank}]: lora_num={self.lora_num}")
+            print(f"[rank-{self.rank}]: agent_lora_mapping={agent_lora_mapping}")
+
+        # For LoRA training, we do NOT save the base model checkpoint
+        # We only save LoRA adapters in HuggingFace PEFT format for vLLM compatibility
+        # For non-LoRA training, save the full model checkpoint as before
+        if not self._is_lora:
+            self.checkpoint_manager.save_checkpoint(local_path=local_path, hdfs_path=hdfs_path,
+                                                   global_step=global_step, max_ckpt_to_keep=max_ckpt_to_keep)
+            dist.barrier()
+        else:
+            # For LoRA: only save tokenizer and config (not the full model weights)
+            if dist.get_rank() == 0:
+                print(f"[rank-{self.rank}]: Skipping base model checkpoint for LoRA training (will save adapters only)")
+                # Save tokenizer and config for convenience
+                self.tokenizer.save_pretrained(local_path)
+                if hasattr(self.actor_module, 'config'):
+                    self.actor_module.config.save_pretrained(local_path)
+            dist.barrier()
 
         if self._is_lora and isinstance(self.actor_module, PeftModel):
+            if dist.get_rank() == 0:
+                print(f"[rank-{self.rank}]: DEBUG - Entering LoRA save block")
+                print(f"[rank-{self.rank}]: DEBUG - lora_num={self.lora_num}, agent_lora_mapping={agent_lora_mapping}")
+
             # Multi-LoRA mode: save each agent's LoRA adapter separately
             if self.lora_num > 1 and agent_lora_mapping is not None:
                 if dist.get_rank() == 0:
@@ -1103,17 +1129,23 @@ class ActorRolloutRefWorker(Worker):
                 try:
                     if isinstance(self.actor_module_fsdp, FSDP):
                         self.actor_module_fsdp = self.actor_module_fsdp.cuda()
-                        
-                        if dist.get_rank() == 0:
-                            # Save each LoRA adapter separately (lora_1, lora_2, lora_3, ...)
-                            for i in range(1, self.lora_num + 1):
-                                adapter_name = f"lora_{i}"
+
+                        # Save each LoRA adapter separately (lora_1, lora_2, lora_3, ...)
+                        # IMPORTANT: All ranks must participate in layered_summon_lora_params (FSDP collective operation)
+                        for i in range(1, self.lora_num + 1):
+                            adapter_name = f"lora_{i}"
+
+                            # Set active adapter on all ranks
+                            self.actor_module.set_adapter(adapter_name)
+
+                            # All ranks participate in summon_full_params (collective operation)
+                            # Pass adapter_name to extract the correct adapter's parameters
+                            lora_params = layered_summon_lora_params(self.actor_module_fsdp, adapter_name=adapter_name)
+
+                            # Only rank 0 saves the files
+                            if dist.get_rank() == 0:
                                 lora_save_path = os.path.join(local_path, f"{adapter_name}")
                                 os.makedirs(lora_save_path, exist_ok=True)
-
-                                # Set active adapter and get its parameters
-                                self.actor_module.set_adapter(adapter_name)
-                                lora_params = layered_summon_lora_params(self.actor_module_fsdp)
 
                                 # Save adapter parameters
                                 save_file(lora_params, os.path.join(lora_save_path, "adapter_model.safetensors"))
@@ -1134,21 +1166,30 @@ class ActorRolloutRefWorker(Worker):
                 except Exception as e:
                     if dist.get_rank() == 0:
                         print(f"[rank-{self.rank}]: Save Multi-LoRA Adapter Error ({e})")
+                        import traceback
+                        traceback.print_exc()
             else:
                 # Single LoRA mode: original behavior
                 lora_save_path = os.path.join(local_path, "lora_adapter")
+
+                # Prepare peft_config on rank 0
                 peft_config = {}
                 if dist.get_rank() == 0:
-                    os.makedirs(lora_save_path, exist_ok=True)
                     peft_config = asdict(self.actor_module.peft_config.get('default', {}))
                     peft_config['task_type'] = peft_config['task_type'].value
                     peft_config['peft_type'] = peft_config['peft_type'].value
                     peft_config['target_modules'] = list(peft_config['target_modules'])
+
                 try:
                     if isinstance(self.actor_module_fsdp, FSDP):
                         self.actor_module_fsdp = self.actor_module_fsdp.cuda()
+
+                        # All ranks participate in summon_full_params (collective operation)
                         lora_params = layered_summon_lora_params(self.actor_module_fsdp)
+
+                        # Only rank 0 saves the files
                         if dist.get_rank() == 0:
+                            os.makedirs(lora_save_path, exist_ok=True)
                             save_file(lora_params, os.path.join(lora_save_path, "adapter_model.safetensors"))
                             with open(os.path.join(lora_save_path, "adapter_config.json"), "w", encoding='utf-8') as f:
                                 json.dump(peft_config, f, ensure_ascii=False, indent=4)
@@ -1156,8 +1197,9 @@ class ActorRolloutRefWorker(Worker):
                 except Exception as e:
                     if dist.get_rank() == 0:
                         print(f"[rank-{self.rank}]: Save LoRA Adapter Error ({e})")
+                        import traceback
+                        traceback.print_exc()
         else:
-            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP, StateDictType, FullStateDictConfig
             cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
             with FSDP.state_dict_type(self.actor.actor_module, StateDictType.FULL_STATE_DICT, cfg):
                 state_dict = self.actor.actor_module.state_dict()

@@ -626,7 +626,7 @@ async def llm_async_generate(
     # Fallback: if text_list is empty but we have response token ids, decode to string
     if (not text_list or all(not t for t in text_list)) and tokenizer is not None:
         # Decode all samples
-        if "responses" in output_dpr.batch:
+        if "responses" in output_dpr.batch.keys():
             text_list = []
             for i in range(min(sample_num, output_dpr.batch["responses"].shape[0])):
                 resp_ids_tensor = output_dpr.batch["responses"][i]
