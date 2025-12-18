@@ -21,6 +21,8 @@ def extract_answer_from_summary(summary: str) -> str:
     - "Exact Answer: ..."
     - "Final Answer: ..."
     - "Answer: ..."
+    - "... is <number>."
+    - "... is <number>"
 
     Args:
         summary: The summary text from MAS execution
@@ -29,7 +31,7 @@ def extract_answer_from_summary(summary: str) -> str:
         Extracted answer string
     """
     # Try to find "Exact Answer:" pattern
-    match = re.search(r"Exact Answer:\s*(.+?)(?:\n|$)", summary, re.IGNORECASE)
+    match = re.search(r"Output:\s*(.+?)(?:\n|$)", summary, re.IGNORECASE)
     if match:
         return match.group(1).strip()
 
@@ -40,6 +42,22 @@ def extract_answer_from_summary(summary: str) -> str:
 
     # Try "Answer:" pattern
     match = re.search(r"Answer:\s*(.+?)(?:\n|$)", summary, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+
+    # Try to find pattern like "... is <number>." or "... is <number>"
+    # This matches sentences ending with "is <number>" (with optional period)
+    match = re.search(r'is\s+(-?\d+(?:\.\d+)?|\\boxed\{[^}]+\})\s*\.?\s*$', summary, re.MULTILINE | re.IGNORECASE)
+    if match:
+        answer = match.group(1).strip()
+        # If it's a boxed answer, extract the content
+        boxed_match = re.match(r'\\boxed\{([^}]+)\}', answer)
+        if boxed_match:
+            return boxed_match.group(1).strip()
+        return answer
+
+    # Try to find \boxed{} anywhere in the text
+    match = re.search(r'\\boxed\{([^}]+)\}', summary)
     if match:
         return match.group(1).strip()
 
@@ -69,7 +87,7 @@ def math_reward_function(summary: str, env_data: Env) -> float:
     predicted_answer = extract_answer_from_summary(summary)
 
     # Get ground truth answer from env_data
-    ground_truth = getattr(env_data, 'answer', None)
+    ground_truth = getattr(env_data, 'ground_truth_answer', None)
     if ground_truth is None:
         logger.warning("No ground truth answer found in env_data")
         return 0.0

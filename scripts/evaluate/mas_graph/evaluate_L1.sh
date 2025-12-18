@@ -18,7 +18,7 @@ export LD_LIBRARY_PATH=$CUDA_HOME/targets/x86_64-linux/lib:$CUDA_HOME/lib64:$LD_
 # Configuration - Edit these parameters
 # ============================================
 MODEL_PATHS=(
-    "/home/lah003/models/Qwen3-8B"
+    "/home/lah003/models/Qwen3-1.7B"
 )
 EXPERIMENT_NAME="mas_graph_test"
 # Assuming execution from repository root
@@ -26,9 +26,9 @@ REPO_ROOT="$(pwd)"
 CONFIG_PATH="${REPO_ROOT}/pettingllms/config/mas_graph"
 CONFIG_NAME="math_graph_L1_prompt"
 BENCHMARK="AIME24"
-BASE_VLLM_PORT=8301
-BASE_PROXY_PORT=8320
-GPU_START_ID=3
+BASE_VLLM_PORT=8601
+BASE_PROXY_PORT=8620
+GPU_START_ID=7
 HOST="127.0.0.1"
 GPU_MEM=0.15  # Reduced from 0.8 to fit in available memory (33.38 GiB available)
 VLLM_SHUTDOWN=false  # If true, vLLM will be shut down when script exits; if false, vLLM will remain running

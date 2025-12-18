@@ -14,7 +14,7 @@ import numpy as np
 
 # Model client factory functions for different agent frameworks
 def _create_autogen_client(policy_name: str, address: str, **kwargs):
-    """Create AutoGen OpenAIChatCompletionClient."""
+    """Create AutoGen OpenAIChatCompletionClient with dataproto container."""
     from autogen_ext.models.openai import OpenAIChatCompletionClient
     from autogen_core.models import ModelInfo, ModelFamily
 
@@ -32,43 +32,65 @@ def _create_autogen_client(policy_name: str, address: str, **kwargs):
         base_url=address,
         model_info=model_info,
     )
+
+    # Create dataproto container for collecting generated dataprotos
+    dataproto_container = {
+        'dataprotos': [],  # List to store dataprotos from llm_async_generate
+        'env_final_reward': None  # Will store the final reward from environment
+    }
+
+    # Attach the container to the client
+    client._dataproto_container = dataproto_container
+
     return client
 
 
-def _create_ag2_client(policy_name: str, address: str, **kwargs):
-    """Create AG2 OpenAIChatCompletionClient."""
-    from ag2.models.openai import OpenAIChatCompletionClient
-    return OpenAIChatCompletionClient(
-        model=policy_name,
-        api_key="dummy",
-        base_url=address,
-    )
-
 
 def _create_langchain_client(policy_name: str, address: str, **kwargs):
-    """Create LangChain ChatOpenAI client."""
+    """Create LangChain ChatOpenAI client with dataproto container."""
     from langchain_openai import ChatOpenAI
-    return ChatOpenAI(
+    client = ChatOpenAI(
         model_name=policy_name,
         openai_api_key="dummy",
         openai_api_base=address,
     )
 
+    # Create dataproto container for collecting generated dataprotos
+    dataproto_container = {
+        'dataprotos': [],  # List to store dataprotos from llm_async_generate
+        'env_final_reward': None  # Will store the final reward from environment
+    }
+
+    # Attach the container to the client
+    client._dataproto_container = dataproto_container
+
+    return client
+
 
 def _create_llamaindex_client(policy_name: str, address: str, **kwargs):
-    """Create LlamaIndex OpenAI client."""
+    """Create LlamaIndex OpenAI client with dataproto container."""
     from llama_index.llms.openai import OpenAI
-    return OpenAI(
+    client = OpenAI(
         model=policy_name,
         api_key="dummy",
         api_base=address,
     )
 
+    # Create dataproto container for collecting generated dataprotos
+    dataproto_container = {
+        'dataprotos': [],  # List to store dataprotos from llm_async_generate
+        'env_final_reward': None  # Will store the final reward from environment
+    }
+
+    # Attach the container to the client
+    client._dataproto_container = dataproto_container
+
+    return client
+
 
 # Registry of model client factory functions by framework
 MODEL_CLIENT_FACTORY: Dict[str, Callable] = {
     "autogen": _create_autogen_client,
-    "ag2": _create_ag2_client,
     "langchain": _create_langchain_client,
     "langgraph": _create_langchain_client,  # LangGraph uses same client as LangChain
     "llamaindex": _create_llamaindex_client,
@@ -78,28 +100,28 @@ MODEL_CLIENT_FACTORY: Dict[str, Callable] = {
 def create_model_client(agent_framework: str, policy_name: str, address: str, **kwargs):
     """
     Create a model client based on the agent framework.
-    
+
     Args:
-        agent_framework: Framework name ('autogen', 'ag2', 'langchain', 'langgraph', 'llamaindex')
+        agent_framework: Framework name ('autogen', 'langchain', 'langgraph', 'llamaindex')
         policy_name: Policy/model name
         address: vLLM server address
         **kwargs: Additional arguments to pass to the client factory
-        
+
     Returns:
         Model client instance for the specified framework
-        
+
     Raises:
         ValueError: If agent_framework is not supported
     """
     framework_lower = agent_framework.lower()
     factory_func = MODEL_CLIENT_FACTORY.get(framework_lower)
-    
+
     if factory_func is None:
         raise ValueError(
             f"Unsupported agent_framework: {agent_framework}. "
             f"Supported frameworks: {list(MODEL_CLIENT_FACTORY.keys())}"
         )
-    
+
     return factory_func(policy_name, address, **kwargs)
 
 
@@ -107,13 +129,13 @@ def create_dummy_model_client(agent_framework: str):
     """
     Create a dummy model client that will be intercepted by patch.
     Uses fake model name (gpt-4o) and dummy address since they will be overridden.
-    
+
     Args:
-        agent_framework: Framework name ('autogen', 'ag2', 'langchain', 'langgraph', 'llamaindex')
-        
+        agent_framework: Framework name ('autogen', 'langchain', 'langgraph', 'llamaindex')
+
     Returns:
         Model client instance with dummy parameters
-        
+
     Raises:
         ValueError: If agent_framework is not supported
     """
@@ -345,6 +367,7 @@ def _auto_init_from_env():
 async def _patched_generate(
     messages: List[Dict[str, str]],
     agent_name: Optional[str] = None,
+    client: Optional[any] = None,
     **kwargs
 ) -> tuple[str, int, int, Optional[List[int]]]:
     """
@@ -357,6 +380,7 @@ async def _patched_generate(
     Args:
         messages: Chat messages
         agent_name: Agent name for routing and reward attribution
+        client: The model client object (to access dataproto container)
         **kwargs: Additional generation parameters
 
     Returns:
@@ -441,7 +465,6 @@ async def _patched_generate(
         model_name=model_name,
         tokenizer=tokenizer,
         enable_thinking=enable_thinking,
-        image_data=None,
         application_id=f"graph_r{rollout_idx}_h{hop_idx}",
         env_idx=env_idx,
         policy_name=policy_name,
@@ -493,6 +516,8 @@ async def _patched_generate(
         key = (rollout_idx, hop_idx, policy_name)
         _trajectory_store[key] = (output_dpr, response)
         print(f"[Patch] Stored trajectory for key={key}, rollout={rollout_idx}, env={env_idx}, hop={hop_idx}, agent={agent_name}, prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}")
+        client._dataproto_container['dataprotos'].append(output_dpr)
+        print(f"[Patch] Added dataproto to client container for agent={agent_name}, total dataprotos={len(client._dataproto_container['dataprotos'])}")
 
     return response, prompt_tokens, completion_tokens, token_ids
 
@@ -515,10 +540,11 @@ def patch_autogen():
         # Try to get agent_name directly from the client (set during model_client_dict creation)
         agent_name = getattr(self, '_agent_name', None)
 
-        # Call patched generate with only messages and agent_name
-        response_text, prompt_tokens, completion_tokens = await _patched_generate(
+        # Call patched generate with messages, agent_name, and client
+        response_text, prompt_tokens, completion_tokens, token_ids = await _patched_generate(
             messages=messages,
             agent_name=agent_name,
+            client=self,
             **kwargs
         )
 
@@ -534,77 +560,6 @@ def patch_autogen():
     OpenAIChatCompletionClient.create = patched_create
     _patched = True
     print("[Patch] Patched autogen OpenAIChatCompletionClient.create")
-
-
-def patch_ag2():
-    """
-    Patch ag2's OpenAIChatCompletionClient to use llm_async_generate.
-    AG2 is a fork of autogen, so the patching mechanism is similar.
-    """
-    global _patched
-    if _patched:
-        return
-    
-    try:
-        from ag2.models.openai import OpenAIChatCompletionClient
-    except ImportError:
-        print("[Patch] ag2 not installed, skipping ag2 patch")
-        return
-    
-    original_create = OpenAIChatCompletionClient.create
-    
-    @functools.wraps(original_create)
-    async def patched_create(self, messages, **kwargs):
-        # Auto-initialize if not already initialized
-        if not _agent_policy_mapping:
-            _auto_init_from_env()
-
-        # Get model name and infer agent_name from policy mapping
-        model_name = kwargs.get('model') or self._model_id
-
-        agent_name = None
-        for a_name, p_name in _agent_policy_mapping.items():
-            if p_name == model_name:
-                agent_name = a_name
-                break
-
-        if agent_name is None:
-            agent_name = "default_agent"
-            if agent_name not in _agent_policy_mapping:
-                _agent_policy_mapping[agent_name] = model_name
-            if agent_name not in _agent_address_mapping and _server_address_dict:
-                _agent_address_mapping[agent_name] = list(_server_address_dict.values())[0]
-
-        # Call patched generate with only messages and agent_name
-        response_text, prompt_tokens, completion_tokens, token_ids = await _patched_generate(
-            messages=messages,
-            agent_name=agent_name,
-            **kwargs
-        )
-
-        # Store token_ids in global tracker if available
-        if token_ids is not None:
-            try:
-                from pettingllms.multi_agent_env.dyevolve.ag2_tracer import get_global_tracker
-                tracker = get_global_tracker()
-                if tracker and agent_name:
-                    tracker.add_token_ids(agent_name, token_ids)
-                    print(f"[Patch] Stored {len(token_ids)} token_ids for agent={agent_name}")
-            except Exception as e:
-                print(f"[Patch] Warning: Failed to store token_ids in tracker: {e}")
-
-        # Return in ag2 format (same as autogen)
-        from ag2.models import CreateResult, RequestUsage
-        return CreateResult(
-            content=response_text,
-            usage=RequestUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens),
-            finish_reason="stop",
-            cached=False,
-        )
-    
-    OpenAIChatCompletionClient.create = patched_create
-    _patched = True
-    print("[Patch] Patched ag2 OpenAIChatCompletionClient.create")
 
 
 def patch_langchain():
@@ -638,10 +593,11 @@ def patch_langchain():
                 agent_name = a_name
                 break
 
-        # Call patched generate with only messages and agent_name
-        response_text, prompt_tokens, completion_tokens = await _patched_generate(
+        # Call patched generate with messages, agent_name, and client
+        response_text, prompt_tokens, completion_tokens, token_ids = await _patched_generate(
             messages=msg_dicts,
             agent_name=agent_name,
+            client=self,
             **kwargs
         )
 
@@ -705,10 +661,11 @@ def patch_llamaindex():
                 agent_name = a_name
                 break
 
-        # Call patched generate with only messages and agent_name
-        response_text, prompt_tokens, completion_tokens = await _patched_generate(
+        # Call patched generate with messages, agent_name, and client
+        response_text, prompt_tokens, completion_tokens, token_ids = await _patched_generate(
             messages=msg_dicts,
             agent_name=agent_name,
+            client=self,
             **kwargs
         )
 
@@ -745,7 +702,7 @@ def patch_all(
         tokenizer_dict: {policy_name: tokenizer}
         ppo_trainer_config_dict: {policy_name: ppo_config}
         agent_policy_mapping: {agent_name: policy_name}
-        agent_framework: Framework to patch - "autogen"/"ag2"/"langchain"/"langgraph"/"llamaindex"
+        agent_framework: Framework to patch - "autogen"/"langchain"/"langgraph"/"llamaindex"
         agent_address_mapping: {agent_name: vLLM_address} - direct mapping for routing
         agent_lora_mapping: {agent_name: lora_id} - mapping for LoRA adapters
         agent_config_dict: {agent_name: agent_config} - agent configurations
@@ -774,8 +731,6 @@ def patch_all(
     framework_lower = agent_framework.lower()
     if framework_lower == "autogen":
         patch_autogen()
-    elif framework_lower == "ag2":
-        patch_ag2()
     elif framework_lower == "langchain":
         patch_langchain()
     elif framework_lower == "langgraph":
@@ -784,7 +739,7 @@ def patch_all(
         patch_llamaindex()
     else:
         raise ValueError(f"Unsupported agent_framework: {agent_framework}. "
-                        f"Supported: autogen, ag2, langchain, langgraph, llamaindex")
+                        f"Supported: autogen, langchain, langgraph, llamaindex")
     
     print(f"[Patch] All patches applied for framework: {agent_framework}")
 
@@ -814,28 +769,76 @@ def wrap_autogen_graph(graph_callable):
     return wrapped_graph
 
 
-def auto_patch_ag2_from_env():
+def get_client_dataprotos(client) -> List:
     """
-    Auto-patch AG2 using configuration from environment variables.
-    
-    Environment variables:
-        API_BASE: vLLM server address (default: http://localhost:8000)
-        CHAT_MODEL: Model name (default: gpt-4)
-        ROLLOUT_IDX: Rollout index (default: 0)
-        ENV_IDX: Environment index (default: 0)
-    
-    This function should be called at the start of the generated MAS code.
+    Get all dataprotos collected by a client.
+
+    Args:
+        client: The model client object
+
+    Returns:
+        List of dataprotos collected from llm_async_generate calls
     """
-    import os
-    
-    _auto_init_from_env()
-    
-    patch_ag2()
-    
-    rollout_idx = int(os.getenv("ROLLOUT_IDX", "0"))
-    env_idx = int(os.getenv("ENV_IDX", "0"))
-    start_flow_context(rollout_idx=rollout_idx, env_idx=env_idx)
-    
-    print(f"[Patch] Auto-patched AG2 from environment (rollout={rollout_idx}, env={env_idx})")
-    
-    return True
+    if hasattr(client, '_dataproto_container'):
+        return client._dataproto_container['dataprotos']
+    return []
+
+
+def get_client_env_reward(client) -> Optional[float]:
+    """
+    Get the environment final reward stored in a client.
+
+    Args:
+        client: The model client object
+
+    Returns:
+        The environment final reward, or None if not set
+    """
+    if hasattr(client, '_dataproto_container'):
+        return client._dataproto_container['env_final_reward']
+    return None
+
+
+def set_client_env_reward(client, reward: float):
+    """
+    Set the environment final reward for a client.
+
+    Args:
+        client: The model client object
+        reward: The environment final reward to store
+    """
+    if hasattr(client, '_dataproto_container'):
+        client._dataproto_container['env_final_reward'] = reward
+        print(f"[Patch] Set env_final_reward={reward} for client")
+    else:
+        print(f"[Patch] Warning: Client does not have _dataproto_container")
+
+
+def clear_client_dataprotos(client):
+    """
+    Clear all dataprotos collected by a client.
+
+    Args:
+        client: The model client object
+    """
+    if hasattr(client, '_dataproto_container'):
+        client._dataproto_container['dataprotos'] = []
+        client._dataproto_container['env_final_reward'] = None
+        print(f"[Patch] Cleared dataproto container for client")
+
+
+def merge_dataprotos_with_reward(dataprotos: List, reward: float):
+    """
+    Merge a list of dataprotos and add the environment final reward to each.
+
+    Args:
+        dataprotos: List of DataProto objects
+        reward: The environment final reward
+
+    Returns:
+        List of dataprotos with env_final_reward added
+    """
+    for dpr in dataprotos:
+        if dpr is not None and hasattr(dpr, 'non_tensor_batch'):
+            dpr.non_tensor_batch["env_final_reward"] = np.array([reward], dtype=np.float32)
+    return dataprotos

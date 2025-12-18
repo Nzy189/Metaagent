@@ -387,7 +387,6 @@ async def llm_async_generate(
     model_name: Optional[str] = None,
     tokenizer: Optional[AutoTokenizer] = None,
     enable_thinking: Optional[bool] = False,
-    image_data: Optional[list[Any]] = None,
     application_id: Optional[str] = None,
     env_idx: Optional[int] = None,
     #rollout_idx: Optional[int] = None,
@@ -660,17 +659,17 @@ def convert_prompt_to_format(tokenizer, enable_thinking, prompts,**kwargs):
     Args:
         tokenizer: HF tokenizer, must support apply_chat_template and __call__ tokenization
         enable_thinking: Whether to enable thinking mode for chat template
-        prompts: dict, {"text": str, "image": None or image path}
-        kwargs: Optional parameters, such as processor, meta_info, etc.
+        prompts: dict, {"text": str, "image": None, image path, or PIL.Image}
+        kwargs: Optional parameters, such as meta_info, etc.
     Returns:
         DataProto: Contains tensor and non-tensor information
     """
 
     if not isinstance(prompts, dict) or "text" not in prompts:
-        raise ValueError("prompts must be a dictionary containing 'text' key: {'text': str, 'image': Optional[path]} ")
+        raise ValueError("prompts must be a dictionary containing 'text' key: {'text': str, 'image': Optional[path_or_image]} ")
 
     text = prompts.get("text", "") or ""
-    image_path = prompts.get("image", None)
+    image_data = prompts.get("image", None)
 
     old_padding_side = getattr(tokenizer, "padding_side", "right")
     tokenizer.padding_side = "left"
@@ -698,7 +697,7 @@ def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, mult
     Args:
         tokenizer: HF tokenizer, must support apply_chat_template and __call__ tokenization
         chat_parser: Reserved (currently unused)
-        prompts: dict, {"text": str, "image": None or image path}
+        prompts: dict, {"text": str, "image": None, image path, or PIL.Image}
         max_prompt_length: Maximum prompt length (left padding)
         multi_modal: Whether multimodal (if True, should also pass processor and other necessary information)
         kwargs: Optional parameters, such as processor, meta_info, etc.
@@ -712,10 +711,10 @@ def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, mult
     import torch
 
     if not isinstance(prompts, dict) or "text" not in prompts:
-        raise ValueError("prompts must be a dictionary containing 'text' key: {'text': str, 'image': Optional[path]} ")
+        raise ValueError("prompts must be a dictionary containing 'text' key: {'text': str, 'image': Optional[path_or_image]} ")
 
     text = prompts.get("text", "") or ""
-    image_path = prompts.get("image", None)
+    image_data = prompts.get("image", None)
 
     old_padding_side = getattr(tokenizer, "padding_side", "right")
     tokenizer.padding_side = "left"
@@ -757,11 +756,14 @@ def convert_prompt_to_dpr(tokenizer, processor, prompts, max_prompt_length, mult
 
         # Multimodal (optional): depends on externally provided processor
         multi_modal_inputs = None
-        if multi_modal and image_path is not None and "processor" in kwargs:
-            
-            image_inputs = processor.image_processor([image_path], return_tensors="pt")
+        if multi_modal and image_data is not None and processor is not None:
+            processed_image = image_data
+            if isinstance(image_data, (str, os.PathLike)):
+                from PIL import Image
+                with Image.open(image_data) as img:
+                    processed_image = img.convert("RGB")
+            image_inputs = processor.image_processor([processed_image], return_tensors="pt")
             multi_modal_inputs = {k: v for k, v in image_inputs.items()}
-           
 
         # Pad to a unified length
         input_ids = pad_sequence_to_length(

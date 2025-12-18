@@ -241,13 +241,6 @@ class MultiAgentsExecutionEngineAutoEvol:
         agent_enable_thinking = self.agent_enable_thinking.get(agent_name, False)
         agent_enable_multimodal = self.agent_enable_multimodal.get(agent_name, False)
 
-        # Extract image data if multimodal is enabled
-        image_data = None
-        if agent_enable_multimodal and hasattr(mas_generator, 'get_image_data'):
-            image_data = mas_generator.get_image_data()
-        elif agent_enable_multimodal and hasattr(env, 'get_image_data'):
-            image_data = env.get_image_data()
-
         # Step 2: Format prompt for model
         format_prompt = convert_prompt_to_dpr(
             self.tokenizer_dict[policy_name],
@@ -305,7 +298,6 @@ class MultiAgentsExecutionEngineAutoEvol:
                 model_name=model_name,
                 tokenizer=self.tokenizer_dict[policy_name],
                 enable_thinking=agent_enable_thinking,
-                image_data=image_data,
                 application_id=str(uuid.uuid4()),
                 env_idx=env_idx,
                 policy_name=policy_name,
@@ -344,10 +336,18 @@ class MultiAgentsExecutionEngineAutoEvol:
             # Prepare output directory for MAS execution
             import os
             output_dir = os.path.join(
-                self.config.training.get('output_dir', './outputs'),
+                self.config.training.get('output_dir', './tmp_auto_mas'),
                 f'rollout_{rollout_idx}'
             )
             os.makedirs(output_dir, exist_ok=True)
+
+            # Prepare LLM config for MAS execution
+            llm_config_for_mas = {
+                "server_address": _address,
+                "model_name": model_name,
+                "api_key": getattr(self.config.training, 'openai_api_key', ''),
+                "temperature": getattr(agent_config, 'temperature', 0.2) if agent_config else 0.2,
+            }
 
             # Call step and get tokenized trajectories and final reward
             tokenized_trajectories, final_reward = await asyncio.wait_for(
@@ -355,11 +355,12 @@ class MultiAgentsExecutionEngineAutoEvol:
                     env_data=env,
                     env_worker=env_worker,
                     output_dir=output_dir,
-                    server_address=None,
-                    model_name=None,
+                    server_address=_address,
+                    model_name=model_name,
                     tokenizer=self.tokenizer_dict[policy_name],
                     max_prompt_length=self.max_prompt_length,
-                    max_response_length=self.max_response_length
+                    max_response_length=self.max_response_length,
+                    llm_config_for_mas=llm_config_for_mas
                 ),
                 timeout=self.step_timeout
             )
