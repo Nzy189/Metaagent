@@ -199,9 +199,10 @@ class MASGenerator(Agent):
         Execute MAS Designer step: generate mas.py, run it with vLLM access, calculate reward.
 
         Returns:
-            Tuple[List[Tuple[DataProto, str]], float]:
+            Tuple[List[Tuple[DataProto, str]], float, bool]:
                 - tokenized_trajectories: List of (DataProto, response_text) tuples
                 - final_reward: Reward score from task-specific reward function
+                - mas_execution_success: Whether mas.py executed successfully (True/False)
         """
         
 
@@ -277,6 +278,7 @@ except Exception as e:
         logger.info(f"Saved MAS code to {mas_py_path}")
 
         # Run the mas.py file in Ray Docker Worker environment
+        mas_execution_success = False
         try:
             # Read and execute the generated MAS code
             with open(mas_py_path, 'r') as f:
@@ -295,11 +297,16 @@ except Exception as e:
                 # Check for Ray execution errors
                 if isinstance(stdout, str):
                     if stdout.startswith("error:"):
-                        logger.error(f"Ray execution failed: {stdout}")
+                        logger.warning(f"Ray execution failed (ignoring error): {stdout[:200]}")
                         stderr, stdout = stdout, ""
+                        mas_execution_success = False
                     elif stdout == "timeout":
-                        logger.error(f"Ray execution timed out for rollout {self.rollout_idx}")
-                        raise subprocess.TimeoutExpired(mas_py_path, execution_timeout)
+                        logger.warning(f"Ray execution timed out for rollout {self.rollout_idx}")
+                        mas_execution_success = False
+                    else:
+                        mas_execution_success = True
+                else:
+                    mas_execution_success = True
             else:
                 logger.warning("env_worker is None, falling back to subprocess execution")
 
@@ -320,86 +327,118 @@ except Exception as e:
                 # Use venv python if available, otherwise use system python
                 python_executable = venv_python if os.path.exists(venv_python) else 'python'
 
-                result = subprocess.run(
-                    [python_executable, mas_py_path],
-                    capture_output=True,
-                    text=True,
-                    timeout=execution_timeout,
-                    cwd=output_dir,
-                    env=env
-                )
-                stdout, stderr = result.stdout, result.stderr
+                try:
+                    result = subprocess.run(
+                        [python_executable, mas_py_path],
+                        capture_output=True,
+                        text=True,
+                        timeout=execution_timeout,
+                        cwd=output_dir,
+                        env=env
+                    )
+                    stdout, stderr = result.stdout, result.stderr
+                    mas_execution_success = (result.returncode == 0)
+                except subprocess.TimeoutExpired as te:
+                    logger.warning(f"Subprocess execution timed out for rollout {self.rollout_idx}")
+                    stdout = te.stdout if te.stdout else ""
+                    stderr = te.stderr if te.stderr else "Timeout"
+                    mas_execution_success = False
+                except Exception as e:
+                    logger.warning(f"Subprocess execution error (ignoring): {e}")
+                    stdout = ""
+                    stderr = str(e)
+                    mas_execution_success = False
 
             # Save execution output to file (both stdout and stderr)
-            output_txt_path = os.path.join(output_dir, "output.txt")
-            with open(output_txt_path, 'w') as f:
-                if stdout:
-                    f.write("=== STDOUT ===\n")
-                    f.write(stdout)
-                if stderr:
-                    f.write("\n=== STDERR ===\n")
-                    f.write(stderr)
-                if not stdout and not stderr:
-                    f.write("(No output captured)\n")
-            logger.info(f"Saved execution output to {output_txt_path}")
+            try:
+                output_txt_path = os.path.join(output_dir, "output.txt")
+                with open(output_txt_path, 'w') as f:
+                    if stdout:
+                        f.write("=== STDOUT ===\n")
+                        f.write(stdout)
+                    if stderr:
+                        f.write("\n=== STDERR ===\n")
+                        f.write(stderr)
+                    if not stdout and not stderr:
+                        f.write("(No output captured)\n")
+                logger.info(f"Saved execution output to {output_txt_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save execution output: {e}")
 
-            # Extract summary and trajectory from output
-            summary = self._extract_summary(stdout)
-            trajectory_store = self._extract_trajectory_from_stdout(stdout)
-            self.trajectory_store = trajectory_store if trajectory_store else {}
-
-            if trajectory_store:
-                logger.info(f"Extracted {len(trajectory_store)} trajectory entries from stdout")
-            else:
-                logger.warning("No trajectory data found in stdout")
-
-            # Load and tokenize trajectory data from saved JSONL file if tokenizer provided
+            # Only process output if execution was successful
+            summary = ""
+            trajectory_store = {}
             tokenized_trajectories = []
-            if tokenizer is not None:
-                trajectory_file = self.trajectory_json_path
-                if not os.path.exists(trajectory_file):
-                    logger.warning(f"Trajectory file {trajectory_file} not found, skipping tokenization")
-                    self.tokenized_trajectories = []
+            final_reward = 0.0
+            
+            if mas_execution_success:
+                # Extract summary and trajectory from output
+                summary = self._extract_summary(stdout) if stdout else ""
+                trajectory_store = self._extract_trajectory_from_stdout(stdout) if stdout else {}
+                self.trajectory_store = trajectory_store if trajectory_store else {}
+
+                if trajectory_store:
+                    logger.info(f"Extracted {len(trajectory_store)} trajectory entries from stdout")
                 else:
-                    # Use the new load_and_tokenize_jsonl function from utils
-                    tokenized_trajectories = load_and_tokenize_jsonl(
-                        trajectory_file, tokenizer, max_prompt_length, max_response_length
-                    )
-                    if tokenized_trajectories:
-                        logger.info(f"Tokenized {len(tokenized_trajectories)} trajectory turns")
-                        # Store tokenized trajectories in a new attribute
-                        self.tokenized_trajectories = tokenized_trajectories
-                    else:
-                        logger.warning("No tokenized trajectories generated")
+                    logger.warning("No trajectory data found in stdout")
+
+                # Load and tokenize trajectory data from saved JSONL file if tokenizer provided
+                if tokenizer is not None:
+                    try:
+                        trajectory_file = self.trajectory_json_path
+                        if not os.path.exists(trajectory_file):
+                            logger.warning(f"Trajectory file {trajectory_file} not found, skipping tokenization")
+                            self.tokenized_trajectories = []
+                        else:
+                            # Use the new load_and_tokenize_jsonl function from utils
+                            tokenized_trajectories = load_and_tokenize_jsonl(
+                                trajectory_file, tokenizer, max_prompt_length, max_response_length
+                            )
+                            if tokenized_trajectories:
+                                logger.info(f"Tokenized {len(tokenized_trajectories)} trajectory turns")
+                                self.tokenized_trajectories = tokenized_trajectories
+                            else:
+                                logger.warning("No tokenized trajectories generated")
+                                self.tokenized_trajectories = []
+                    except Exception as e:
+                        logger.warning(f"Failed to tokenize trajectories (ignoring): {e}")
+                        tokenized_trajectories = []
                         self.tokenized_trajectories = []
 
-            # Log stderr if there were errors
-            if stderr:
-                logger.warning(f"MAS stderr output: {stderr[:500]}")
-
-            # Calculate reward using task-specific reward function
-            final_reward = 0.0
-            if self.task_type in REWARD_FUNCTIONS:
-                reward_func = REWARD_FUNCTIONS[self.task_type]
-                final_reward = reward_func(summary, env_data)
-                logger.info(f"Rollout {self.rollout_idx}: final_reward={final_reward}")
+                # Calculate reward using task-specific reward function
+                try:
+                    if self.task_type in REWARD_FUNCTIONS:
+                        reward_func = REWARD_FUNCTIONS[self.task_type]
+                        final_reward = reward_func(summary, env_data)
+                        logger.info(f"Rollout {self.rollout_idx}: final_reward={final_reward}")
+                    else:
+                        logger.warning(f"No reward function found for task_type={self.task_type}, defaulting to 0.0")
+                        final_reward = 0.0
+                except Exception as e:
+                    logger.warning(f"Failed to calculate reward (ignoring): {e}")
+                    final_reward = 0.0
             else:
-                logger.warning(f"No reward function found for task_type={self.task_type}, defaulting to 0.0")
-                final_reward = 0.0
+                # Execution failed - log the error
+                logger.warning(f"Rollout {self.rollout_idx}: MAS execution failed, skipping reward calculation")
+                self.tokenized_trajectories = []
+                
+                # Log stderr if there were errors
+                if stderr:
+                    logger.warning(f"MAS stderr output: {stderr[:500]}")
 
             self.agent_reward = final_reward
             if final_reward == 1.0:
                 env_data.success = True
 
-            # Return tokenized trajectories and final reward
-            return tokenized_trajectories, final_reward
+            # Return tokenized trajectories, final reward, and MAS execution success status
+            return tokenized_trajectories, final_reward, mas_execution_success
 
         except subprocess.TimeoutExpired:
-            logger.error(f"MAS execution timed out for rollout {self.rollout_idx}")
-            return [], 0.0
+            logger.warning(f"MAS execution timed out for rollout {self.rollout_idx}")
+            return [], 0.0, False
         except Exception as e:
-            logger.error(f"Error executing MAS: {e}")
-            return [], 0.0
+            logger.warning(f"Error executing MAS (ignoring): {e}")
+            return [], 0.0, False
 
 
 

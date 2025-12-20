@@ -355,8 +355,8 @@ class MultiAgentsExecutionEngineAutoEvol:
                 "temperature": getattr(agent_config, 'temperature', 0.2) if agent_config else 0.2,
             }
 
-            # Call step and get tokenized trajectories and final reward
-            tokenized_trajectories, final_reward = await asyncio.wait_for(
+            # Call step and get tokenized trajectories, final reward, and MAS execution success
+            tokenized_trajectories, final_reward, mas_execution_success = await asyncio.wait_for(
                 mas_generator.step(
                     env_data=env,
                     env_worker=env_worker,
@@ -377,6 +377,7 @@ class MultiAgentsExecutionEngineAutoEvol:
                 {"error": "timeout", "timeout_seconds": self.step_timeout}
             )
             tokenized_trajectories = []
+            mas_execution_success = False
         except Exception as e:
             self.multi_logger.log_env_agent_info(
                 self.mode, env_idx, rollout_idx, 1, agent_name,
@@ -384,16 +385,22 @@ class MultiAgentsExecutionEngineAutoEvol:
                 {"error": str(e), "traceback": traceback.format_exc()}
             )
             tokenized_trajectories = []
+            mas_execution_success = False
             
 
         # Step 7: Merge MAS generation DataProto with tokenized trajectories DataProtos
         all_dataprotos = []
 
-        # Add the initial MAS generation DataProto
+        # First batch: MAS generation DataProto (reward based on MAS execution success)
         if output_dpr is not None:
-            output_dpr.non_tensor_batch["reward"] = np.array([reward])
+            mas_generation_reward = 1.0 if mas_execution_success else 0.0
+            output_dpr.non_tensor_batch["reward"] = np.array([mas_generation_reward])
             output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
             output_dpr.non_tensor_batch["env_final_reward"] = np.array([final_reward])
+            output_dpr.non_tensor_batch["turn_idx"] = np.array([1])
+            output_dpr.non_tensor_batch["env_idx"] = np.array([env_idx])
+            output_dpr.non_tensor_batch["rollout_idx"] = np.array([rollout_idx])
+            output_dpr.non_tensor_batch["agent_idx"] = np.array([0])
 
             if self.lora_differ_mode:
                 batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
@@ -402,13 +409,17 @@ class MultiAgentsExecutionEngineAutoEvol:
 
             all_dataprotos.append(output_dpr)
 
-        # Add tokenized trajectory DataProtos from MAS execution
+        # Second batch: tokenized trajectory DataProtos from MAS execution (reward = final_reward)
         if tokenized_trajectories:
             for traj_dpr, traj_response in tokenized_trajectories:
                 # Add metadata to each trajectory DataProto
                 traj_dpr.non_tensor_batch["reward"] = np.array([final_reward])
                 traj_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
                 traj_dpr.non_tensor_batch["env_final_reward"] = np.array([final_reward])
+                traj_dpr.non_tensor_batch["turn_idx"] = np.array([1])
+                traj_dpr.non_tensor_batch["env_idx"] = np.array([env_idx])
+                traj_dpr.non_tensor_batch["rollout_idx"] = np.array([rollout_idx])
+                traj_dpr.non_tensor_batch["agent_idx"] = np.array([0])
 
                 if self.lora_differ_mode:
                     batch_size = traj_dpr.batch.batch_size[0] if hasattr(traj_dpr.batch, 'batch_size') else len(traj_dpr.batch)
