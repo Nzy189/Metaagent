@@ -612,7 +612,7 @@ class MultiAgentsPPOTrainer:
                         self.use_lora_for_generation = True
                         self.agent_execution_engine.use_lora_for_generation = True
                         
-                    gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.rollout_idx_list,rollout_mode=self.config.get("rollout_mode","tree")))
+                    gen_batch_output_per_policy =asyncio.run( self.agent_execution_engine.generate_multiple_rollouts_concurrent(self.agent_execution_engine.env_idx_list,rollout_mode=self.config.get("rollout_mode","tree")))
                     
                     # Always sleep after trajectory collection to maintain strict pairing
                     for model_name,rollout_engine in self.rollout_engine_dict.items():

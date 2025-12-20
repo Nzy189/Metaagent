@@ -436,9 +436,6 @@ async def llm_async_generate(
         'frequency_penalty': 0.0,
         'repetition_penalty': 1.0,
         'best_of': None,
-        'use_beam_search': False,
-        'length_penalty': 1.0,
-        'early_stopping': False,
         'ignore_eos': False,
         'skip_special_tokens': True,
         'spaces_between_special_tokens': True,
@@ -463,9 +460,6 @@ async def llm_async_generate(
     frequency_penalty = float(config['frequency_penalty'])
     repetition_penalty = float(config['repetition_penalty'])
     best_of = config['best_of']
-    use_beam_search = config['use_beam_search']
-    length_penalty = float(config['length_penalty'])
-    early_stopping = config['early_stopping']
     ignore_eos = config['ignore_eos']
     skip_special_tokens = config['skip_special_tokens']
     spaces_between_special_tokens = config['spaces_between_special_tokens']
@@ -473,7 +467,7 @@ async def llm_async_generate(
     if _DEBUG_API_CALLS:
         print(f"[LLM][llm_async_generate] enable_thinking={enable_thinking} mode={mode} temperature={temp} top_p={top_p} top_k={top_k} min_p={min_p} sample_num={sample_num}")
         print(f"[LLM][llm_async_generate] stop={stop} presence_penalty={presence_penalty} frequency_penalty={frequency_penalty} repetition_penalty={repetition_penalty}")
-        print(f"[LLM][llm_async_generate] best_of={best_of} use_beam_search={use_beam_search} length_penalty={length_penalty} early_stopping={early_stopping}")
+        print(f"[LLM][llm_async_generate] best_of={best_of} ignore_eos={ignore_eos}")
 
     kwargs={
         "n": sample_num,
@@ -495,12 +489,6 @@ async def llm_async_generate(
         kwargs["repetition_penalty"] = repetition_penalty
     if best_of is not None:
         kwargs["best_of"] = best_of
-    if use_beam_search:
-        kwargs["use_beam_search"] = use_beam_search
-    if length_penalty != 1.0:
-        kwargs["length_penalty"] = length_penalty
-    if early_stopping:
-        kwargs["early_stopping"] = early_stopping
     if ignore_eos:
         kwargs["ignore_eos"] = ignore_eos
     if not skip_special_tokens:

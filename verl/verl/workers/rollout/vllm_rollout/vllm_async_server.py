@@ -300,7 +300,7 @@ class AsyncvLLMServer(AsyncServerBase):
         generator = await self.openai_serving_chat.create_chat_completion(request, raw_request)
 
         if isinstance(generator, ErrorResponse):
-            return JSONResponse(content=generator.model_dump(), status_code=generator.code)
+            return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
         if request.stream:
             return StreamingResponse(content=generator, media_type="text/event-stream")
         else:
@@ -340,7 +340,7 @@ class AsyncvLLMServer(AsyncServerBase):
         generator = await self.openai_serving_chat.create_chat_completion(request)
         if isinstance(generator, ErrorResponse):
             data = generator.model_dump_json(exclude_unset=True)
-            yield generator.code, f"data: {data}\n\n"
+            yield generator.error.code, f"data: {data}\n\n"
 
         if request.stream:
             async for chunk in generator:
