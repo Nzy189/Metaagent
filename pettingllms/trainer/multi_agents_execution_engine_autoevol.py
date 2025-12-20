@@ -451,19 +451,15 @@ class MultiAgentsExecutionEngineAutoEvol:
         # Step 7: Merge MAS generation DataProto with tokenized trajectories DataProtos
         all_dataprotos = []
 
-        # First batch: MAS generation DataProto (reward based on MAS execution success)
+        # First batch: MAS generation DataProto (reward based on task correctness)
         if output_dpr is not None:
-            mas_generation_reward = 1.0 if mas_execution_success else 0.0
-            output_dpr.non_tensor_batch["reward"] = np.array([mas_generation_reward])
-            output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
-            output_dpr.non_tensor_batch["env_final_reward"] = np.array([final_reward])
-            output_dpr.non_tensor_batch["turn_idx"] = np.array([1])
-            output_dpr.non_tensor_batch["env_idx"] = np.array([env_idx])
-            output_dpr.non_tensor_batch["rollout_idx"] = np.array([rollout_idx])
-            output_dpr.non_tensor_batch["agent_idx"] = np.array([0])
+            batch_size = output_dpr.batch.shape[0]
+            output_dpr.non_tensor_batch["reward"] = np.array([final_reward] * batch_size)
+            output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name] * batch_size, dtype=object)
+            output_dpr.non_tensor_batch["env_final_reward"] = np.array([final_reward] * batch_size)
+            print(f"[DEBUG REWARD] Rollout {rollout_idx}: Set reward array with final_reward={final_reward}, batch_size={batch_size}")
 
             if self.lora_differ_mode:
-                batch_size = output_dpr.batch.batch_size[0] if hasattr(output_dpr.batch, 'batch_size') else len(output_dpr.batch)
                 lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
                 output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
 
@@ -473,16 +469,16 @@ class MultiAgentsExecutionEngineAutoEvol:
         if tokenized_trajectories:
             for traj_dpr, traj_response in tokenized_trajectories:
                 # Add metadata to each trajectory DataProto
-                traj_dpr.non_tensor_batch["reward"] = np.array([final_reward])
-                traj_dpr.non_tensor_batch["agent_name"] = np.array([agent_name], dtype=object)
-                traj_dpr.non_tensor_batch["env_final_reward"] = np.array([final_reward])
-                traj_dpr.non_tensor_batch["turn_idx"] = np.array([1])
-                traj_dpr.non_tensor_batch["env_idx"] = np.array([env_idx])
-                traj_dpr.non_tensor_batch["rollout_idx"] = np.array([rollout_idx])
-                traj_dpr.non_tensor_batch["agent_idx"] = np.array([0])
+                batch_size = traj_dpr.batch.shape[0]
+                traj_dpr.non_tensor_batch["reward"] = np.array([final_reward] * batch_size)
+                traj_dpr.non_tensor_batch["agent_name"] = np.array([agent_name] * batch_size, dtype=object)
+                traj_dpr.non_tensor_batch["env_final_reward"] = np.array([final_reward] * batch_size)
+                traj_dpr.non_tensor_batch["turn_idx"] = np.array([1] * batch_size)
+                traj_dpr.non_tensor_batch["env_idx"] = np.array([env_idx] * batch_size)
+                traj_dpr.non_tensor_batch["rollout_idx"] = np.array([rollout_idx] * batch_size)
+                traj_dpr.non_tensor_batch["agent_idx"] = np.array([0] * batch_size)
 
                 if self.lora_differ_mode:
-                    batch_size = traj_dpr.batch.batch_size[0] if hasattr(traj_dpr.batch, 'batch_size') else len(traj_dpr.batch)
                     lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
                     traj_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
 

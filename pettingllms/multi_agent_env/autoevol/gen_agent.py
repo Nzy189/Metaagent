@@ -57,22 +57,40 @@ class MASGenerator(Agent):
     def update_from_model(self, response: str):
         code = ""
 
+        # Strategy 1: Try <code>...</code> tags first
         code_match = re.search(r"<code>\s*(.*?)\s*</code>", response, re.DOTALL)
         if code_match:
             code = code_match.group(1).strip()
         else:
-            matches = re.findall(r"```python(.*?)```", response, re.DOTALL)
+            # Strategy 2: Try ```python...``` code blocks
+            matches = re.findall(r"```python\s*(.*?)\s*```", response, re.DOTALL)
             if matches:
                 code = matches[-1].strip()
             else:
-
-                code = "# Error: Could not extract code from the model response."
-                logger.warning("Failed to extract code from model response")
-
+                # Strategy 3: Try just ``` code blocks (no language specified)
+                matches = re.findall(r"```\s*(.*?)\s*```", response, re.DOTALL)
+                if matches:
+                    # Filter out non-Python code blocks (e.g., those containing only markdown/text)
+                    python_blocks = [m.strip() for m in matches if 'import' in m or 'def ' in m or 'class ' in m or 'from ' in m]
+                    if python_blocks:
+                        code = python_blocks[-1]
+                    else:
+                        # Fallback to last code block even if we're not sure it's Python
+                        code = matches[-1].strip()
+                else:
+                    # Strategy 4: As last resort, look for Python-like code patterns
+                    # Look for import statements, function definitions, etc.
+                    import_pattern = r'((?:from|import)\s+\w+.*?(?:\n|$)(?:.*?(?:\n|$))*?)(?=\n\n|\Z)'
+                    import_match = re.search(import_pattern, response, re.MULTILINE | re.DOTALL)
+                    if import_match:
+                        # Found Python code, try to extract a reasonable block
+                        start_pos = import_match.start()
+                        code = response[start_pos:].strip()
+                    else:
+                        code = "# Error: Could not extract code from the model response."
+                        logger.warning("Failed to extract code from model response")
 
         self.generated_code = code
-
-
         self.current_action = code
 
         return self.current_action
@@ -123,71 +141,6 @@ class MASGenerator(Agent):
             logger.warning("Failed to replace llm_config in generated code - pattern not found")
         else:
             logger.info(f"Replaced llm_config with: model={model_name}, base_url={server_address}")
-
-        return modified_code
-
-    def _replace_question_in_code(self, code: str, question: str) -> str:
-        """
-        Replace hardcoded question/problem in the generated mas.py code with the actual question.
-
-        This function looks for common patterns where questions appear in system messages:
-        - After "Problem:" or "problem:"
-        - In long text blocks within system_message
-        - Between specific markers
-
-        Args:
-            code: The generated Python code containing hardcoded question
-            question: The actual question from env_data.state.problem
-
-        Returns:
-            Modified code with replaced question
-        """
-        # Escape backslashes in the question to avoid Python string escape issues
-        # This is important for LaTeX math expressions like \{, \cdots, \tfrac, etc.
-        escaped_question = question.replace('\\', '\\\\')
-
-        # Strategy 1: Try to find and replace content after "Problem:" in system_message
-        # This pattern matches: system_message="""...\n\nProblem: <old question>\n\n..."""
-        pattern1 = r'(system_message\s*=\s*"""[^"]*?)(Problem:\s*)(.*?)(\n\n|\n""")'
-
-        def replace_after_problem(match):
-            prefix = match.group(1)  # Everything before "Problem:"
-            problem_marker = match.group(2)  # "Problem:" with whitespace
-            # Skip the old question text (group 3)
-            suffix = match.group(4)  # The ending (newlines or end of string)
-            return f"{prefix}{problem_marker}{escaped_question}{suffix}"
-
-        modified_code = re.sub(pattern1, replace_after_problem, code, flags=re.DOTALL)
-
-        # Strategy 2: If no "Problem:" marker found, try to replace entire long text in system_message
-        # Only if Strategy 1 didn't change anything
-        if modified_code == code:
-            # Find system_message with multi-line content and replace with question
-            pattern2 = r'(system_message\s*=\s*""")(.*?)(""")'
-
-            def replace_system_message(match):
-                prefix = match.group(1)
-                old_content = match.group(2).strip()
-                suffix = match.group(3)
-
-                # Only replace if the old content looks like a problem (long text, not a simple instruction)
-                if len(old_content) > 100 and ('solve' in old_content.lower() or 'find' in old_content.lower()):
-                    # Keep the first line if it's a role description
-                    lines = old_content.split('\n')
-                    if len(lines) > 0 and len(lines[0]) < 100 and 'You are' in lines[0]:
-                        role_line = lines[0]
-                        new_content = f"{role_line}\n\n{escaped_question}"
-                    else:
-                        new_content = escaped_question
-                    return f"{prefix}{new_content}{suffix}"
-                return match.group(0)  # Return unchanged if doesn't match criteria
-
-            modified_code = re.sub(pattern2, replace_system_message, code, flags=re.DOTALL)
-
-        if modified_code != code:
-            logger.info(f"Replaced question in generated code")
-        else:
-            logger.warning("Failed to replace question in generated code - no suitable pattern found")
 
         return modified_code
 
@@ -267,10 +220,7 @@ except Exception as e:
         if llm_config_for_mas is not None:
             full_code = self._replace_llm_config_in_code(full_code, llm_config_for_mas)
 
-        # Replace hardcoded question with actual question from env_data
-        if env_data and hasattr(env_data.state, 'problem'):
-            actual_question = env_data.state.problem
-            full_code = self._replace_question_in_code(full_code, actual_question)
+
 
         with open(mas_py_path, 'w') as f:
             f.write(full_code)
@@ -372,20 +322,30 @@ except Exception as e:
             final_reward = 0.0
             
             if mas_execution_success:
-                # Extract summary and trajectory from output
+                # Extract summary from output
                 summary = self._extract_summary(stdout) if stdout else ""
+
+                # Try to extract trajectory from stdout (legacy format)
                 trajectory_store = self._extract_trajectory_from_stdout(stdout) if stdout else {}
                 self.trajectory_store = trajectory_store if trajectory_store else {}
 
+                # Check for trajectory data from either stdout or file
+                trajectory_file = self.trajectory_json_path
+                has_trajectory_data = False
+
                 if trajectory_store:
                     logger.info(f"Extracted {len(trajectory_store)} trajectory entries from stdout")
+                    has_trajectory_data = True
+                elif os.path.exists(trajectory_file):
+                    # Trajectory saved to file instead of stdout
+                    logger.info(f"Trajectory data saved to file: {trajectory_file}")
+                    has_trajectory_data = True
                 else:
-                    logger.warning("No trajectory data found in stdout")
+                    logger.warning("No trajectory data found in stdout or file")
 
                 # Load and tokenize trajectory data from saved JSONL file if tokenizer provided
                 if tokenizer is not None:
                     try:
-                        trajectory_file = self.trajectory_json_path
                         if not os.path.exists(trajectory_file):
                             logger.warning(f"Trajectory file {trajectory_file} not found, skipping tokenization")
                             self.tokenized_trajectories = []
@@ -398,7 +358,7 @@ except Exception as e:
                                 logger.info(f"Tokenized {len(tokenized_trajectories)} trajectory turns")
                                 self.tokenized_trajectories = tokenized_trajectories
                             else:
-                                logger.warning("No tokenized trajectories generated")
+                                logger.warning("No tokenized trajectories generated from file")
                                 self.tokenized_trajectories = []
                     except Exception as e:
                         logger.warning(f"Failed to tokenize trajectories (ignoring): {e}")

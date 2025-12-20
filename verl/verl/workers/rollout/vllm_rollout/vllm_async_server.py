@@ -260,6 +260,11 @@ class AsyncvLLMServer(AsyncServerBase):
         else:
             chat_template_str = None
         print(f"chat_template_str: {chat_template_str}")
+
+        # Get tool_parser from config, default to "hermes" for AutoGen compatibility
+        # Available parsers: hermes, mistral, openai, llama3_json, pythonic, etc.
+        tool_parser = config.get("tool_parser", "hermes")
+
         self.openai_serving_chat = OpenAIServingChat(
             self.engine,
             model_config,
@@ -269,7 +274,7 @@ class AsyncvLLMServer(AsyncServerBase):
             chat_template=chat_template_str,
             chat_template_content_format="auto",
             enable_auto_tools=True,
-            tool_parser="hermes",
+            tool_parser=tool_parser,
             #return_tokens_as_token_ids=True,
         )
 
