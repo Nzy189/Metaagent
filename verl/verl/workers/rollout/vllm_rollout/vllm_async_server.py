@@ -268,6 +268,8 @@ class AsyncvLLMServer(AsyncServerBase):
             request_logger=RequestLogger(max_log_len=4096) if not config.disable_logging else None,
             chat_template=chat_template_str,
             chat_template_content_format="auto",
+            enable_auto_tools=True,
+            tool_parser="hermes",
             #return_tokens_as_token_ids=True,
         )
 
