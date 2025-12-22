@@ -261,9 +261,11 @@ class AsyncvLLMServer(AsyncServerBase):
             chat_template_str = None
         print(f"chat_template_str: {chat_template_str}")
 
-        # Get tool_parser from config, default to "hermes" for AutoGen compatibility
+        # Get tool_parser from config
+        # Note: AG2/AutoGen examples recommend either "hermes" for general models or None n
+        # None: Let vLLM automatically select parser based on model (recommended for Qwen3)
         # Available parsers: hermes, mistral, openai, llama3_json, pythonic, etc.
-        tool_parser = config.get("tool_parser", "hermes")
+        tool_parser = config.get("tool_parser","hermes")  # None for auto-detection based on model
 
         self.openai_serving_chat = OpenAIServingChat(
             self.engine,
@@ -275,7 +277,7 @@ class AsyncvLLMServer(AsyncServerBase):
             chat_template_content_format="auto",
             enable_auto_tools=True,
             tool_parser=tool_parser,
-            #return_tokens_as_token_ids=True,
+            return_tokens_as_token_ids=True,
         )
 
         self.openai_serving_completion = OpenAIServingCompletion(

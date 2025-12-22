@@ -572,22 +572,7 @@ class MultiAgentsPPOTrainer:
                 self.agent_execution_engine.use_lora_for_generation = False
                 colorful_print(f"use_lora_for_generation set to False for step 0 validation", "yellow")
                 start_time = time.time()
-                # validation before training
-                #val_metrics = self._validate(global_steps=self.global_steps)
-         
-                #metrics.update(val_metrics)
                 
-                #current_avg_success_rate = val_metrics.get('validation/average/success_rate', 0.0)
-               
-                #agent_summary = {}
-                #for key, value in val_metrics.items():
-                #    if "/success_rate" in key and "/agent_" in key:
-                #        agent_name = key.split("/agent_")[1].split("/")[0]
-                #        agent_summary[agent_name] = value
-                
-             
-
-                # Process each trainer's batch
 
             with simple_timer("step", timing_raw):
 
@@ -624,15 +609,12 @@ class MultiAgentsPPOTrainer:
                             gen_batch_output_per_policy[model_name], dp_world_size
                         )
                         if batch_per_trainer[model_name].batch is None:
-                        # If empty, assign directly
-                            
                             batch_per_trainer[model_name] = batch_per_trainer_temp
                         else:
-                            # Use concat instead of union because each response content is different
                             batch_per_trainer[model_name] = DataProto.concat([
-                                batch_per_trainer[model_name], 
-                                batch_per_trainer_temp
-                            ])
+                                    batch_per_trainer[model_name], 
+                                    batch_per_trainer_temp
+                                ])
                 
                 timing_raw = {}
                 with simple_timer("update_parameters", timing_raw):
@@ -670,10 +652,6 @@ class MultiAgentsPPOTrainer:
                         if model_name in gen_batch_output_per_policy:
                             result = update_single_trainer(model_name, batch_per_trainer[model_name], trainer)
                             
-                            if result["status"] == "error":
-                                colorful_print(f"Error updating trainer for {model_name}: {result['error']}", "red")
-                                colorful_print(f"Traceback:\n{result['traceback']}", "red")
-                                raise RuntimeError(f"Failed to update trainer for {model_name}: {result['error']}")
                             # Merge timing metrics
                             for key, value in result["timing"].items():
                                 timing_raw[key] = max(timing_raw.get(key, 0), value)
@@ -953,6 +931,9 @@ class MultiAgentsPPOTrainer:
         agent_indices = non_tensor_batch["agent_idx"]
         rewards = non_tensor_batch.get("reward", [])
         
+        print(f"[DEBUG UID] Input: len={len(data_proto)}, rollout_mode={rollout_mode}, sample_num={sample_num}")
+        print(f"[DEBUG UID] Rewards: len={len(rewards)}, mean={np.mean(rewards) if len(rewards) > 0 else 'N/A'}, nonzero={np.count_nonzero(rewards) if len(rewards) > 0 else 0}")
+        
         uids = []
         for i in range(len(data_proto)):
             if rollout_mode == "no_tree":
@@ -1002,6 +983,7 @@ class MultiAgentsPPOTrainer:
                 if turn_id < env_max_turn[env_id]:
                     sample_to_remove.add(i)
             
+            print(f"[DEBUG UID] no_tree mode: removing {len(sample_to_remove)} samples out of {len(data_proto)}")
             colorful_print(f"no_tree mode: keeping only max turn_indices samples, removing {len(sample_to_remove)} samples", "yellow")
         elif mode == "dapo":
             uids_to_remove = []
@@ -1092,6 +1074,7 @@ class MultiAgentsPPOTrainer:
                 "remain_samples": len(data_proto)
             }
             
+            print(f"[DEBUG UID] Output: total_samples={len(all_rewards)}, mean_reward={np.mean(all_rewards):.4f}, remain_samples={len(data_proto)}, removed={len(sample_to_remove)}")
             colorful_print(f"UID assignment summary: {summary}", "green")
         
         return data_proto

@@ -52,6 +52,7 @@ from verl.utils.fsdp_utils import (
     CPUOffloadPolicy,
     MixedPrecisionPolicy,
     apply_fsdp2,
+    get_shard_placement_fn,
     fsdp2_load_full_state_dict,
     fsdp_version,
     get_fsdp_wrap_policy,
@@ -349,6 +350,7 @@ class ActorRolloutRefWorker(Worker):
                 "mp_policy": mp_policy,
                 "offload_policy": cpu_offload,
                 "reshard_after_forward": fsdp_config.reshard_after_forward,
+                "shard_placement_fn": get_shard_placement_fn(fsdp_size=self.device_mesh.shape[-1]),
             }
             full_state = actor_module.state_dict()
             apply_fsdp2(actor_module, fsdp_kwargs, fsdp_config)
@@ -606,7 +608,8 @@ class ActorRolloutRefWorker(Worker):
             # get the original unwrapped module
             if fsdp_version(self.actor_module_fsdp) == 1:
                 self.actor_module = self.actor_module_fsdp._fsdp_wrapped_module
-
+            elif fsdp_version(self.actor_module_fsdp) == 2:
+                self.actor_module = self.actor_module_fsdp.modules
             if self._is_offload_param:
                 offload_fsdp_model_to_cpu(self.actor_module_fsdp)
                 log_gpu_memory_usage("After offload actor model during init", logger=logger)
@@ -620,45 +623,52 @@ class ActorRolloutRefWorker(Worker):
                 self.lora_num = getattr(self.config, 'lora_num', 1)
                 agent_lora_mapping = getattr(self.config, 'agent_lora_mapping', None)
 
-                if isinstance(self.actor_module, PeftModel):
+                # Get the unwrapped actor module for PEFT operations
+                # For FSDP v1, use _fsdp_wrapped_module; for FSDP v2, use .module
+                if fsdp_version(self.actor_module_fsdp) == 1:
+                    unwrapped_module = self.actor_module_fsdp._fsdp_wrapped_module
+                else:
+                    unwrapped_module = self.actor_module_fsdp.modules
+
+                if isinstance(unwrapped_module, PeftModel):
                     if self.lora_num == 1:
                         # Single LoRA mode: keep adapter as "default"
                         if dist.get_rank() == 0:
                             print(f"[rank-{self.rank}]: Single LoRA mode - using 'default' adapter")
-                            print(f"Active adapter: {self.actor_module.active_adapter}")
+                            print(f"Active adapter: {unwrapped_module.active_adapter}")
                     else:
                         # Multi-LoRA mode: create lora_1, lora_2, lora_3, ...
                         if dist.get_rank() == 0:
                             print(f"[rank-{self.rank}]: Creating {self.lora_num} LoRA adapters for multi-agent training")
 
                         # Get the current LoRA config from default adapter
-                        base_lora_config = self.actor_module.peft_config.get('default')
+                        base_lora_config = unwrapped_module.peft_config.get('default')
 
                         # Create lora_1, lora_2, lora_3, ... adapters
                         for i in range(1, self.lora_num + 1):
                             adapter_name = f"lora_{i}"
 
-                            if adapter_name not in self.actor_module.peft_config:
+                            if adapter_name not in unwrapped_module.peft_config:
                                 if dist.get_rank() == 0:
                                     print(f"  Creating LoRA adapter: {adapter_name}")
 
                                 # Add new adapter with same config as default
-                                self.actor_module.add_adapter(adapter_name, base_lora_config)
+                                unwrapped_module.add_adapter(adapter_name, base_lora_config)
 
                         # Remove the default adapter since we're using lora_1, lora_2, ...
-                        if "default" in self.actor_module.peft_config and self.lora_num > 1:
+                        if "default" in unwrapped_module.peft_config and self.lora_num > 1:
                             # Set to lora_1 before deleting default
-                            self.actor_module.set_adapter("lora_1")
+                            unwrapped_module.set_adapter("lora_1")
                             if dist.get_rank() == 0:
                                 print(f"  Removing 'default' adapter in multi-LoRA mode")
                             # Delete default adapter
-                            self.actor_module.delete_adapter("default")
+                            unwrapped_module.delete_adapter("default")
 
                         if dist.get_rank() == 0:
-                            print(f"Successfully created {self.lora_num} LoRA adapters: {list(self.actor_module.peft_config.keys())}")
-                            print(f"Active adapter: {self.actor_module.active_adapter}")
+                            print(f"Successfully created {self.lora_num} LoRA adapters: {list(unwrapped_module.peft_config.keys())}")
+                            print(f"Active adapter: {unwrapped_module.active_adapter}")
 
-                    dist.barrier()
+                dist.barrier()
         # load from checkpoint
         if self._is_actor:
             OmegaConf.set_struct(self.config.actor, True)
