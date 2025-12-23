@@ -128,6 +128,24 @@ class MultiAgentsExecutionEngineAutoEvol:
             print(f"RayDockerWorker is not available or invalid for env '{self.env_name}'. Skipping env workers initialization.")
         
 
+    async def _cleanup_after_step(self, rollout_idx: int):
+        """
+        Clean up resources after step() to prevent memory leaks from AG2/OpenAI clients.
+        This helps prevent 'illegal memory' errors when running many concurrent rollouts.
+        Note: Main cleanup happens in gen_agent._cleanup_ag2_resources() and subprocess cleanup code.
+        This is an additional periodic garbage collection.
+        """
+        import gc
+
+        try:
+            # Force garbage collection periodically to release memory
+            # Do this every 10 rollouts to avoid overhead
+            if rollout_idx % 10 == 0:
+                gc.collect()
+
+        except Exception as e:
+            logger.debug(f"Non-critical cleanup error for rollout {rollout_idx}: {e}")
+
     def init_agents_and_envs(self,mode="train",step_idx=0):
         self.multi_logger = get_multi_logger(experiment_name=self.experiment_name)
         self.timer.checkpoint("Starting init_agents_and_envs")
@@ -181,13 +199,11 @@ class MultiAgentsExecutionEngineAutoEvol:
             mode=self.mode
         )
         self.envs=self.envs_batch.env_list
-        print(f"[DEBUG] envs_batch created {len(self.envs)} environments")
-        print(f"[DEBUG] sample_num={self.sample_num}, gen_batch_size before={self.gen_batch_size}")
+     
         self.gen_batch_size=len(self.envs)//self.sample_num
-        print(f"[DEBUG] gen_batch_size after={self.gen_batch_size}")
+
         self.env_idx_list=range(len(self.envs)//self.sample_num)
         self.rollout_idx_list=range(len(self.envs))
-        print(f"[DEBUG] rollout_idx_list has {len(self.rollout_idx_list)} elements")
         self.env_rollout_mapping={}
         for env_idx in range(len(self.env_idx_list)):
             self.env_rollout_mapping[env_idx] = [_ for _ in range(env_idx*self.sample_num, (env_idx+1)*self.sample_num)]
@@ -296,7 +312,7 @@ class MultiAgentsExecutionEngineAutoEvol:
 
             if _DEBUG_ENGINE:
                 lora_status = f"LoRA={lora_id}" if lora_id is not None else "base_model"
-                print(f"[Engine][AUTOEVOL] rollout_idx={rollout_idx} generating MAS code ({lora_status}, multimodal={agent_enable_multimodal}, sample_num={agent_sample_num})")
+                
 
             output_dpr, response = await llm_async_generate(
                 rollout_idx=rollout_idx,
@@ -388,10 +404,8 @@ class MultiAgentsExecutionEngineAutoEvol:
                 "top_p": top_p,
                 "top_k": top_k,
             }
+                
             
-            # Log MAS execution configuration
-            print(f"[AUTOEVOL] Rollout {rollout_idx}: output_dir={output_dir}")
-            print(f"[AUTOEVOL] Rollout {rollout_idx}: LLM config: temp={temperature}, top_p={top_p}, top_k={top_k}")
             self.multi_logger.log_env_agent_info(
                 self.mode, env_idx, rollout_idx, 1, agent_name,
                 "MAS execution configuration",
@@ -418,8 +432,7 @@ class MultiAgentsExecutionEngineAutoEvol:
                 timeout=self.step_timeout
             )
             
-            # Log step execution results
-            print(f"[AUTOEVOL] Rollout {rollout_idx}: MAS execution success={mas_execution_success}, final_reward={final_reward}, trajectories={len(tokenized_trajectories) if tokenized_trajectories else 0}")
+           
             self.multi_logger.log_env_agent_info(
                 self.mode, env_idx, rollout_idx, 1, agent_name,
                 "MAS step completed",
@@ -446,30 +459,36 @@ class MultiAgentsExecutionEngineAutoEvol:
             )
             tokenized_trajectories = []
             mas_execution_success = False
+        finally:
+            # Additional cleanup for any lingering resources after step
+            try:
+                await self._cleanup_after_step(rollout_idx)
+            except Exception as cleanup_err:
+                logger.debug(f"Cleanup warning for rollout {rollout_idx}: {cleanup_err}")
             
 
         # Step 7: Merge MAS generation DataProto with tokenized trajectories DataProtos
         all_dataprotos = []
 
         # First batch: MAS generation DataProto (reward based on task correctness)
-        if output_dpr is not None:
-            batch_size = output_dpr.batch.shape[0]
-            output_dpr.non_tensor_batch["reward"] = np.array([final_reward] * batch_size)
-            output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name] * batch_size, dtype=object)
-            output_dpr.non_tensor_batch["env_final_reward"] = np.array([final_reward] * batch_size)
-            print(f"[DEBUG REWARD] Rollout {rollout_idx}: Set reward array with final_reward={final_reward}, batch_size={batch_size}")
+        # Note: output_dpr already has rollout_idx, env_idx, turn_idx, agent_idx from async_generate
 
-            if self.lora_differ_mode:
-                lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
-                output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
+        batch_size = len(output_dpr)
+        output_dpr.non_tensor_batch["reward"] = np.array([int(mas_execution_success)] * batch_size)
+        output_dpr.non_tensor_batch["agent_name"] = np.array([agent_name] * batch_size, dtype=object)
+        output_dpr.non_tensor_batch["env_final_reward"] = np.array([final_reward] * batch_size)
 
-            all_dataprotos.append(output_dpr)
+        if self.lora_differ_mode:
+            lora_ids = [self.agent_lora_mapping[agent_name]] * batch_size
+            output_dpr.non_tensor_batch["lora_ids"] = np.array(lora_ids, dtype=object)
+
+        all_dataprotos.append(output_dpr)
 
         # Second batch: tokenized trajectory DataProtos from MAS execution (reward = final_reward)
         if tokenized_trajectories:
             for traj_dpr, traj_response in tokenized_trajectories:
                 # Add metadata to each trajectory DataProto
-                batch_size = traj_dpr.batch.shape[0]
+                batch_size = len(traj_dpr)
                 traj_dpr.non_tensor_batch["reward"] = np.array([final_reward] * batch_size)
                 traj_dpr.non_tensor_batch["agent_name"] = np.array([agent_name] * batch_size, dtype=object)
                 traj_dpr.non_tensor_batch["env_final_reward"] = np.array([final_reward] * batch_size)
@@ -489,7 +508,16 @@ class MultiAgentsExecutionEngineAutoEvol:
             if len(all_dataprotos) == 1:
                 trajectory_per_task_dict[policy_name] = all_dataprotos[0]
             else:
-                trajectory_per_task_dict[policy_name] = DataProto.concat(all_dataprotos)
+              
+                try:
+                    trajectory_per_task_dict[policy_name] = DataProto.concat(all_dataprotos)
+                except AssertionError as e:
+               
+                    for i, dpr in enumerate(all_dataprotos[1:], 1):
+                        missing_in_first = set(dpr.non_tensor_batch.keys()) - set(all_dataprotos[0].non_tensor_batch.keys())
+                        missing_in_current = set(all_dataprotos[0].non_tensor_batch.keys()) - set(dpr.non_tensor_batch.keys())
+                  
+                    raise
 
         # Step 8: Log results
         env_state_compact = env.state.to_dict_compact(agent_name=agent_name) if hasattr(env.state, 'to_dict_compact') else env.state
@@ -538,6 +566,15 @@ class MultiAgentsExecutionEngineAutoEvol:
         except Exception:
             pass
 
+        # Debug: log what this rollout is returning
+        for policy_name, policy_data in trajectory_per_task_dict.items():
+            if policy_data.batch is not None:
+                rollout_len = len(policy_data)
+                rewards = policy_data.non_tensor_batch.get("reward", [])
+                print(f"[DEBUG RETURN] Rollout {rollout_idx} returning {rollout_len} samples for {policy_name}, rewards={rewards[:5] if len(rewards) > 0 else []}")
+            else:
+                print(f"[DEBUG RETURN] Rollout {rollout_idx} returning EMPTY DataProto for {policy_name} (batch=None)")
+
         return trajectory_per_task_dict
             
 
@@ -579,17 +616,21 @@ class MultiAgentsExecutionEngineAutoEvol:
                     rollout_result = await completed_task
         
                     for policy_name, policy_data in rollout_result.items():
-                        #print(policy_data)
-                        if policy_data.batch is not None:  
+                        if policy_data.batch is not None:
+                            rollout_samples = len(policy_data)
+                            rollout_rewards = policy_data.non_tensor_batch.get("reward", []) if hasattr(policy_data, 'non_tensor_batch') else []
+                  
+
                             if aggregated_results[policy_name].batch is None:
                                 aggregated_results[policy_name] = policy_data
                             else:
                                 aggregated_results[policy_name] = DataProto.concat([
-                                    aggregated_results[policy_name], 
+                                    aggregated_results[policy_name],
                                     policy_data
                                 ])
-                            #print(f"The length of concatenated aggregated_results[policy_name]: {len(aggregated_results[policy_name])}")
-                    
+             
+                   
+                       
                     completed_count += 1
                     
                     task_pbar.update(1)
@@ -598,7 +639,7 @@ class MultiAgentsExecutionEngineAutoEvol:
                     failed_count += 1
                     task_pbar.update(1)
                     task_pbar.set_description(f"Rollouts ({completed_count}/{len(tasks)}, {failed_count} failed)")
-                    
+
                     self.multi_logger.log_async_event(
                         self.mode, -1, -1, "task_error",
                         f"Task failed with error: {e}",
@@ -644,6 +685,12 @@ class MultiAgentsExecutionEngineAutoEvol:
                     extra_data={"success_rate": success_rate}
                 )
             
+        # Debug: check aggregated rewards
+        for policy_name, policy_data in aggregated_results.items():
+            if policy_data.batch is not None and "reward" in policy_data.non_tensor_batch:
+                rewards = policy_data.non_tensor_batch["reward"]
+           
+        
         self.multi_logger.log_async_event(
             self.mode, -1, -1, "concurrent_batch_complete",
             "Concurrent execution completed",

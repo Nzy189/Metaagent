@@ -34,6 +34,7 @@ from verl.utils.device import get_torch_device, get_device_name
 
 if version.parse(torch.__version__) >= version.parse("2.6"):
     from torch.distributed.fsdp import CPUOffloadPolicy, FSDPModule, MixedPrecisionPolicy, fully_shard
+    from torch.distributed.tensor import Shard
 elif version.parse(torch.__version__) >= version.parse("2.4"):
     from torch.distributed._composable.fsdp import CPUOffloadPolicy, FSDPModule, MixedPrecisionPolicy, fully_shard
 else:
@@ -239,7 +240,18 @@ def meta_device_init():
         registered.clear()
         nn.Module.register_parameter = old_register_parameter
 
+def get_shard_placement_fn(fsdp_size):
+    """Choose the dimension that can divide fsdp_size to avoid padding"""
 
+    def shard_placement_fn(param):
+        shape = list(param.shape)
+        for i in range(len(shape)):
+            if shape[i] % fsdp_size == 0:
+                return Shard(i)
+        return Shard(0)
+
+    return shard_placement_fn
+    
 def parallel_load_safetensors(filepath):
     """
     Parallel load safetensors from huggingface checkpoint
